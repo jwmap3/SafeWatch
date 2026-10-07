@@ -5,6 +5,13 @@ it mutes cursing and blurs or skips nudity, using filter levels you set once.
 
 This first version covers **language** and **nudity**.
 
+## Download
+
+[Download SafeWatch.apk](https://github.com/jwmap3/SafeWatch/releases/download/latest/SafeWatch.apk)
+and open it on an Android phone (Android 9 or newer). The phone will ask you to
+allow installing apps from your browser or file manager the first time. The file
+is rebuilt automatically whenever the code changes.
+
 ## What it does
 
 **Streaming services.** The home screen lists your services (YouTube, Netflix,
@@ -77,14 +84,14 @@ the app that includes it.
 
 ## Status
 
-Not yet built into an APK or run on a phone. What has been checked so far:
+The APK builds, but the app has not been run on a phone yet. What has been
+checked so far:
 
 - The filter logic in `core/` passes its 22 tests.
 - The browser script was run in desktop Chromium against a test video
   (`tools/browser-test`): caption muting, skipping, blurring, on-page captions.
-- The app code type-checks against the Android framework. The support
-  libraries (AndroidX, Media3, ONNX Runtime) were not available for that check,
-  so the first real build may still need small fixes.
+- The full app compiles and packages into an APK on GitHub
+  (`.github/workflows/build.yml`), which also runs the tests.
 
 ## Layout
 
