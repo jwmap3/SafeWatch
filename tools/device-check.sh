@@ -30,7 +30,15 @@ shot 04-search 8
 tap "Lanterns";           shot 05-lanterns 8
 tap "Watch on HBO Max";   shot 06-watch-hbomax 16
 tap "Home";               sleep 2
-tap "Filters";            shot 07-filters 3
+tap "Settings";           shot 07-settings 3
+tap "Choose words";       shot 07b-words 3
+swipe_up;                 shot 07c-words-lower 2
+back
+tap "HBO Max";            shot 07d-signin-hbomax 14
+tap "Home";               sleep 2
+tap "Settings";           sleep 2
+tap "Netflix";            shot 07e-signin-netflix 14
+tap "Home";               sleep 2
 tap "Browser";            shot 08-browser 5
 tap "Home";               sleep 2
 tap "YouTube";            shot 09-youtube 14
@@ -40,16 +48,20 @@ adb shell cmd uimode night yes
 start;                    shot 10-home-night 8
 tap "Details";            shot 11-title-night 6
 back
-tap "Filters";            shot 12-filters-night 3
+tap "Settings";           shot 12-settings-night 3
+tap "Choose words";       shot 12b-words-night 3
+back
 tap "Browser";            shot 13-browser-night 6
 adb shell cmd uimode night no
 
-# Netflix's home page is as far as this goes. Opening a Netflix title starts its
-# protected player, and the emulator's stand-in for that hardware takes the whole
-# test phone offline, so that step can only be tried on a real phone.
+# Opening a Netflix title is left out. It starts Netflix's protected player, and the
+# emulator's stand-in for that hardware takes the whole test phone offline, so that
+# step can only be tried on a real phone.
 start;                    sleep 6
-tap "Netflix";            shot 14-netflix 20
-echo "phone state after Netflix home: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"
+tap "Hulu";               shot 14-hulu 16
+tap "Home";               sleep 2
+tap "Disney+";            shot 14b-disney 16
+echo "phone state at the end: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"
 
 echo "crash log:" > "$OUT/crash.txt"
 timeout 30 adb logcat -d -b crash >> "$OUT/crash.txt"

@@ -34,7 +34,9 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.safewatch.app.MainActivity
 import com.safewatch.app.R
+import com.safewatch.app.data.Accounts
 import com.safewatch.app.data.Prefs
+import com.safewatch.app.data.Service
 import com.safewatch.app.data.Services
 import com.safewatch.app.data.TagStore
 import com.safewatch.app.detect.NudityDetector
@@ -90,6 +92,8 @@ class BrowserActivity : AppCompatActivity() {
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private var pageScript = ""
     private var mobileAgent = ""
+    private var signingInTo: Service? = null
+    private var sawSignInPage = false
     private var scriptAtDocumentStart = false
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -133,6 +137,8 @@ class BrowserActivity : AppCompatActivity() {
      * from another app, or a link shared to SafeWatch from another browser.
      */
     private fun requestedUrl(intent: Intent): String? {
+        signingInTo = Services.byId(intent.getStringExtra(EXTRA_SIGN_IN))
+        sawSignInPage = false
         intent.getStringExtra(EXTRA_URL)?.let { return it }
         if (intent.action == Intent.ACTION_VIEW) return intent.dataString
         if (intent.action == Intent.ACTION_SEND) {
@@ -340,6 +346,7 @@ class BrowserActivity : AppCompatActivity() {
         override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
             pageKey = MediaKey.forUrl(url)
             version.incrementAndGet()
+            noteSignIn(url)
             if (!address.hasFocus()) address.setText(if (url == START_PAGE) "" else url)
             if (markStartMs != null) {
                 markStartMs = null
@@ -350,6 +357,21 @@ class BrowserActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView, url: String) {
             // Older WebViews cannot inject at document start; add the script once the page has loaded.
             if (!scriptAtDocumentStart) view.evaluateJavascript(pageScript, null)
+        }
+    }
+
+    /**
+     * Follows a sign-in started from Settings: once the sign-in pages have been and gone
+     * and the viewer is on the service itself, the sign-in is taken to have gone through.
+     */
+    private fun noteSignIn(url: String) {
+        val service = signingInTo ?: return
+        if (Accounts.looksLikeSignIn(url)) {
+            sawSignInPage = true
+        } else if (sawSignInPage && service.owns(url)) {
+            Prefs.setSignInSeen(this, service.id, true)
+            signingInTo = null
+            Ui.toast(this, "Signed in to ${service.name}")
         }
     }
 
@@ -513,6 +535,7 @@ class BrowserActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_URL = "url"
+        private const val EXTRA_SIGN_IN = "signIn"
         const val START_PAGE = "file:///android_asset/start.html"
         const val WEB_SEARCH = "https://duckduckgo.com/?q="
         private const val MARK_START = "Mark scene"
@@ -525,6 +548,14 @@ class BrowserActivity : AppCompatActivity() {
             Intent(ctx, BrowserActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                 .putExtra(EXTRA_URL, toUrl(urlOrSearch))
+        )
+
+        /** Opens a service's sign-in page. The sign-in is remembered by the browser from then on. */
+        fun signIn(ctx: Context, service: Service) = ctx.startActivity(
+            Intent(ctx, BrowserActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                .putExtra(EXTRA_URL, service.signInUrl)
+                .putExtra(EXTRA_SIGN_IN, service.id)
         )
 
         /** Shows the browser where it was left. */

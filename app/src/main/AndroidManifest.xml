@@ -23,6 +23,8 @@
 
         <activity android:name=".TitleActivity" />
 
+        <activity android:name=".WordsActivity" />
+
         <!--
           The built-in browser. It is also offered by the phone as a browser, so a
           link in any other app can be opened in SafeWatch, and a page in another

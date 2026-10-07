@@ -17,10 +17,9 @@ class ProfanityMatcher(settings: FilterSettings) {
 
     init {
         if (settings.language != Strictness.OFF) {
-            if (settings.language.filters(3)) WordList.strong.forEach { add(it, 3) }
-            if (settings.language.filters(2)) WordList.moderate.forEach { add(it, 2) }
-            if (settings.language.filters(1)) WordList.mild.forEach { add(it, 1) }
-            if (settings.blasphemy) WordList.blasphemy.forEach { add(it, 3) }
+            for (group in WordList.groups) {
+                if (settings.mutes(group)) group.patterns.forEach { add(it, group.level) }
+            }
             settings.customWords.forEach { add(it, 3) }
         }
     }

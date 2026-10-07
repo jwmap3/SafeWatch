@@ -8,7 +8,6 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import com.safewatch.app.browser.BrowserActivity
 import com.safewatch.app.data.Catalog
 import com.safewatch.app.data.Prefs
@@ -96,7 +95,7 @@ class HomeScreen(private val activity: MainActivity) {
         for (service in Services.connected(activity)) {
             strip.addView(Ui.chip(activity, service.name, strong = true) { BrowserActivity.open(activity, service.homeUrl) })
         }
-        strip.addView(Ui.chip(activity, "Edit") { editServices() })
+        strip.addView(Ui.chip(activity, "Edit") { activity.editServices { refresh() } })
         return HorizontalScrollView(activity).apply {
             isHorizontalScrollBarEnabled = false
             addView(strip)
@@ -198,22 +197,6 @@ class HomeScreen(private val activity: MainActivity) {
             }, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
             setOnClickListener { TitleActivity.open(activity, title) }
         }
-    }
-
-    private fun editServices() {
-        val chosen = Prefs.connectedServices(activity).toMutableSet()
-        val all = Services.all
-        AlertDialog.Builder(activity)
-            .setTitle("Your services")
-            .setMultiChoiceItems(all.map { it.name }.toTypedArray(), all.map { it.id in chosen }.toBooleanArray()) { _, i, on ->
-                if (on) chosen += all[i].id else chosen -= all[i].id
-            }
-            .setPositiveButton("Done") { _, _ ->
-                Prefs.setConnectedServices(activity, chosen)
-                refresh()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     private companion object {

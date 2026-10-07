@@ -25,6 +25,8 @@ object Prefs {
             nudityAction = if (p.getString("nudityAction", null) == Action.SKIP.name) Action.SKIP else Action.BLUR,
             customWords = p.getStringSet("customWords", emptySet())!!.toSet(),
             allowedWords = p.getStringSet("allowedWords", emptySet())!!.toSet(),
+            wordChoices = p.getStringSet("wordsOn", emptySet())!!.associateWith { true } +
+                p.getStringSet("wordsOff", emptySet())!!.associateWith { false },
         )
     }
 
@@ -36,6 +38,8 @@ object Prefs {
             .putString("nudityAction", s.nudityAction.name)
             .putStringSet("customWords", s.customWords)
             .putStringSet("allowedWords", s.allowedWords)
+            .putStringSet("wordsOn", s.wordChoices.filterValues { it }.keys)
+            .putStringSet("wordsOff", s.wordChoices.filterValues { !it }.keys)
             .apply()
     }
 
@@ -79,4 +83,10 @@ object Prefs {
     fun lastPage(ctx: Context): String? = prefs(ctx).getString("lastPage", null)
 
     fun setLastPage(ctx: Context, url: String) = prefs(ctx).edit().putString("lastPage", url).apply()
+
+    /** Set once a sign-in started from Settings has been seen through on a service. */
+    fun signInSeen(ctx: Context, serviceId: String): Boolean = prefs(ctx).getBoolean("signedIn.$serviceId", false)
+
+    fun setSignInSeen(ctx: Context, serviceId: String, seen: Boolean) =
+        prefs(ctx).edit().putBoolean("signedIn.$serviceId", seen).apply()
 }

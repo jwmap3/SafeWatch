@@ -22,6 +22,8 @@ import com.safewatch.app.data.Services
 import com.safewatch.app.data.Title
 import com.safewatch.app.ui.Images
 import com.safewatch.app.ui.Ui
+import com.safewatch.core.Strictness
+import com.safewatch.core.WordList
 import org.json.JSONObject
 
 /**
@@ -106,6 +108,9 @@ class TitleActivity : AppCompatActivity() {
             addView(Ui.sectionHeader(context, "Your filters"))
             addView(Ui.card(context).apply {
                 addView(Ui.row(context, "Language", level(s.language.name)) { MainActivity.open(context, MainActivity.TAB_FILTERS) })
+                addView(Ui.divider(context))
+                addView(Ui.row(context, "Words muted", if (s.language == Strictness.OFF) "None"
+                    else "${WordList.groups.count { g -> s.mutes(g) } + s.customWords.size}") { WordsActivity.open(context) })
                 addView(Ui.divider(context))
                 addView(Ui.row(context, "Nudity", level(s.nudity.name)) { MainActivity.open(context, MainActivity.TAB_FILTERS) })
             })
@@ -198,6 +203,19 @@ class TitleActivity : AppCompatActivity() {
 
     companion object {
         private const val EXTRA_TITLE = "title"
+        private val NETFLIX_TITLE = Regex("netflix\\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?title/(\\d+)")
+
+        /**
+         * Turns a title's page into its player page where a service's addresses allow it, so
+         * Watch starts playing instead of stopping at a description. A chosen episode still
+         * goes to the title's page, where the episode can be picked.
+         */
+        private fun playerLink(service: Service, link: String, episode: Episode?): String {
+            if (episode == null && service.id == "netflix") {
+                NETFLIX_TITLE.find(link)?.let { return "https://www.netflix.com/watch/" + it.groupValues[1] }
+            }
+            return link
+        }
 
         fun open(ctx: Context, title: Title) =
             ctx.startActivity(Intent(ctx, TitleActivity::class.java).putExtra(EXTRA_TITLE, title.toJson().toString()))
@@ -209,7 +227,7 @@ class TitleActivity : AppCompatActivity() {
         fun watch(ctx: Context, title: Title, service: Service? = Services.byId(title.serviceId), episode: Episode? = null) {
             val url = when {
                 service == null -> BrowserActivity.WEB_SEARCH + android.net.Uri.encode("watch ${title.name}")
-                service.id == title.serviceId && title.link != null -> title.link
+                service.id == title.serviceId && title.link != null -> playerLink(service, title.link, episode)
                 else -> service.searchFor(title.name)
             }
             if (episode != null) {

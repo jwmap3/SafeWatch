@@ -41,7 +41,17 @@ data class FilterSettings(
     val nudityAction: Action = Action.BLUR,
     val customWords: Set<String> = emptySet(),
     val allowedWords: Set<String> = emptySet(),
+    /** Built-in words the viewer switched on or off by hand, by [WordGroup.id]. These win over the level. */
+    val wordChoices: Map<String, Boolean> = emptyMap(),
 ) {
+    /** Whether a built-in word is muted when nothing has been chosen for it by hand. */
+    fun mutesByDefault(group: WordGroup): Boolean =
+        if (group.blasphemy) blasphemy else language.filters(group.level)
+
+    /** Whether a built-in word is muted. Nothing is when the language filter is off. */
+    fun mutes(group: WordGroup): Boolean =
+        language != Strictness.OFF && (wordChoices[group.id] ?: mutesByDefault(group))
+
     fun strictnessFor(category: Category): Strictness = when (category) {
         Category.LANGUAGE -> language
         Category.NUDITY -> nudity

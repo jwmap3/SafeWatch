@@ -52,6 +52,25 @@ class ProfanityMatcherTest {
         assertFalse(m.containsProfanity("the ass carried the load"))
     }
 
+    @Test fun singleWordsCanBeSwitchedOnOrOff() {
+        val allowHell = matcher(FilterSettings(language = Strictness.HIGH, wordChoices = mapOf("hell" to false)))
+        assertFalse(allowHell.containsProfanity("what the hell"))
+        assertTrue(allowHell.containsProfanity("damn it"))
+        val muteDamnOnly = matcher(FilterSettings(language = Strictness.LOW, blasphemy = false, wordChoices = mapOf("damn" to true)))
+        assertTrue(muteDamnOnly.containsProfanity("damn it"))
+        assertFalse(muteDamnOnly.containsProfanity("oh crap"))
+        val keepOmg = matcher(FilterSettings(wordChoices = mapOf("omg" to false)))
+        assertFalse(keepOmg.containsProfanity("Oh my God, look"))
+        assertTrue(keepOmg.containsProfanity("Jesus Christ, look"))
+        // Switching the whole language filter off still mutes nothing.
+        assertFalse(matcher(FilterSettings(language = Strictness.OFF, wordChoices = mapOf("damn" to true))).containsProfanity("damn"))
+    }
+
+    @Test fun everyBuiltInWordHasItsOwnIdAndAHiddenLetter() {
+        assertEquals(WordList.groups.size, WordList.groups.map { it.id }.toSet().size)
+        assertTrue(WordList.groups.all { it.label.contains('*') && it.patterns.isNotEmpty() })
+    }
+
     @Test fun alreadyCensoredCaptionsStillCount() {
         assertTrue(matcher().containsProfanity("what the [ __ ] is that"))
         assertTrue(matcher().containsProfanity("oh f*** off"))

@@ -6,14 +6,18 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
+import com.safewatch.app.browser.BrowserActivity
+import com.safewatch.app.data.Accounts
 import com.safewatch.app.data.Prefs
+import com.safewatch.app.data.Services
 import com.safewatch.app.detect.ModelSetup
 import com.safewatch.app.ui.Ui
 import com.safewatch.core.Action
 import com.safewatch.core.FilterSettings
 import com.safewatch.core.Strictness
+import com.safewatch.core.WordList
 
-/** The filters tab: what to mute, what to hide, and how the app looks. */
+/** The settings tab: the viewer's accounts, what to mute, what to hide, and how the app looks. */
 class FiltersScreen(private val activity: MainActivity) {
 
     val view: View
@@ -36,9 +40,30 @@ class FiltersScreen(private val activity: MainActivity) {
 
     fun rebuild() {
         val ctx = activity
+        val scrolled = view.scrollY
         column.removeAllViews()
-        column.addView(Ui.largeTitle(ctx, "Filters"))
+        view.post { view.scrollTo(0, scrolled) }
+        column.addView(Ui.largeTitle(ctx, "Settings"))
         column.addView(Ui.subtitle(ctx, "Set once. Applied to everything you watch here."))
+
+        // Accounts
+        val services = Services.connected(ctx)
+        column.addView(Ui.sectionHeader(ctx, "Your accounts"))
+        column.addView(Ui.card(ctx).apply {
+            services.forEach { service ->
+                val signedIn = Accounts.isSignedIn(ctx, service)
+                addView(Ui.row(ctx, service.name, if (signedIn) "Signed in" else "Sign in", leading = Ui.monogram(ctx, service.name)) {
+                    BrowserActivity.signIn(ctx, service)
+                })
+                addView(Ui.divider(ctx, 60))
+            }
+            addView(Ui.row(ctx, if (services.isEmpty()) "Add services" else "Add or remove services", chevron = false) {
+                activity.editServices { rebuild() }
+            })
+        })
+        column.addView(Ui.caption(ctx,
+            "Sign in once on each service's own page. The sign-in is kept on this phone, the way a browser keeps it, " +
+                "so titles open straight into that service. SafeWatch never sees your password."))
 
         // Language
         column.addView(Ui.sectionHeader(ctx, "Language"))
@@ -46,10 +71,12 @@ class FiltersScreen(private val activity: MainActivity) {
         column.addView(Ui.card(ctx).apply {
             addView(Ui.inset(ctx, Ui.segmented(ctx, levelNames, levels.indexOf(settings.language)) {
                 update(settings.copy(language = levels[it]))
-                languageNote.text = languageText(levels[it])
+                rebuild()
             }))
             addView(Ui.divider(ctx))
-            addView(Ui.switchRow(ctx, "Blasphemy", settings.blasphemy) { update(settings.copy(blasphemy = it)) })
+            addView(Ui.switchRow(ctx, "Blasphemy", settings.blasphemy) { update(settings.copy(blasphemy = it)); rebuild() })
+            addView(Ui.divider(ctx))
+            addView(Ui.row(ctx, "Choose words", wordsSummary()) { WordsActivity.open(ctx) })
             addView(Ui.divider(ctx))
             addView(Ui.row(ctx, "Extra words to mute", count(settings.customWords)) {
                 editWords("Extra words to mute", settings.customWords) { update(settings.copy(customWords = it)); rebuild() }
@@ -128,8 +155,15 @@ class FiltersScreen(private val activity: MainActivity) {
             .show()
     }
 
-    /** Called when the tab comes into view, so a download that finished meanwhile shows as ready. */
-    fun onShown() = rebuild()
+    /** Called when the tab comes into view, so changes made on other screens show. */
+    fun onShown() {
+        settings = Prefs.settings(activity)
+        rebuild()
+    }
+
+    private fun wordsSummary(): String =
+        if (settings.language == Strictness.OFF) "Off"
+        else "${WordList.groups.count { settings.mutes(it) }} of ${WordList.groups.size}"
 
     private fun count(words: Set<String>): String = if (words.isEmpty()) "None" else words.size.toString()
 
