@@ -31,7 +31,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import com.safewatch.app.FiltersActivity
+import com.safewatch.app.MainActivity
 import com.safewatch.app.R
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.TagStore
@@ -116,8 +116,27 @@ class BrowserActivity : AppCompatActivity() {
         web.webChromeClient = Chrome()
 
         if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) {
-            web.loadUrl(intent.getStringExtra(EXTRA_URL) ?: HOME)
+            web.loadUrl(requestedUrl(intent) ?: Prefs.lastPage(this) ?: START_PAGE)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        requestedUrl(intent)?.let { web.loadUrl(it) }
+    }
+
+    /**
+     * The page an intent asks for: one chosen inside the app, a link opened
+     * from another app, or a link shared to SafeWatch from another browser.
+     */
+    private fun requestedUrl(intent: Intent): String? {
+        intent.getStringExtra(EXTRA_URL)?.let { return it }
+        if (intent.action == Intent.ACTION_VIEW) return intent.dataString
+        if (intent.action == Intent.ACTION_SEND) {
+            val shared = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return null
+            return Regex("https?://\\S+").find(shared)?.value ?: toUrl(shared)
+        }
+        return null
     }
 
     private fun buildLayout(): View {
@@ -145,9 +164,9 @@ class BrowserActivity : AppCompatActivity() {
         val top = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(Ui.dp(context, 4), Ui.dp(context, 6), Ui.dp(context, 4), Ui.dp(context, 6))
-            addView(Ui.barButton(context, "Done") { finish() })
+            addView(Ui.iconButton(context, R.drawable.ic_home, "Home") { MainActivity.open(context) })
             addView(address, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(Ui.barButton(context, "⋯", 22f) {}.also { it.setOnClickListener { v -> showMenu(v) } })
+            addView(Ui.iconButton(context, R.drawable.ic_more, "More") { showMenu(it) })
         }
 
         web = WebView(this)
@@ -169,13 +188,13 @@ class BrowserActivity : AppCompatActivity() {
         val bottom = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4))
-            addView(Ui.barButton(context, "‹", 26f) { if (web.canGoBack()) web.goBack() })
-            addView(Ui.barButton(context, "›", 26f) { if (web.canGoForward()) web.goForward() })
+            addView(Ui.iconButton(context, R.drawable.ic_back, "Back") { if (web.canGoBack()) web.goBack() })
+            addView(Ui.iconButton(context, R.drawable.ic_forward, "Forward") { if (web.canGoForward()) web.goForward() })
             addView(Ui.spacer(context))
             addView(markButton)
             addView(Ui.spacer(context))
-            addView(Ui.barButton(context, "TV") { Ui.sendToTv(this@BrowserActivity) })
-            addView(Ui.barButton(context, "Filters") { startActivity(Intent(context, FiltersActivity::class.java)) })
+            addView(Ui.iconButton(context, R.drawable.ic_tv, "Send to TV") { Ui.sendToTv(this@BrowserActivity) })
+            addView(Ui.iconButton(context, R.drawable.ic_filters, "Filters") { MainActivity.open(context, MainActivity.TAB_FILTERS) })
         }
 
         root.addView(top)
@@ -206,7 +225,10 @@ class BrowserActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         ui.removeCallbacks(watch)
+        // Nothing should keep playing unfiltered behind another screen.
+        web.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){m.pause()})", null)
         web.onPause()
+        web.url?.let { if (it.startsWith("http")) Prefs.setLastPage(this, it) }
     }
 
     override fun onDestroy() {
@@ -230,7 +252,7 @@ class BrowserActivity : AppCompatActivity() {
         when {
             fullscreenView != null -> web.webChromeClient?.onHideCustomView()
             web.canGoBack() -> web.goBack()
-            else -> super.onBackPressed()
+            else -> MainActivity.open(this)
         }
     }
 
@@ -457,15 +479,24 @@ class BrowserActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_URL = "url"
-        const val HOME = "https://m.youtube.com/"
+        const val START_PAGE = "https://duckduckgo.com/"
         const val WEB_SEARCH = "https://duckduckgo.com/?q="
         private const val MARK_START = "Mark scene"
         private const val MARK_END = "End scene"
         private const val CHECK_EVERY_MS = 250L
         private const val HOLD_MS = 4000L
 
-        fun open(ctx: Context, urlOrSearch: String) =
-            ctx.startActivity(Intent(ctx, BrowserActivity::class.java).putExtra(EXTRA_URL, toUrl(urlOrSearch)))
+        /** Shows the browser on the given page, reusing the one already open. */
+        fun open(ctx: Context, urlOrSearch: String) = ctx.startActivity(
+            Intent(ctx, BrowserActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                .putExtra(EXTRA_URL, toUrl(urlOrSearch))
+        )
+
+        /** Shows the browser where it was left. */
+        fun resume(ctx: Context) = ctx.startActivity(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        )
 
         /** True for "example.com" or a full link; false for ordinary search words. */
         fun looksLikeAddress(text: String): Boolean {

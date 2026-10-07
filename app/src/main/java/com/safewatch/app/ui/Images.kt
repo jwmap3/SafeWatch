@@ -6,32 +6,53 @@ import android.os.Handler
 import android.os.Looper
 import android.util.LruCache
 import android.widget.ImageView
+import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
 
-/** Loads poster images in the background and keeps recent ones in memory. */
+/** Loads artwork in the background, shrinks it to the size needed, and keeps recent pictures in memory. */
 object Images {
-    private val cache = LruCache<String, Bitmap>(80)
-    private val pool = Executors.newFixedThreadPool(3)
+    private val cache = object : LruCache<String, Bitmap>(40 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+    private val pool = Executors.newFixedThreadPool(4)
     private val ui = Handler(Looper.getMainLooper())
 
-    fun load(url: String, into: ImageView) {
-        into.tag = url
-        val ready = cache.get(url)
+    /** [minWidth] is the smallest width in pixels the picture is allowed to be shrunk to. */
+    fun load(url: String, into: ImageView, minWidth: Int = 360) {
+        val key = "$minWidth:$url"
+        into.tag = key
+        val ready = cache.get(key)
         if (ready != null) {
             into.setImageBitmap(ready)
             return
         }
         into.setImageDrawable(null)
         pool.execute {
-            val bitmap = try {
-                URL(url).openStream().use { BitmapFactory.decodeStream(it) }
-            } catch (e: Exception) {
-                null
-            } ?: return@execute
-            cache.put(url, bitmap)
-            // The view may have been reused for another poster while this one loaded.
-            ui.post { if (into.tag == url) into.setImageBitmap(bitmap) }
+            val bitmap = try { fetch(url, minWidth) } catch (e: Exception) { null } ?: return@execute
+            cache.put(key, bitmap)
+            // The view may have been reused for another picture while this one loaded.
+            ui.post { if (into.tag == key) into.setImageBitmap(bitmap) }
+        }
+    }
+
+    private fun fetch(url: String, minWidth: Int): Bitmap? {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 20_000
+            val bytes = connection.inputStream.use { it.readBytes() }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= minWidth) sample *= 2
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        } finally {
+            connection.disconnect()
         }
     }
 }

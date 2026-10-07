@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.content.res.ColorStateList
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -17,6 +18,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -69,18 +71,25 @@ object Ui {
     }
 
     /** A scrolling page. Returns the view to show and the column to add content to. */
-    fun page(activity: Activity): Pair<View, LinearLayout> {
+    /**
+     * A scrolling page. Returns the view to show and the column to add content to.
+     * [padded] pages keep content off the screen edges; unpadded ones let shelves run edge to edge.
+     * [ownWindow] is for a page that fills a whole screen by itself and so has to avoid the system bars.
+     */
+    fun page(activity: Activity, padded: Boolean = true, ownWindow: Boolean = false): Pair<ScrollView, LinearLayout> {
+        val side = if (padded) dp(activity, 20) else 0
         val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(activity, 20), dp(activity, 12), dp(activity, 20), dp(activity, 40))
+            setPadding(side, 0, side, dp(activity, 32))
         }
         val scroll = ScrollView(activity).apply {
             setBackgroundColor(color(activity, R.color.bg))
             isFillViewport = true
             clipToPadding = false
+            isVerticalScrollBarEnabled = false
             addView(column, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
-        fitSystemBars(activity, scroll)
+        if (ownWindow) fitSystemBars(activity, scroll)
         return scroll to column
     }
 
@@ -90,7 +99,7 @@ object Ui {
         typeface = Typeface.create("sans-serif", Typeface.BOLD)
         letterSpacing = -0.02f
         setTextColor(color(ctx, R.color.text))
-        setPadding(0, dp(ctx, 20), 0, dp(ctx, 4))
+        setPadding(0, dp(ctx, 18), 0, dp(ctx, 4))
     }
 
     fun subtitle(ctx: Context, text: String): TextView = TextView(ctx).apply {
@@ -257,6 +266,100 @@ object Ui {
         foreground = ripple(ctx)
         setOnClickListener { onClick() }
     }
+
+    /** One of the app's line icons, tinted. */
+    fun icon(ctx: Context, drawable: Int, colorRes: Int = R.color.text, sizeDp: Int = 24): ImageView = ImageView(ctx).apply {
+        setImageResource(drawable)
+        imageTintList = ColorStateList.valueOf(color(ctx, colorRes))
+        layoutParams = LinearLayout.LayoutParams(dp(ctx, sizeDp), dp(ctx, sizeDp))
+    }
+
+    /** A round, tappable icon for toolbars. */
+    fun iconButton(ctx: Context, drawable: Int, label: String, colorRes: Int = R.color.text, onClick: (View) -> Unit): FrameLayout =
+        FrameLayout(ctx).apply {
+            contentDescription = label
+            addView(icon(ctx, drawable, colorRes), FrameLayout.LayoutParams(dp(ctx, 24), dp(ctx, 24), Gravity.CENTER))
+            layoutParams = LinearLayout.LayoutParams(dp(ctx, 46), dp(ctx, 46))
+            foreground = ripple(ctx)
+            setOnClickListener { onClick(it) }
+        }
+
+    /** The main action on a screen: a wide, filled button with an optional icon. */
+    fun actionButton(ctx: Context, text: String, filled: Boolean = true, iconRes: Int? = null, onClick: () -> Unit): LinearLayout =
+        LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            val fg = if (filled) R.color.on_accent else R.color.text
+            background = rounded(color(ctx, if (filled) R.color.accent else R.color.fill), dp(ctx, 12).toFloat())
+            setPadding(dp(ctx, 16), dp(ctx, 13), dp(ctx, 18), dp(ctx, 13))
+            if (iconRes != null) addView(icon(ctx, iconRes, fg, 20).apply {
+                (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(ctx, 6)
+            })
+            addView(TextView(ctx).apply {
+                this.text = text
+                textSize = 16f
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(color(ctx, fg))
+            })
+            foreground = ripple(ctx)
+            setOnClickListener { onClick() }
+        }
+
+    /** A small rounded label, used for the row of services. */
+    fun chip(ctx: Context, text: String, strong: Boolean = false, onClick: () -> Unit): TextView = TextView(ctx).apply {
+        this.text = text
+        textSize = 14f
+        maxLines = 1
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        setTextColor(color(ctx, if (strong) R.color.text else R.color.text_secondary))
+        background = rounded(color(ctx, if (strong) R.color.card else R.color.fill), dp(ctx, 18).toFloat())
+        setPadding(dp(ctx, 16), dp(ctx, 9), dp(ctx, 16), dp(ctx, 9))
+        layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(ctx, 8) }
+        setOnClickListener { onClick() }
+    }
+
+    /** Artwork for one title. Shows the name until the picture arrives, and stays that way if there is none. */
+    fun poster(ctx: Context, name: String, url: String?, widthDp: Int, onClick: (() -> Unit)? = null): FrameLayout =
+        FrameLayout(ctx).apply {
+            background = rounded(color(ctx, R.color.fill), dp(ctx, 10).toFloat())
+            clipToOutline = true
+            contentDescription = name
+            addView(TextView(ctx).apply {
+                text = name
+                textSize = 12f
+                gravity = Gravity.CENTER
+                maxLines = 4
+                setTextColor(color(ctx, R.color.text_secondary))
+                setPadding(dp(ctx, 8), 0, dp(ctx, 8), 0)
+            }, FrameLayout.LayoutParams(-1, -1))
+            addView(ImageView(ctx).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                if (url != null) Images.load(url, this)
+            }, FrameLayout.LayoutParams(-1, -1))
+            layoutParams = LinearLayout.LayoutParams(dp(ctx, widthDp), dp(ctx, widthDp * 3 / 2))
+            if (onClick != null) {
+                foreground = ripple(ctx)
+                setOnClickListener { onClick() }
+            }
+        }
+
+    /** A shelf heading. */
+    fun shelfTitle(ctx: Context, text: String): TextView = TextView(ctx).apply {
+        this.text = text
+        textSize = 19f
+        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        letterSpacing = -0.01f
+        setTextColor(color(ctx, R.color.text))
+        setPadding(dp(ctx, 20), dp(ctx, 26), dp(ctx, 20), dp(ctx, 12))
+    }
+
+    /** A top-to-bottom fade from clear to [colorTo], laid over artwork so text on it stays readable. */
+    fun fade(colorTo: Int): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TOP_BOTTOM,
+        intArrayOf(colorTo and 0x00FFFFFF, colorTo and 0x00FFFFFF, (colorTo and 0x00FFFFFF) or (0xD0 shl 24), colorTo),
+    )
 
     fun spacer(ctx: Context): View = View(ctx).apply {
         layoutParams = LinearLayout.LayoutParams(0, 1, 1f)

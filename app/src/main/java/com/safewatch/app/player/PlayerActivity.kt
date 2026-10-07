@@ -21,7 +21,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.safewatch.app.FiltersActivity
+import com.safewatch.app.MainActivity
 import com.safewatch.app.R
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.TagStore
@@ -148,7 +148,7 @@ class PlayerActivity : AppCompatActivity() {
         bar.addView(Ui.spacer(this))
         bar.addView(scanButton)
         bar.addView(Ui.barButton(this, "TV") { Ui.sendToTv(this) })
-        bar.addView(Ui.barButton(this, "Filters") { startActivity(android.content.Intent(this, FiltersActivity::class.java)) })
+        bar.addView(Ui.barButton(this, "Filters") { MainActivity.open(this, MainActivity.TAB_FILTERS) })
     }
 
     override fun onResume() {

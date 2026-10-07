@@ -74,4 +74,9 @@ object Prefs {
     fun catalogKey(ctx: Context): String = prefs(ctx).getString("catalogKey", "")!!.trim()
 
     fun setCatalogKey(ctx: Context, key: String) = prefs(ctx).edit().putString("catalogKey", key.trim()).apply()
+
+    /** The page the browser was last on, so the Browser tab reopens there. */
+    fun lastPage(ctx: Context): String? = prefs(ctx).getString("lastPage", null)
+
+    fun setLastPage(ctx: Context, url: String) = prefs(ctx).edit().putString("lastPage", url).apply()
 }
