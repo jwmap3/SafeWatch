@@ -85,7 +85,6 @@ object Ui {
         val scroll = ScrollView(activity).apply {
             setBackgroundColor(color(activity, R.color.bg))
             isFillViewport = true
-            clipToPadding = false
             isVerticalScrollBarEnabled = false
             addView(column, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
@@ -356,10 +355,17 @@ object Ui {
     }
 
     /** A top-to-bottom fade from clear to [colorTo], laid over artwork so text on it stays readable. */
-    fun fade(colorTo: Int): GradientDrawable = GradientDrawable(
-        GradientDrawable.Orientation.TOP_BOTTOM,
-        intArrayOf(colorTo and 0x00FFFFFF, colorTo and 0x00FFFFFF, (colorTo and 0x00FFFFFF) or (0xD0 shl 24), colorTo),
-    )
+    fun fade(colorTo: Int): GradientDrawable {
+        val clear = colorTo and 0x00FFFFFF
+        return GradientDrawable().apply {
+            orientation = GradientDrawable.Orientation.TOP_BOTTOM
+            // Clear over the top of the picture, solid behind the title and buttons.
+            setColors(
+                intArrayOf(clear, clear, clear or (0xB8 shl 24), clear or (0xF2 shl 24), colorTo, colorTo),
+                floatArrayOf(0f, 0.38f, 0.60f, 0.72f, 0.82f, 1f),
+            )
+        }
+    }
 
     fun spacer(ctx: Context): View = View(ctx).apply {
         layoutParams = LinearLayout.LayoutParams(0, 1, 1f)

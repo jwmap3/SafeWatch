@@ -21,6 +21,11 @@ data class Service(
     val tmdbIds: List<Int>,
     /** True when the service hides its picture from other software, so nudity cannot be detected live. */
     val protectedVideo: Boolean = true,
+    /**
+     * True when the service's phone website refuses to play and sends viewers to its own app.
+     * The browser asks these for their computer website instead, which plays in a browser.
+     */
+    val needsDesktopSite: Boolean = protectedVideo,
 ) {
     fun searchFor(query: String): String = searchUrl.replace("%s", Uri.encode(query))
 
@@ -58,6 +63,9 @@ object Services {
     val defaults = setOf("netflix", "hbomax", "prime", "disney", "hulu", "youtube")
 
     fun byId(id: String?): Service? = all.firstOrNull { it.id == id }
+
+    /** The service a web address belongs to, if any. */
+    fun forUrl(url: String?): Service? = all.firstOrNull { it.owns(url) }
 
     fun named(catalogName: String?): Service? = if (catalogName == null) null else all.firstOrNull { it.isNamed(catalogName) }
 

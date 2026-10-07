@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.safewatch.app.browser.BrowserActivity
 import com.safewatch.app.data.Catalog
+import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Services
 import com.safewatch.app.data.Title
 import com.safewatch.app.ui.Ui
@@ -80,7 +81,11 @@ class SearchScreen(private val activity: MainActivity) {
         results.addView(servicesCard(query))
 
         Thread {
-            val found = try { Catalog.search(activity.applicationContext, query) } catch (e: Exception) { null }
+            val mine = Prefs.connectedServices(activity)
+            // Titles on the viewer's own services come first.
+            val found = try {
+                Catalog.search(activity.applicationContext, query).sortedBy { if (it.serviceId in mine) 0 else 1 }
+            } catch (e: Exception) { null }
             activity.runOnUiThread {
                 if (activity.isDestroyed || number != searchNumber) return@runOnUiThread
                 titles.removeAllViews()

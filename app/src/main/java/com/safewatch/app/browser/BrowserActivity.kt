@@ -21,6 +21,7 @@ import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
@@ -34,6 +35,7 @@ import androidx.webkit.WebViewFeature
 import com.safewatch.app.MainActivity
 import com.safewatch.app.R
 import com.safewatch.app.data.Prefs
+import com.safewatch.app.data.Services
 import com.safewatch.app.data.TagStore
 import com.safewatch.app.detect.NudityDetector
 import com.safewatch.app.ui.SceneDialog
@@ -87,6 +89,7 @@ class BrowserActivity : AppCompatActivity() {
     private var fullscreenView: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private var pageScript = ""
+    private var mobileAgent = ""
     private var scriptAtDocumentStart = false
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -105,7 +108,7 @@ class BrowserActivity : AppCompatActivity() {
             loadWithOverviewMode = true
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
-        applyDesktopMode(Prefs.desktopSite(this))
+        mobileAgent = web.settings.userAgentString
         web.addJavascriptInterface(Bridge(), "SafeWatchBridge")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             // Runs in every frame before the page's own scripts, so embedded players are covered too.
@@ -116,13 +119,13 @@ class BrowserActivity : AppCompatActivity() {
         web.webChromeClient = Chrome()
 
         if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) {
-            web.loadUrl(requestedUrl(intent) ?: Prefs.lastPage(this) ?: START_PAGE)
+            load(requestedUrl(intent) ?: Prefs.lastPage(this) ?: START_PAGE)
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        requestedUrl(intent)?.let { web.loadUrl(it) }
+        requestedUrl(intent)?.let { load(it) }
     }
 
     /**
@@ -261,17 +264,24 @@ class BrowserActivity : AppCompatActivity() {
     private fun go(input: String) {
         val text = input.trim()
         if (text.isEmpty()) return
-        web.loadUrl(toUrl(text))
+        load(toUrl(text))
         web.requestFocus()
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(address.windowToken, 0)
     }
 
-    private fun applyDesktopMode(on: Boolean) {
-        val normal = android.webkit.WebSettings.getDefaultUserAgent(this)
-        web.settings.userAgentString = if (!on) normal else {
-            val chromeVersion = Regex("Chrome/(\\S+)").find(normal)?.groupValues?.get(1) ?: "120.0.0.0"
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeVersion Safari/537.36"
-        }
+    /** Whether a page should be asked for as a computer would: always if the viewer chose so, and for services that need it. */
+    private fun wantsDesktop(url: String): Boolean =
+        Prefs.desktopSite(this) || Services.forUrl(url)?.needsDesktopSite == true
+
+    private fun agentFor(url: String): String {
+        if (!wantsDesktop(url)) return mobileAgent
+        val chromeVersion = Regex("Chrome/(\\S+)").find(mobileAgent)?.groupValues?.get(1) ?: "120.0.0.0"
+        return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeVersion Safari/537.36"
+    }
+
+    private fun load(url: String) {
+        web.settings.userAgentString = agentFor(url)
+        web.loadUrl(url)
     }
 
     private fun showMenu(anchor: View) {
@@ -286,8 +296,7 @@ class BrowserActivity : AppCompatActivity() {
                     1 -> web.reload()
                     2 -> {
                         Prefs.setDesktopSite(this@BrowserActivity, !desktop)
-                        applyDesktopMode(!desktop)
-                        web.reload()
+                        web.url?.let { load(it) }
                     }
                     3 -> Ui.sendToTv(this@BrowserActivity)
                     4 -> {
@@ -303,10 +312,35 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     private inner class Client : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            val url = request.url.toString()
+            val scheme = request.url.scheme.orEmpty()
+            if (scheme != "http" && scheme != "https") {
+                // Links that try to hand over to another app (a service's own app, the Play Store)
+                // are not followed: watching has to stay here for the filters to apply. If the
+                // link names a web page to use instead, that page is opened.
+                if (scheme == "intent") {
+                    try {
+                        Intent.parseUri(url, Intent.URI_INTENT_SCHEME).getStringExtra("browser_fallback_url")
+                            ?.takeIf { it.startsWith("http") }?.let { load(it) }
+                    } catch (e: Exception) {
+                        // Not a well-formed link; ignore it.
+                    }
+                }
+                return true
+            }
+            // Moving to a site that needs the other kind of page: ask again the right way.
+            if (request.isForMainFrame && agentFor(url) != view.settings.userAgentString) {
+                load(url)
+                return true
+            }
+            return false
+        }
+
         override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
             pageKey = MediaKey.forUrl(url)
             version.incrementAndGet()
-            if (!address.hasFocus()) address.setText(url)
+            if (!address.hasFocus()) address.setText(if (url == START_PAGE) "" else url)
             if (markStartMs != null) {
                 markStartMs = null
                 markButton.text = MARK_START
@@ -479,7 +513,7 @@ class BrowserActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_URL = "url"
-        const val START_PAGE = "https://duckduckgo.com/"
+        const val START_PAGE = "file:///android_asset/start.html"
         const val WEB_SEARCH = "https://duckduckgo.com/?q="
         private const val MARK_START = "Mark scene"
         private const val MARK_END = "End scene"

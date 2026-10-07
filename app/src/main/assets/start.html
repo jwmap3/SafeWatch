@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- The page the Browser tab opens on: a search box and nothing else. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafeWatch</title>
+<style>
+  :root { --bg: #F5F5F7; --text: #0E0E11; --muted: #6B6B73; --fill: #E8E8ED; --accent: #2563EB; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #09090C; --text: #F4F4F6; --muted: #9A9AA3; --fill: #202026; --accent: #5B8CFF; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, Roboto, sans-serif;
+         display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 24px 18vh; }
+  h1 { font-size: 30px; letter-spacing: -0.02em; margin: 0 0 8px; }
+  p { color: var(--muted); font-size: 15px; line-height: 1.45; margin: 0 0 24px; text-align: center; max-width: 30em; }
+  form { width: 100%; max-width: 520px; }
+  input { width: 100%; font: inherit; font-size: 17px; color: var(--text); background: var(--fill);
+          border: 0; border-radius: 14px; padding: 14px 16px; outline: none; }
+  input:focus { box-shadow: 0 0 0 2px var(--accent); }
+  input::placeholder { color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1>Browse anything</h1>
+  <p>Video you play here is filtered the same way as everything else in SafeWatch.</p>
+  <form action="https://duckduckgo.com/" method="get">
+    <input name="q" type="search" placeholder="Search the web" autocomplete="off" aria-label="Search the web">
+  </form>
+</body>
+</html>

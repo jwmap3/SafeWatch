@@ -8,8 +8,21 @@
   if (!B) return;
 
   // Where well-known players draw their captions when they do not use text tracks.
-  var CAPTION_SELECTORS = '.ytp-caption-segment, .captions-text, .player-timedtext, ' +
-    '.vjs-text-track-cue, .jw-text-track-cue, .shaka-text-container span, .plyr__caption';
+  var CAPTION_SELECTORS = [
+    '.ytp-caption-segment',                 // YouTube
+    '.player-timedtext-text-container',     // Netflix
+    '[data-testid="CueBoxContainer"]',      // HBO Max
+    '.atvwebplayersdk-captions-text',       // Prime Video
+    '.dss-subtitle-renderer-cue',           // Disney+
+    '.hive-subtitle-renderer-cue',
+    '.CaptionBox',                          // Hulu
+    '.video-player__subtitles',             // Peacock
+    '.captions-text',
+    '.vjs-text-track-cue',                  // players built on video.js, JW Player, Shaka, Plyr
+    '.jw-text-track-cue',
+    '.shaka-text-container span',
+    '.plyr__caption'
+  ].join(', ');
   var TICK_MS = 100;
   var DOM_MUTE_MS = 1500;
 

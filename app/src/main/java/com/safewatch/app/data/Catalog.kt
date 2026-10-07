@@ -165,7 +165,7 @@ object Catalog {
         return Title(
             id = "tvmaze:" + show.getInt("id"),
             name = name,
-            year = show.optString("premiered").take(4),
+            year = show.optStringOrNull("premiered").orEmpty().take(4),
             kind = "Series",
             poster = show.optJSONObject("image")?.optStringOrNull("original"),
             overview = plain(show.optString("summary")),
@@ -257,7 +257,7 @@ object Catalog {
             val arr = JSONArray(get("$TVMAZE/shows/${parts[1]}/episodes"))
             return (0 until arr.length()).map {
                 val o = arr.getJSONObject(it)
-                Episode(o.optInt("season"), o.optInt("number"), o.optString("name"), o.optString("airdate"))
+                Episode(o.optInt("season"), o.optInt("number"), o.optStringOrNull("name").orEmpty(), o.optStringOrNull("airdate").orEmpty())
             }
         }
         if (parts[0] == "tmdb" && parts[1] == "tv") {

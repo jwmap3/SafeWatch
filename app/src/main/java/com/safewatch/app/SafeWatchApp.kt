@@ -3,6 +3,8 @@ package com.safewatch.app
 import android.app.Application
 import android.net.http.HttpResponseCache
 import com.safewatch.app.data.Prefs
+import com.safewatch.app.detect.ModelSetup
+import com.safewatch.core.Strictness
 import java.io.File
 
 class SafeWatchApp : Application() {
@@ -15,5 +17,6 @@ class SafeWatchApp : Application() {
         } catch (e: Exception) {
             // The app works without it, only slower.
         }
+        if (Prefs.settings(this).nudity != Strictness.OFF) ModelSetup.ensure(this)
     }
 }

@@ -89,10 +89,16 @@ class NudityDetector private constructor(
         }
 
         /** Copies a model file the viewer picked into the app. Returns whether it loads. */
-        fun install(ctx: Context, source: Uri): Boolean {
+        fun install(ctx: Context, source: Uri): Boolean =
+            install(ctx) { ctx.contentResolver.openInputStream(source)!! }
+
+        /** Puts a downloaded model file in place. Returns whether it loads. */
+        fun install(ctx: Context, source: File): Boolean = install(ctx) { source.inputStream() }
+
+        private fun install(ctx: Context, open: () -> java.io.InputStream): Boolean {
             val target = modelFile(ctx)
             return try {
-                ctx.contentResolver.openInputStream(source)!!.use { input ->
+                open().use { input ->
                     target.outputStream().use { input.copyTo(it) }
                 }
                 val detector = open(ctx)

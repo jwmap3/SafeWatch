@@ -19,26 +19,32 @@ adb logcat -c
 
 start;                    shot 01-home 16
 swipe_up;                 shot 02-home-shelves 3
-swipe_up;                 shot 03-home-lower 3
 start;                    sleep 5
-tap "Details";            shot 04-title 8
-swipe_up;                 shot 05-title-episodes 3
+tap "Details";            shot 03-title 8
 back
 tap "Search";             sleep 2
 adb shell input text "lanterns"; adb shell input keyevent 66
-shot 06-search 8
-tap "Filters";            shot 07-filters 3
-swipe_up;                 shot 08-filters-lower 3
-tap "Browser";            shot 09-browser 10
+shot 04-search 8
+tap "Lanterns";           shot 05-lanterns 8
+swipe_up;                 shot 06-lanterns-episodes 3
+adb shell input swipe 540 600 540 1700 300; sleep 1
+tap "Watch on HBO Max";   shot 07-watch-hbomax 16
+tap "Home";               sleep 2
+tap "Filters";            shot 08-filters 3
+tap "Browser";            sleep 3
 tap "Home";               sleep 2
 tap "Home";               sleep 2
-tap "Watch";              shot 10-watch 14
+tap "Watch";              shot 09-watch-netflix 16
+tap "Home";               sleep 2
+tap "YouTube";            shot 10-youtube 14
+tap "Home";               sleep 2
 
 adb shell cmd uimode night yes
 start;                    shot 11-home-night 8
 tap "Details";            shot 12-title-night 6
 back
 tap "Filters";            shot 13-filters-night 3
+tap "Browser";            shot 14-browser-night 6
 adb shell cmd uimode night no
 
 adb logcat -d -b crash > "$OUT/crash.txt"

@@ -7,7 +7,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
 import com.safewatch.app.data.Prefs
-import com.safewatch.app.detect.NudityDetector
+import com.safewatch.app.detect.ModelSetup
 import com.safewatch.app.ui.Ui
 import com.safewatch.core.Action
 import com.safewatch.core.FilterSettings
@@ -64,7 +64,8 @@ class FiltersScreen(private val activity: MainActivity) {
         // Nudity
         column.addView(Ui.sectionHeader(ctx, "Nudity"))
         val nudityNote = Ui.caption(ctx, nudityText(settings.nudity))
-        val installed = NudityDetector.isInstalled(ctx)
+        val model = ModelSetup.stateFor(ctx)
+        val installed = model == ModelSetup.State.READY
         column.addView(Ui.card(ctx).apply {
             addView(Ui.inset(ctx, Ui.segmented(ctx, levelNames, levels.indexOf(settings.nudity)) {
                 update(settings.copy(nudity = levels[it]))
@@ -77,14 +78,21 @@ class FiltersScreen(private val activity: MainActivity) {
                 }, LinearLayout.LayoutParams(Ui.dp(ctx, 150), -2))
             })
             addView(Ui.divider(ctx))
-            addView(Ui.row(ctx, "Detection model", if (installed) "Installed" else "Not installed") {
-                activity.pickModel.launch(arrayOf("*/*"))
+            addView(Ui.row(ctx, "Detection", when (model) {
+                ModelSetup.State.READY -> "Ready"
+                ModelSetup.State.DOWNLOADING -> "Setting up…"
+                else -> "Not set up"
+            }) {
+                when (model) {
+                    ModelSetup.State.READY -> Ui.toast(ctx, "Nudity detection is ready")
+                    ModelSetup.State.DOWNLOADING -> Ui.toast(ctx, "Still downloading. Check back in a moment.")
+                    else -> setUpDetection()
+                }
             })
         })
         column.addView(nudityNote)
         if (!installed) column.addView(Ui.caption(ctx,
-            "Automatic detection needs the NudeNet model file (320n.onnx). Tap Detection model to import it. " +
-                "Scenes you mark yourself work without it."))
+            "Automatic detection downloads a small file (about 11 MB) the first time. Tap Detection if it has not finished."))
 
         // Catalog
         val hasKey = Prefs.catalogKey(ctx).isNotEmpty()
@@ -105,6 +113,23 @@ class FiltersScreen(private val activity: MainActivity) {
         })
         column.addView(Ui.caption(ctx, "Automatic follows your phone's day and night setting."))
     }
+
+    /** Offers to download the detection file again, or to pick one already on the phone. */
+    private fun setUpDetection() {
+        AlertDialog.Builder(activity)
+            .setTitle("Set up nudity detection")
+            .setMessage("SafeWatch needs to download its detection file, about 11 MB. It is only downloaded once.")
+            .setPositiveButton("Download") { _, _ ->
+                ModelSetup.ensure(activity)
+                rebuild()
+            }
+            .setNeutralButton("Choose a file") { _, _ -> activity.pickModel.launch(arrayOf("*/*")) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Called when the tab comes into view, so a download that finished meanwhile shows as ready. */
+    fun onShown() = rebuild()
 
     private fun count(words: Set<String>): String = if (words.isEmpty()) "None" else words.size.toString()
 

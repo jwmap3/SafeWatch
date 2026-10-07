@@ -53,6 +53,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk device-out/SafeWatch-dev.apk || true
           gh release view device-check >/dev/null 2>&1 || gh release create device-check --prerelease --target dev --title "Device check (development)" --notes "Screens and reports from the automatic test phone. Not a download for use."
-          gh release upload device-check device-out/* --clobber
+          for f in device-out/*; do
+            gh release upload device-check "$f" --clobber || { sleep 5; gh release upload device-check "$f" --clobber; } || echo "could not upload $f"
+          done

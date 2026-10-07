@@ -111,6 +111,7 @@ class MainActivity : AppCompatActivity() {
             val text = TextView(this).apply {
                 this.text = label
                 textSize = 11f
+                gravity = Gravity.CENTER
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 setPadding(0, Ui.dp(context, 3), 0, 0)
             }
@@ -138,6 +139,7 @@ class MainActivity : AppCompatActivity() {
         search.view.visibility = if (which == TAB_SEARCH) View.VISIBLE else View.GONE
         filters.view.visibility = if (which == TAB_FILTERS) View.VISIBLE else View.GONE
         if (which == TAB_SEARCH) search.onShown() else search.onHidden()
+        if (which == TAB_FILTERS) filters.onShown()
         val order = listOf(TAB_HOME, TAB_SEARCH, TAB_BROWSER, TAB_FILTERS)
         tabViews.forEachIndexed { i, (icon, text) ->
             val color = Ui.color(this, if (order[i] == which) R.color.accent else R.color.text_secondary)
