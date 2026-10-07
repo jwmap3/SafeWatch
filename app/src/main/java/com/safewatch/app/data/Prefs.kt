@@ -69,4 +69,9 @@ object Prefs {
 
     fun setConnectedServices(ctx: Context, ids: Set<String>) =
         prefs(ctx).edit().putStringSet("services", ids).apply()
+
+    /** The viewer's own key for the movie catalog; empty when none has been added. */
+    fun catalogKey(ctx: Context): String = prefs(ctx).getString("catalogKey", "")!!.trim()
+
+    fun setCatalogKey(ctx: Context, key: String) = prefs(ctx).edit().putString("catalogKey", key.trim()).apply()
 }

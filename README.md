@@ -24,8 +24,14 @@ filters:
 - "Mark scene" lets you mark the start and end of a scene yourself and choose
   blur, skip or mute. The app remembers it for that page.
 
-**Search.** Type a title on the home screen to get one-tap searches on each of
-your services. A web address typed there opens directly.
+**Search and catalog.** Type a title on the home screen to search every one of
+your services at once: each service gets a row that opens its own results for
+that title. A web address typed there opens directly.
+
+With a free key from [The Movie Database](https://www.themoviedb.org/) added
+under Filters > Movie catalog, the home screen also shows a shelf of this
+week's popular movies and shows, search lists matching titles with posters, and
+choosing a title shows which of your services include it.
 
 **Video files.** "Open a video file" plays a file from the phone. Load the
 film's subtitle file (.srt or .vtt) to mute cursing. "Scan" checks the whole
@@ -57,6 +63,9 @@ can pick one under Filters > Appearance.
 - **Detection makes mistakes.** Expect some misses and some false alarms.
 - **Service search links** were written from memory of each site's address
   format and need checking on a phone.
+- **The catalog** has not been run against the live service yet, because it
+  needs a key. Availability is for subscription and free viewing in the phone's
+  country; a title may still be there to rent or buy.
 
 ## Nudity detection model
 
@@ -86,6 +95,7 @@ Not yet built into an APK or run on a phone. What has been checked so far:
 | `app/src/main/assets/safewatch.js` | The script the browser adds to every page to control its video player. |
 | `app/.../browser/` | The built-in browser and its live detection. |
 | `app/.../player/` | The video file player and the ahead-of-time scan. |
+| `app/.../data/` | Saved settings, marked scenes, the list of streaming services, the movie catalog. |
 | `app/.../ui/` | The design kit: colours, cards, rows, controls. Colours are in `res/values` (day) and `res/values-night`. |
 | `tools/browser-test/` | The browser script test. |
 

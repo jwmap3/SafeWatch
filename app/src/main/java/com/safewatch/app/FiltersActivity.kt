@@ -5,7 +5,6 @@ import android.text.InputType
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -98,6 +97,16 @@ class FiltersActivity : AppCompatActivity() {
             "Automatic detection needs the NudeNet model file (320n.onnx). Tap Detection model to import it. " +
                 "Scenes you mark yourself work without it."))
 
+        // Catalog
+        val hasKey = Prefs.catalogKey(this).isNotEmpty()
+        column.addView(Ui.sectionHeader(this, "Movie catalog"))
+        column.addView(Ui.card(this).apply {
+            addView(Ui.row(context, "Catalog key", if (hasKey) "Added" else "Not added") { editCatalogKey() })
+        })
+        column.addView(Ui.caption(this,
+            "Shows popular movies and shows on the home screen, and tells you which of your services has a title. " +
+                "Uses a free key from themoviedb.org (Settings > API)."))
+
         // Appearance
         column.addView(Ui.sectionHeader(this, "Appearance"))
         column.addView(Ui.card(this).apply {
@@ -124,6 +133,27 @@ class FiltersActivity : AppCompatActivity() {
         Strictness.LOW -> "Hides explicit nudity."
         Strictness.MEDIUM -> "Hides explicit nudity, bare breasts and bare buttocks."
         Strictness.HIGH -> "Also hides swimwear, underwear and shirtless scenes."
+    }
+
+    private fun editCatalogKey() {
+        val input = EditText(this).apply {
+            setText(Prefs.catalogKey(context))
+            hint = "Paste your TMDB key"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val holder = FrameLayout(this).apply {
+            setPadding(Ui.dp(context, 20), Ui.dp(context, 8), Ui.dp(context, 20), 0)
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Catalog key")
+            .setView(holder)
+            .setPositiveButton("Save") { _, _ ->
+                Prefs.setCatalogKey(this, input.text.toString())
+                build()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun editWords(title: String, words: Set<String>, onSave: (Set<String>) -> Unit) {
