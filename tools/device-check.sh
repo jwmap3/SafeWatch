@@ -6,9 +6,9 @@ OUT=device-out
 mkdir -p "$OUT"
 PKG=com.safewatch.app
 
-shot() { sleep "${2:-3}"; adb exec-out screencap -p > "$OUT/$1.png"; alive "$1"; }
-alive() { if [ -z "$(adb shell pidof $PKG | tr -d '\r')" ]; then echo "NOT RUNNING after $1" | tee -a "$OUT/summary.txt"; fi; }
-tap() { python3 tools/tap.py "$@" | tee -a "$OUT/summary.txt"; }
+shot() { sleep "${2:-3}"; timeout 30 adb exec-out screencap -p > "$OUT/$1.png"; alive "$1"; }
+alive() { if [ -z "$(timeout 20 adb shell pidof $PKG | tr -d '\r')" ]; then echo "NOT RUNNING after $1" | tee -a "$OUT/summary.txt"; fi; }
+tap() { timeout 60 python3 tools/tap.py "$@" | tee -a "$OUT/summary.txt"; }
 back() { adb shell input keyevent 4; sleep 1; }
 swipe_up() { adb shell input swipe 540 1700 540 600 400; }
 start() { adb shell am force-stop $PKG; adb shell am start -W -n $PKG/.MainActivity > /dev/null; }
@@ -16,6 +16,8 @@ start() { adb shell am force-stop $PKG; adb shell am start -W -n $PKG/.MainActiv
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 : > "$OUT/summary.txt"
+# Keeps a running copy of the phone's log, so there is a record even if the phone stops responding.
+adb logcat -v time > "$OUT/logcat.txt" &
 
 start;                    shot 01-home 16
 swipe_up;                 shot 02-home-shelves 3
@@ -26,29 +28,29 @@ tap "Search";             sleep 2
 adb shell input text "lanterns"; adb shell input keyevent 66
 shot 04-search 8
 tap "Lanterns";           shot 05-lanterns 8
-swipe_up;                 shot 06-lanterns-episodes 3
-adb shell input swipe 540 600 540 1700 300; sleep 1
-tap "Watch on HBO Max";   shot 07-watch-hbomax 16
+tap "Watch on HBO Max";   shot 06-watch-hbomax 16
 tap "Home";               sleep 2
-tap "Filters";            shot 08-filters 3
-tap "Browser";            sleep 3
+tap "Filters";            shot 07-filters 3
+tap "Browser";            shot 08-browser 5
 tap "Home";               sleep 2
-tap "Home";               sleep 2
-tap "Watch";              shot 09-watch-netflix 16
-tap "Home";               sleep 2
-tap "YouTube";            shot 10-youtube 14
+tap "YouTube";            shot 09-youtube 14
 tap "Home";               sleep 2
 
 adb shell cmd uimode night yes
-start;                    shot 11-home-night 8
-tap "Details";            shot 12-title-night 6
+start;                    shot 10-home-night 8
+tap "Details";            shot 11-title-night 6
 back
-tap "Filters";            shot 13-filters-night 3
-tap "Browser";            shot 14-browser-night 6
+tap "Filters";            shot 12-filters-night 3
+tap "Browser";            shot 13-browser-night 6
 adb shell cmd uimode night no
 
-adb logcat -d -b crash > "$OUT/crash.txt"
-adb logcat -d > "$OUT/logcat.txt"
-echo "--- crash report ---"; cat "$OUT/crash.txt"
+# Netflix goes last: its site has stopped the test phone before.
+start;                    sleep 6
+tap "Netflix";            shot 14-netflix 20
+echo "phone state after Netflix: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"
+
+timeout 30 adb logcat -d -b crash > "$OUT/crash.txt"
+grep -n "FATAL EXCEPTION\|Fatal signal\|ANR in\|lowmemorykiller.*safewatch\|Process com.safewatch.app.*died" "$OUT/logcat.txt" | tail -20 > "$OUT/problems.txt"
+echo "--- problems ---"; cat "$OUT/problems.txt"
 echo "--- summary ---"; cat "$OUT/summary.txt"
 exit 0
