@@ -192,6 +192,8 @@ class MediaKeyTest {
         assertEquals(a, MediaKey.forUrl("https://m.youtube.com/watch?v=abc123"))
         assertEquals(a, MediaKey.forUrl("https://youtu.be/abc123?si=zzz"))
         assertEquals("web:example.com/video/9", MediaKey.forUrl("https://Example.com/video/9/#top"))
+        assertEquals("web:netflix.com/watch/8123", MediaKey.forUrl("https://www.netflix.com/watch/8123?trackId=14170286&tctx=1%2C2"))
+        assertEquals("web:example.com/play?id=7", MediaKey.forUrl("https://example.com/play?ref=home&id=7&autoplay=1"))
     }
 
     @Test fun fileNamesAreSafe() {

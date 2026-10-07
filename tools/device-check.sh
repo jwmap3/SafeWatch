@@ -47,10 +47,15 @@ adb shell cmd uimode night no
 # Netflix goes last: its site has stopped the test phone before.
 start;                    sleep 6
 tap "Netflix";            shot 14-netflix 20
-echo "phone state after Netflix: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"
+echo "phone state after Netflix home: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"
+tap "Home";               sleep 3
+tap "Watch";              shot 15-netflix-title 25
+echo "phone state after Netflix title: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"
 
-timeout 30 adb logcat -d -b crash > "$OUT/crash.txt"
-grep -n "FATAL EXCEPTION\|Fatal signal\|ANR in\|lowmemorykiller.*safewatch\|Process com.safewatch.app.*died" "$OUT/logcat.txt" | tail -20 > "$OUT/problems.txt"
+echo "crash log:" > "$OUT/crash.txt"
+timeout 30 adb logcat -d -b crash >> "$OUT/crash.txt"
+echo "problems found in the log:" > "$OUT/problems.txt"
+grep -n "FATAL EXCEPTION\|Fatal signal\|ANR in\|Process com.safewatch.app.*died\|has died" "$OUT/logcat.txt" | tail -30 >> "$OUT/problems.txt"
 echo "--- problems ---"; cat "$OUT/problems.txt"
 echo "--- summary ---"; cat "$OUT/summary.txt"
 exit 0
