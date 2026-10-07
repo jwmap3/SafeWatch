@@ -15,6 +15,17 @@ android {
         versionName = "0.1"
     }
 
+    // The test build is always signed with the key kept in this folder, so a
+    // newer download installs over the one already on the phone.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release { isMinifyEnabled = false }
     }

@@ -8,6 +8,7 @@ captures/
 *.apk
 *.aab
 *.keystore
+!app/debug.keystore
 *.jks
 # Detection models are downloaded separately, not stored in the repository.
 *.onnx
