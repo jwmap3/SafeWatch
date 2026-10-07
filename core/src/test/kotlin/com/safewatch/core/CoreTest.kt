@@ -201,6 +201,9 @@ class DetectionTest {
         assertEquals(0, NudeLabels.levelFor(NudeLabels.names.indexOf("FACE_FEMALE")))
         assertEquals(0, NudeLabels.levelFor(99))
         assertEquals(0, NudeLabels.maxLevel(emptyList()))
+        val face = listOf(Detection(NudeLabels.names.indexOf("FACE_MALE"), 0.9f, 0f, 0f, 1f, 1f))
+        assertEquals(0, NudeLabels.maxLevel(face))
+        assertEquals(3, NudeLabels.maxLevel(face, facesCount = true))
     }
 }
 

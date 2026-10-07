@@ -23,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -390,6 +391,18 @@ object Ui {
      * the already filtered picture and sound, so every filter keeps working on the TV.
      */
     fun sendToTv(activity: Activity) {
+        AlertDialog.Builder(activity)
+            .setTitle("Send to TV")
+            .setMessage("Your phone's screen casting works with Chromecast, Roku, Fire TV and most smart TVs. " +
+                "The TV shows exactly what is on this screen, filters included.\n\n" +
+                "Netflix-style services often show a black picture when cast wirelessly. An HDMI adapter always works. " +
+                "Apple TV cannot be reached from an Android phone this way.")
+            .setPositiveButton("Cast screen") { _, _ -> openCastPanel(activity) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun openCastPanel(activity: Activity) {
         for (action in listOf(Settings.ACTION_CAST_SETTINGS, Settings.ACTION_WIRELESS_SETTINGS)) {
             try {
                 activity.startActivity(Intent(action))

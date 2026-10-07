@@ -11,6 +11,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.safewatch.app.browser.BrowserActivity
+import com.safewatch.app.browser.WatchActivity
 import com.safewatch.app.data.Catalog
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Services
@@ -137,7 +138,7 @@ class SearchScreen(private val activity: MainActivity) {
         val card = Ui.card(context)
         Services.connected(context).forEach { service ->
             card.addView(Ui.row(context, service.name, leading = Ui.monogram(context, service.name)) {
-                BrowserActivity.open(activity, service.searchFor(query))
+                WatchActivity.open(activity, service.searchFor(query), service.name)
             })
             card.addView(Ui.divider(context, 60))
         }

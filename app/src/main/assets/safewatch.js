@@ -27,7 +27,7 @@
   var DOM_MUTE_MS = 1500;
 
   var S = window.__safewatch = {
-    version: -1, language: false, tags: [], domMuteUntil: 0, lastDomText: '', ticks: 0
+    version: -1, language: false, tags: [], domMuteUntil: 0, lastDomText: '', ticks: 0, filledAt: 0
   };
   var states = new WeakMap();
 
@@ -141,6 +141,45 @@
     }
   }
 
+  // Netflix's player stops with an error if its video is moved directly, so on Netflix
+  // skipping goes through the player's own controls. Everywhere else the video is moved itself.
+  function seekTo(video, seconds) {
+    try {
+      if (/(^|\.)netflix\.com$/.test(location.hostname) && window.netflix) {
+        var players = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
+        var ids = players.getAllPlayerSessionIds();
+        if (ids.length) { players.getVideoPlayerBySessionId(ids[0]).seek(Math.round(seconds * 1000)); return; }
+      }
+    } catch (e) { /* fall through to the ordinary way */ }
+    video.currentTime = seconds;
+  }
+
+  // The box around a video that also holds its controls and captions: the furthest
+  // ancestor that is still the same size as the video.
+  function playerBox(video) {
+    var box = video, w = video.clientWidth, h = video.clientHeight;
+    for (var el = video.parentElement; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+      if (Math.abs(el.clientWidth - w) > w * 0.06 || Math.abs(el.clientHeight - h) > h * 0.06) break;
+      box = el;
+    }
+    return box;
+  }
+
+  // Asks the page to show its player full screen. Browsers only allow this just after
+  // the viewer has touched the page, so it is tried now and then and simply does
+  // nothing when it is not allowed.
+  function fillScreen(video) {
+    var now = Date.now();
+    if (document.fullscreenElement || now - S.filledAt < 2500) return;
+    S.filledAt = now;
+    if (video.clientWidth >= window.innerWidth * 0.94 && video.clientHeight >= window.innerHeight * 0.94) return;
+    try {
+      var box = playerBox(video);
+      var asked = box.requestFullscreen ? box.requestFullscreen() : null;
+      if (asked && asked.catch) asked.catch(function () {});
+    } catch (e) { /* not allowed right now */ }
+  }
+
   function tick() {
     S.ticks++;
     try { if (B.version() !== S.version) loadConfig(); } catch (e) { return; }
@@ -170,7 +209,7 @@
       if (skipTo >= 0) {
         var target = skipTo / 1000;
         if (isFinite(video.duration)) target = Math.min(target, video.duration);
-        if (target > video.currentTime) video.currentTime = target;
+        if (target > video.currentTime) seekTo(video, target);
         mute = true; // stay silent until the jump lands
       }
       setMuted(video, st, mute);
@@ -182,7 +221,14 @@
       }
     }
     // Tells the app a video is playing and where it is, for scene marking and live detection.
-    if (main) { try { B.beat(main.currentTime * 1000); } catch (e) { /* ignore */ } }
+    if (main) {
+      try {
+        // A video the page itself keeps silent (a preview behind a title's page) is not the feature.
+        var silent = main.muted && !stateOf(main).mutedByUs;
+        B.beat(main.currentTime * 1000, silent ? 0 : main.clientWidth / Math.max(1, window.innerWidth));
+        if (B.fullPicture && B.fullPicture()) fillScreen(main);
+      } catch (e) { /* ignore */ }
+    }
   }
 
   setInterval(tick, TICK_MS);

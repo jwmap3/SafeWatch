@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.safewatch.app.browser.BrowserActivity
+import com.safewatch.app.browser.WatchActivity
 import com.safewatch.app.data.Catalog
 import com.safewatch.app.data.Episode
 import com.safewatch.app.data.Prefs
@@ -234,7 +235,8 @@ class TitleActivity : AppCompatActivity() {
                 // Catalogs do not give addresses for single episodes, so the last step is done on the service's page.
                 Ui.toast(ctx, "Choose season ${episode.season}, episode ${episode.number} on the page")
             }
-            BrowserActivity.open(ctx, url)
+            val label = if (episode == null) title.name else "${title.name}  \u00B7  S${episode.season} E${episode.number}"
+            WatchActivity.open(ctx, url, label)
         }
     }
 }

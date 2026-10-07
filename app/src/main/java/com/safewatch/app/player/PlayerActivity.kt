@@ -235,8 +235,9 @@ class PlayerActivity : AppCompatActivity() {
         ) ?: return
         lastCheckAt = now
         checking = true
+        val testing = Prefs.testingBlur(this)
         background.execute {
-            val level = try { det.maxLevel(frame) } catch (e: Exception) { 0 }
+            val level = try { det.maxLevel(frame, testing) } catch (e: Exception) { 0 }
             ui.post {
                 checking = false
                 if (level > 0 && settings.nudity.filters(level)) liveHideUntil = SystemClock.elapsedRealtime() + LIVE_HOLD_MS

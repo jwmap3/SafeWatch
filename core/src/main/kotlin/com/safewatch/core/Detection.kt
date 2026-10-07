@@ -79,5 +79,12 @@ object NudeLabels {
     /** 0 means the class is never filtered (faces, feet and so on). */
     fun levelFor(classId: Int): Int = names.getOrNull(classId)?.let { levels[it] } ?: 0
 
-    fun maxLevel(detections: List<Detection>): Int = detections.maxOfOrNull { levelFor(it.classId) } ?: 0
+    /**
+     * The highest filter level among what was detected. With [facesCount], a face counts
+     * as the strongest level: that is the app's "test the blur" switch, which lets the
+     * blur be seen working on any video with people in it.
+     */
+    fun maxLevel(detections: List<Detection>, facesCount: Boolean = false): Int = detections.maxOfOrNull {
+        if (facesCount && names.getOrNull(it.classId)?.startsWith("FACE_") == true) 3 else levelFor(it.classId)
+    } ?: 0
 }

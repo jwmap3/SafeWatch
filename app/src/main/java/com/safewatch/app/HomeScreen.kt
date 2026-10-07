@@ -8,7 +8,7 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.safewatch.app.browser.BrowserActivity
+import com.safewatch.app.browser.WatchActivity
 import com.safewatch.app.data.Catalog
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Services
@@ -93,7 +93,7 @@ class HomeScreen(private val activity: MainActivity) {
             setPadding(Ui.dp(context, 20), Ui.dp(context, 14), Ui.dp(context, 12), 0)
         }
         for (service in Services.connected(activity)) {
-            strip.addView(Ui.chip(activity, service.name, strong = true) { BrowserActivity.open(activity, service.homeUrl) })
+            strip.addView(Ui.chip(activity, service.name, strong = true) { WatchActivity.open(activity, service.homeUrl, service.name) })
         }
         strip.addView(Ui.chip(activity, "Edit") { activity.editServices { refresh() } })
         return HorizontalScrollView(activity).apply {

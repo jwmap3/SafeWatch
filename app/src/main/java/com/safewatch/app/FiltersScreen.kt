@@ -6,7 +6,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
-import com.safewatch.app.browser.BrowserActivity
+import com.safewatch.app.browser.WatchActivity
 import com.safewatch.app.data.Accounts
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Services
@@ -53,7 +53,7 @@ class FiltersScreen(private val activity: MainActivity) {
             services.forEach { service ->
                 val signedIn = Accounts.isSignedIn(ctx, service)
                 addView(Ui.row(ctx, service.name, if (signedIn) "Signed in" else "Sign in", leading = Ui.monogram(ctx, service.name)) {
-                    BrowserActivity.signIn(ctx, service)
+                    WatchActivity.signIn(ctx, service)
                 })
                 addView(Ui.divider(ctx, 60))
             }
@@ -118,6 +118,16 @@ class FiltersScreen(private val activity: MainActivity) {
             })
         })
         column.addView(nudityNote)
+        if (installed && settings.nudity != Strictness.OFF) {
+            column.addView(Ui.sectionHeader(ctx, ""))
+            column.addView(Ui.card(ctx).apply {
+                addView(Ui.row(ctx, "Test the blur", chevron = false) {
+                    Prefs.startBlurTest(ctx)
+                    Ui.toast(ctx, "For two minutes, faces are blurred too. Play any video with people in it.")
+                })
+            })
+            column.addView(Ui.caption(ctx, "A way to see the blur working without playing anything explicit."))
+        }
         if (!installed) column.addView(Ui.caption(ctx,
             "Automatic detection downloads a small file (about 11 MB) the first time. Tap Detection if it has not finished."))
 

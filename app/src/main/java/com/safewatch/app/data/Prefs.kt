@@ -89,4 +89,10 @@ object Prefs {
 
     fun setSignInSeen(ctx: Context, serviceId: String, seen: Boolean) =
         prefs(ctx).edit().putBoolean("signedIn.$serviceId", seen).apply()
+
+    /** True for two minutes after "Test the blur" is tapped: faces are blurred so the blur can be seen working. */
+    fun testingBlur(ctx: Context): Boolean = System.currentTimeMillis() < prefs(ctx).getLong("testBlurUntil", 0)
+
+    fun startBlurTest(ctx: Context) =
+        prefs(ctx).edit().putLong("testBlurUntil", System.currentTimeMillis() + 2 * 60 * 1000).apply()
 }

@@ -16,6 +16,7 @@ const server = http.createServer((req, res) => {
   const port = server.address().port;
   const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const page = await browser.newPage();
+  const pageErrors = []; page.on('pageerror', (e) => pageErrors.push(String(e)));
   // Stand-in for the Android side of the bridge.
   await page.addInitScript(() => {
     window.__beats = []; window.__ver = 1;
@@ -25,7 +26,8 @@ const server = http.createServer((req, res) => {
       config: () => JSON.stringify({ version: window.__ver, language: true, tags: window.__tags }),
       muteWindows: (s, e, text) => JSON.stringify(/badword/i.test(text) ? [[s, e]] : []),
       profane: (text) => /badword/i.test(text),
-      beat: (t) => window.__beats.push(t),
+      beat: (t, share) => { window.__beats.push(t); window.__share = share; },
+      fullPicture: () => !!window.__full,
     };
   });
   await page.addInitScript(script);
@@ -63,6 +65,12 @@ const server = http.createServer((req, res) => {
   // New tags arrive when the app bumps the version.
   await page.evaluate(() => { const v = document.getElementById('v'); window.__tags = [{ s: 0, e: 30000, a: 'blur' }]; window.__ver = 2; });
   await page.waitForTimeout(400); r = await at(0); check('picks up changed tags', /blur/.test(r.filter));
+  await page.evaluate(() => { document.getElementById('caps').innerHTML = ''; const v = document.getElementById('v'); v.currentTime = 5; return v.play(); }); await page.waitForTimeout(2000);
+  const share = await page.evaluate(() => window.__share); check('reports how much of the page the video fills', share > 0 && share <= 1, `share=${share}`);
+  await page.evaluate(() => { document.getElementById('v').muted = true; }); await page.waitForTimeout(300);
+  check('a video the page keeps silent is not treated as the feature', await page.evaluate(() => window.__share) === 0);
+  await page.evaluate(() => { document.getElementById('v').muted = false; window.__full = true; }); await page.waitForTimeout(600);
+  check('asking for the full picture causes no errors', pageErrors.length === 0, pageErrors.join(' | '));
   const beats = await page.evaluate(() => window.__beats.length); check('reports playback position to the app', beats > 20, `beats=${beats}`);
   await browser.close(); server.close(); console.log(fail ? `${fail} FAILED` : 'all passed'); process.exit(fail ? 1 : 0);
 });

@@ -6,6 +6,10 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
+import android.content.pm.ActivityInfo
+import android.view.MotionEvent
+import android.view.WindowManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -30,6 +34,9 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.safewatch.app.MainActivity
@@ -63,14 +70,27 @@ import java.util.concurrent.atomic.AtomicInteger
  * Sign-ins happen on each service's own website and are kept by the browser's
  * cookie store, as in any browser. The app never reads or stores passwords.
  */
-class BrowserActivity : AppCompatActivity() {
+open class BrowserActivity : AppCompatActivity() {
 
+    /**
+     * False for the Browser tab. [WatchActivity] turns it on: no address bar, and once
+     * a video is playing the screen turns sideways and everything but the picture goes.
+     */
+    protected open val watchMode: Boolean get() = false
+
+    private lateinit var root: LinearLayout
     private lateinit var web: WebView
     private lateinit var stage: FrameLayout
     private lateinit var cover: View
     private lateinit var address: EditText
-    private lateinit var markButton: TextView
     private lateinit var chrome: List<View>
+    private val markButtons = ArrayList<TextView>()
+    private var playerBar: View? = null
+    private var label = ""
+    private var playerView = false
+    private var playingChecks = 0
+    @Volatile private var lastWidthShare = 0.0
+    @Volatile private var wantsFullPicture = false
 
     private val ui = Handler(Looper.getMainLooper())
     private val background = Executors.newSingleThreadExecutor()
@@ -99,7 +119,8 @@ class BrowserActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = buildLayout()
+        label = intent.getStringExtra(EXTRA_LABEL).orEmpty()
+        root = buildLayout()
         setContentView(root)
         Ui.fitSystemBars(this, root)
 
@@ -148,7 +169,7 @@ class BrowserActivity : AppCompatActivity() {
         return null
     }
 
-    private fun buildLayout(): View {
+    private fun buildLayout(): LinearLayout {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.color(context, R.color.bar))
@@ -188,12 +209,31 @@ class BrowserActivity : AppCompatActivity() {
             addView(web, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
         // The cover sits beside the stage, not inside it, so it stays sharp while the stage is blurred.
-        val stageHolder = FrameLayout(this).apply {
+        val stageHolder = object : FrameLayout(this) {
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                // Any touch on the picture brings the player's controls back for a moment.
+                if (event.actionMasked == MotionEvent.ACTION_DOWN && playerView) showPlayerBar()
+                return super.dispatchTouchEvent(event)
+            }
+        }.apply {
             addView(stage, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             addView(cover, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
 
-        markButton = Ui.pill(this, MARK_START, filled = false) { onMarkTapped() }
+        if (watchMode) {
+            // A slim bar while browsing to the video, and a see-through one over the picture once it plays.
+            val bar = watchControls(overPicture = false)
+            val floating = watchControls(overPicture = true).apply { visibility = View.GONE }
+            stageHolder.addView(floating, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+            playerBar = floating
+            root.addView(bar)
+            root.addView(stageHolder, LinearLayout.LayoutParams(-1, 0, 1f))
+            chrome = listOf(bar)
+            return root
+        }
+
+        val markButton = Ui.pill(this, MARK_START, filled = false) { onMarkTapped() }
+        markButtons += markButton
         val bottom = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4))
@@ -214,6 +254,72 @@ class BrowserActivity : AppCompatActivity() {
         chrome = listOf(top, bottom)
         return root
     }
+
+    /** Back, the title, Mark scene and Send to TV: everything the player shows besides the picture. */
+    private fun watchControls(overPicture: Boolean): LinearLayout = LinearLayout(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        val tint = if (overPicture) R.color.on_accent else R.color.text
+        if (overPicture) {
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.argb(190, 0, 0, 0), Color.TRANSPARENT))
+            setPadding(Ui.dp(context, 8), Ui.dp(context, 6), Ui.dp(context, 12), Ui.dp(context, 26))
+        } else {
+            setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 8), Ui.dp(context, 4))
+        }
+        addView(Ui.iconButton(context, R.drawable.ic_back, "Back", tint) { finish() })
+        addView(TextView(context).apply {
+            text = label
+            textSize = 16f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setTextColor(if (overPicture) Color.WHITE else Ui.color(context, R.color.text))
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        val mark = Ui.pill(context, MARK_START, filled = false) { onMarkTapped() }
+        if (overPicture) {
+            mark.setTextColor(Color.WHITE)
+            mark.background = Ui.rounded(Color.argb(70, 255, 255, 255), Ui.dp(context, 18).toFloat())
+        }
+        markButtons += mark
+        addView(mark)
+        addView(Ui.iconButton(context, R.drawable.ic_tv, "Send to TV", tint) { Ui.sendToTv(this@BrowserActivity) })
+    }
+
+    // ---- The player view: sideways, full screen, nothing but the picture ----
+
+    private fun setPlayerView(on: Boolean) {
+        if (playerView == on) return
+        playerView = on
+        wantsFullPicture = on
+        chrome.forEach { it.visibility = if (on) View.GONE else View.VISIBLE }
+        requestedOrientation = if (on) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        WindowCompat.getInsetsController(window, root).apply {
+            if (on) {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        if (on) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            showPlayerBar()
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            ui.removeCallbacks(hidePlayerBar)
+            playerBar?.visibility = View.GONE
+        }
+    }
+
+    private fun showPlayerBar() {
+        val bar = playerBar ?: return
+        bar.visibility = View.VISIBLE
+        ui.removeCallbacks(hidePlayerBar)
+        ui.postDelayed(hidePlayerBar, PLAYER_BAR_MS)
+    }
+
+    private val hidePlayerBar = Runnable { playerBar?.visibility = View.GONE }
+
+    private fun setMarkLabel(text: String) = markButtons.forEach { it.text = text }
 
     override fun onResume() {
         super.onResume()
@@ -260,7 +366,9 @@ class BrowserActivity : AppCompatActivity() {
     override fun onBackPressed() {
         when {
             fullscreenView != null -> web.webChromeClient?.onHideCustomView()
+            watchMode && playerView -> finish()
             web.canGoBack() -> web.goBack()
+            watchMode -> finish()
             else -> MainActivity.open(this)
         }
     }
@@ -350,7 +458,7 @@ class BrowserActivity : AppCompatActivity() {
             if (!address.hasFocus()) address.setText(if (url == START_PAGE) "" else url)
             if (markStartMs != null) {
                 markStartMs = null
-                markButton.text = MARK_START
+                setMarkLabel(MARK_START)
             }
         }
 
@@ -394,7 +502,8 @@ class BrowserActivity : AppCompatActivity() {
             fullscreenView = view
             fullscreenCallback = callback
             stage.addView(view, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            chrome.forEach { it.visibility = View.GONE }
+            // A page asking for full screen gets the same player view, in either mode.
+            setPlayerView(true)
         }
 
         override fun onHideCustomView() {
@@ -402,7 +511,7 @@ class BrowserActivity : AppCompatActivity() {
             fullscreenView = null
             fullscreenCallback?.onCustomViewHidden()
             fullscreenCallback = null
-            chrome.forEach { it.visibility = View.VISIBLE }
+            if (!watchMode) setPlayerView(false)
         }
     }
 
@@ -438,12 +547,21 @@ class BrowserActivity : AppCompatActivity() {
         @JavascriptInterface
         fun profane(text: String): Boolean = matcher.containsProfanity(text)
 
-        /** Sent several times a second while a video is playing, with its position. */
+        /**
+         * Sent several times a second while a video is playing, with its position and how
+         * much of the page's width it fills (0 for a video playing without sound, such as
+         * a preview on a title's page).
+         */
         @JavascriptInterface
-        fun beat(positionMs: Double) {
+        fun beat(positionMs: Double, widthShare: Double) {
             lastPositionMs = positionMs.toLong()
+            lastWidthShare = widthShare
             lastBeatAt = SystemClock.elapsedRealtime()
         }
+
+        /** True while the player view is up, so the page should let its video fill the screen. */
+        @JavascriptInterface
+        fun fullPicture(): Boolean = wantsFullPicture
     }
 
     private fun videoIsPlaying(): Boolean = SystemClock.elapsedRealtime() - lastBeatAt < 1000
@@ -458,12 +576,12 @@ class BrowserActivity : AppCompatActivity() {
         val start = markStartMs
         if (start == null) {
             markStartMs = lastPositionMs
-            markButton.text = MARK_END
+            setMarkLabel(MARK_END)
             return
         }
         val end = lastPositionMs
         markStartMs = null
-        markButton.text = MARK_START
+        setMarkLabel(MARK_START)
         if (end <= start) {
             Ui.toast(this, "The end has to come after the start")
             return
@@ -488,6 +606,11 @@ class BrowserActivity : AppCompatActivity() {
         override fun run() {
             val now = SystemClock.elapsedRealtime()
             if (hidden && now >= hiddenUntil) setHidden(false)
+            // In watch mode, a video that plays with sound across most of the page for a moment is the feature: show it as a player.
+            if (watchMode && !playerView) {
+                playingChecks = if (videoIsPlaying() && lastWidthShare >= 0.6) playingChecks + 1 else 0
+                if (playingChecks >= 3) setPlayerView(true)
+            }
             if (!hidden && !checking && detector != null && settings.nudity != Strictness.OFF && videoIsPlaying()) check()
             ui.postDelayed(this, CHECK_EVERY_MS)
         }
@@ -511,6 +634,7 @@ class BrowserActivity : AppCompatActivity() {
             Bitmap.Config.ARGB_8888,
         )
         checking = true
+        val testing = Prefs.testingBlur(this)
         try {
             PixelCopy.request(window, area, frame, { result ->
                 if (result != PixelCopy.SUCCESS || background.isShutdown) {
@@ -518,7 +642,7 @@ class BrowserActivity : AppCompatActivity() {
                     return@request
                 }
                 background.execute {
-                    val level = try { det.maxLevel(frame) } catch (e: Exception) { 0 }
+                    val level = try { det.maxLevel(frame, testing) } catch (e: Exception) { 0 }
                     ui.post {
                         checking = false
                         if (level > 0 && settings.nudity.filters(level)) {
@@ -535,7 +659,9 @@ class BrowserActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_URL = "url"
-        private const val EXTRA_SIGN_IN = "signIn"
+        const val EXTRA_SIGN_IN = "signIn"
+        const val EXTRA_LABEL = "label"
+        private const val PLAYER_BAR_MS = 3500L
         const val START_PAGE = "file:///android_asset/start.html"
         const val WEB_SEARCH = "https://duckduckgo.com/?q="
         private const val MARK_START = "Mark scene"
@@ -548,14 +674,6 @@ class BrowserActivity : AppCompatActivity() {
             Intent(ctx, BrowserActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                 .putExtra(EXTRA_URL, toUrl(urlOrSearch))
-        )
-
-        /** Opens a service's sign-in page. The sign-in is remembered by the browser from then on. */
-        fun signIn(ctx: Context, service: Service) = ctx.startActivity(
-            Intent(ctx, BrowserActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                .putExtra(EXTRA_URL, service.signInUrl)
-                .putExtra(EXTRA_SIGN_IN, service.id)
         )
 
         /** Shows the browser where it was left. */

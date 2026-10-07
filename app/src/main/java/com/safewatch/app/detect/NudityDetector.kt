@@ -34,7 +34,7 @@ class NudityDetector private constructor(
     private val input = FloatBuffer.allocate(3 * SIZE * SIZE)
 
     @Synchronized
-    fun maxLevel(frame: Bitmap, scoreThreshold: Float = 0.35f): Int {
+    fun maxLevel(frame: Bitmap, facesCount: Boolean = false, scoreThreshold: Float = 0.35f): Int {
         // The model wants a square picture: fit the frame in the top-left corner, black elsewhere.
         val scale = SIZE.toFloat() / maxOf(frame.width, frame.height)
         val w = (frame.width * scale).toInt().coerceAtLeast(1)
@@ -60,7 +60,7 @@ class NudityDetector private constructor(
                 val values = FloatArray(buffer.remaining())
                 buffer.get(values)
                 val detections = Yolo.decode(values, shape[1].toInt() - 4, shape[2].toInt(), scoreThreshold)
-                return NudeLabels.maxLevel(detections)
+                return NudeLabels.maxLevel(detections, facesCount)
             }
         }
     }

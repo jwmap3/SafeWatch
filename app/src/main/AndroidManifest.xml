@@ -49,6 +49,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".browser.WatchActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Also offered by the phone as a choice when opening a video from another app. -->
         <activity
             android:name=".player.PlayerActivity"
