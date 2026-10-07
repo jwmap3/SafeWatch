@@ -1,0 +1,13 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+*.apk
+*.aab
+*.keystore
+*.jks
+# Detection models are downloaded separately, not stored in the repository.
+*.onnx

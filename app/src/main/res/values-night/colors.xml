@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#000000</color>
+    <color name="card">#1C1C1E</color>
+    <color name="text">#F5F5F7</color>
+    <color name="text_secondary">#98989F</color>
+    <color name="separator">#2E2E31</color>
+    <color name="fill">#2A2A2D</color>
+    <color name="segment_selected">#5A5A60</color>
+    <color name="accent">#5B93FF</color>
+    <color name="on_accent">#FFFFFF</color>
+    <color name="bar">#121214</color>
+    <color name="icon_bg">#2F6BFF</color>
+</resources>
