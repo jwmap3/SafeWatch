@@ -51,6 +51,9 @@ object Ui {
 
     /** Draws behind the system bars and keeps [root]'s content clear of them and of the keyboard. */
     fun fitSystemBars(activity: Activity, root: View, lightBars: Boolean = !isNight(activity)) {
+        // Asking for the window's frame first makes sure it exists; without this the app
+        // crashed when a screen was laid out before it was first shown.
+        activity.window.decorView
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
         WindowCompat.getInsetsController(activity.window, root).apply {
             isAppearanceLightStatusBars = lightBars
