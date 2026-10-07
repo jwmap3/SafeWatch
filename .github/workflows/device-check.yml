@@ -1,0 +1,58 @@
+# Runs the app on a test phone in the cloud and saves pictures of each screen
+# and any crash report to the "device-check" pre-release. Used while developing
+# on the dev branch, before changes go to main.
+name: Device check
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: device-check
+  cancel-in-progress: true
+
+jobs:
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the APK
+        run: ./gradlew :core:test :app:assembleDebug
+
+      - name: Allow the test phone to use hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run the app on a test phone
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: bash tools/device-check.sh
+
+      - name: Save the pictures and reports
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk device-out/SafeWatch-dev.apk || true
+          gh release view device-check >/dev/null 2>&1 || gh release create device-check --prerelease --target dev --title "Device check (development)" --notes "Screens and reports from the automatic test phone. Not a download for use."
+          gh release upload device-check device-out/* --clobber
