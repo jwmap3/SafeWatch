@@ -44,13 +44,12 @@ tap "Filters";            shot 12-filters-night 3
 tap "Browser";            shot 13-browser-night 6
 adb shell cmd uimode night no
 
-# Netflix goes last: its site has stopped the test phone before.
+# Netflix's home page is as far as this goes. Opening a Netflix title starts its
+# protected player, and the emulator's stand-in for that hardware takes the whole
+# test phone offline, so that step can only be tried on a real phone.
 start;                    sleep 6
 tap "Netflix";            shot 14-netflix 20
 echo "phone state after Netflix home: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"
-tap "Home";               sleep 3
-tap "Watch";              shot 15-netflix-title 25
-echo "phone state after Netflix title: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"
 
 echo "crash log:" > "$OUT/crash.txt"
 timeout 30 adb logcat -d -b crash >> "$OUT/crash.txt"
