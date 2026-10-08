@@ -286,6 +286,8 @@ class FiltersScreen(private val activity: MainActivity) {
                 Prefs.setTurningLogo(ctx, it)
                 activity.recreate()
             })
+            addView(Ui.divider(ctx))
+            addView(Ui.switchRow(ctx, "Opening animation", Prefs.openingAnimation(ctx)) { Prefs.setOpeningAnimation(ctx, it) })
         })
         column.addView(Ui.caption(ctx, "Primary is used for buttons and highlights. Text adjusts by itself to stay readable on the background you pick."))
 

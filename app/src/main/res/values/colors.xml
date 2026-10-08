@@ -12,4 +12,6 @@
     <color name="on_accent">#FFFFFF</color>
     <color name="bar">#FCFCFD</color>
     <color name="icon_bg">#0C1022</color>
+    <!-- Behind the opening animation, in both modes. -->
+    <color name="intro_bg">#FF04080A</color>
 </resources>

@@ -158,6 +158,11 @@ object Prefs {
 
     fun setClaudeModel(ctx: Context, model: String) = prefs(ctx).edit().putString("claudeModel", model).apply()
 
+    /** Whether the app opens with its short animation (the sword of fire catching around the tree). */
+    fun openingAnimation(ctx: Context): Boolean = prefs(ctx).getBoolean("openingAnimation", true)
+
+    fun setOpeningAnimation(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("openingAnimation", on).apply()
+
     /** Whether the sword of fire in the EdenOS mark turns, or stands still. */
     fun turningLogo(ctx: Context): Boolean = prefs(ctx).getBoolean("turningLogo", true)
 

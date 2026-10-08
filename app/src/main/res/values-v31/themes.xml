@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- As values/themes.xml, plus the phone's launch screen: plain dark ground, so the opening animation follows on seamlessly. -->
+    <style name="Theme.SafeWatch" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:windowSplashScreenBackground">@color/intro_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/intro_bg</item>
+    </style>
+</resources>

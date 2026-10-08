@@ -80,10 +80,22 @@ class MainActivity : AppCompatActivity() {
         for (page in listOf(home.view, search.view, youtube.view, filters.view)) content.addView(page, FrameLayout.LayoutParams(-1, -1))
 
         // A start tab the viewer has since hidden gives way to the first tab on the bar.
+        // Opening the app plays its short opening animation first; the welcome screen and the TV offer wait for it.
+        val opening = savedInstanceState == null && !intent.hasExtra(EXTRA_TAB)
+        if (opening) {
+            introPlaying = true
+            val played = com.safewatch.app.ui.Intro.play(this) {
+                introPlaying = false
+                if (!Prefs.welcomed(this)) startActivity(Intent(this, WelcomeActivity::class.java))
+                else com.safewatch.app.tv.TvMode.offer(this, com.safewatch.app.tv.TvMode.display(this))
+            }
+            if (!played) introPlaying = false
+        }
+
         val start = Prefs.startTab(this).takeIf { it !in Prefs.hiddenTabs(this) } ?: baseTab()
         show(savedInstanceState?.getInt(STATE_TAB) ?: intent.getIntExtra(EXTRA_TAB, if (start == TAB_BROWSER || start == TAB_FILTERS) baseTab() else start))
         if (savedInstanceState == null && !intent.hasExtra(EXTRA_TAB) && start == TAB_BROWSER && Prefs.welcomed(this)) show(TAB_BROWSER)
-        if (savedInstanceState == null && !Prefs.welcomed(this)) startActivity(Intent(this, WelcomeActivity::class.java))
+        if (savedInstanceState == null && !Prefs.welcomed(this) && !opening) startActivity(Intent(this, WelcomeActivity::class.java))
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -103,12 +115,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var stopWatchingTv: (() -> Unit)? = null
+    private var introPlaying = false
 
     override fun onStart() {
         super.onStart()
         // Connecting the phone to a TV (Smart View, or a cable) offers TV Mode straight away.
-        stopWatchingTv = com.safewatch.app.tv.TvMode.watch(this) { com.safewatch.app.tv.TvMode.offer(this, it) }
-        com.safewatch.app.tv.TvMode.offer(this, com.safewatch.app.tv.TvMode.display(this))
+        stopWatchingTv = com.safewatch.app.tv.TvMode.watch(this) { if (!introPlaying) com.safewatch.app.tv.TvMode.offer(this, it) }
+        if (!introPlaying) com.safewatch.app.tv.TvMode.offer(this, com.safewatch.app.tv.TvMode.display(this))
     }
 
     /** Lets the viewer tick which streaming services they use. */

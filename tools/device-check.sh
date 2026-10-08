@@ -30,7 +30,10 @@ adb logcat -c
 # Keeps a running copy of the phone's log, so there is a record even if the phone stops responding.
 adb logcat -v time > "$OUT/logcat.txt" &
 
-start;                    shot 00-welcome 6
+start;                    shot 00a-opening 1.1
+shot 00b-opening 0.6
+shot 00c-opening 0.5
+sleep 2;                  shot 00-welcome 3
 tap_scrolling "Start watching"; shot 01-home 16
 swipe_up;                 shot 02-home-shelves 3
 
