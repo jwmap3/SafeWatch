@@ -31,8 +31,7 @@ adb logcat -c
 adb logcat -v time > "$OUT/logcat.txt" &
 
 start;                    shot 00-welcome 6
-swipe_up; swipe_up; sleep 1
-tap "Start watching";     shot 01-home 16
+tap_scrolling "Start watching"; shot 01-home 16
 swipe_up;                 shot 02-home-shelves 3
 
 start;                    sleep 6
