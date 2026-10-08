@@ -55,8 +55,21 @@ Outside a video a bar says what was blocked and offers to open it. It also
 appears in the phone's "Open with" list, and other browsers can send a page to
 it with their Share button.
 
-**Send to TV** opens the phone's screen casting, which reaches Chromecast,
-Roku, Fire TV and most smart TVs, and shows the already filtered picture.
+**Send to TV** is on every player, full screen included, and offers two ways:
+
+- *Mirror to TV* opens the phone's screen casting, which reaches Chromecast,
+  Roku, Fire TV and most smart TVs, and shows the already filtered picture. It
+  works for everything, but the phone has to stay on.
+- *Clean copy to TV* makes a copy of the video with the filtering built in:
+  the cursing silent and nudity blurred (or cut out, with Skip), plus any
+  scenes marked by hand. A Roku or a smart TV (Samsung, LG and others) then
+  plays it by itself, fetching it from the phone over the Wi-Fi, so the phone
+  can be locked. Copies can be made of video files on the phone and of
+  websites' videos that come as one whole file. The paid services and YouTube
+  stream their videos in locked pieces, so they cannot be copied; mirror those.
+  Making a copy checks every picture and writes the video again, which takes
+  a while (a full film can take an hour or more); it carries on with the
+  screen off. Copies are listed on the TV screen, to play again later.
 
 **Settings** holds your accounts, the filters, colours and sounds.
 
@@ -179,6 +192,12 @@ once, and the app remembers it for that title.
 - **Casting.** Apple TV cannot be reached from an Android phone's screen
   casting. The protected services usually show a black picture when cast
   wirelessly; an HDMI adapter avoids that.
+- **Clean copies on the TV.** Rokus are sent the copy through "Play on Roku",
+  the player Roku's own phone app uses; Roku does not document it for other
+  apps, so a Roku update could change it. Smart TVs use the standard
+  home-media protocol, which most Samsung and LG TVs accept; the TV may ask
+  once whether to allow the phone. A copy's cursing is only muted if the video
+  came with captions.
 - **Movies.** The built-in catalog covers series. Adding a free key from
   [The Movie Database](https://www.themoviedb.org/) under Settings > Titles
   adds movies; that path has not been run against the live service yet.
@@ -236,6 +255,8 @@ title on a paid service; casting to a TV; how the sound sets sound.
 | `app/.../browser/` | The built-in browser (`BrowserActivity`), the player built on it (`WatchActivity`), live detection, the hidden look-ahead copy (`Scout`), and the blur and controls layers (`Layers`). |
 | `app/src/main/assets/safewatch.js` | The script added to every page to control its video. |
 | `app/.../player/` | The player for video files on the phone and the ahead-of-time scan. |
+| `app/.../tv/` | Clean copies (`CleanCopy`, with the muting and blurring in `CleanEffects`), finding TVs (`TvFinder`), the service that keeps it all going with the screen off (`TvService`) and the TV screen (`TvActivity`). |
+| `core/.../tv/` | Talking to TVs: finding them, Roku's and smart TVs' protocols, and the small file server the TV fetches the copy from. |
 | `app/.../data/` | Saved settings, marked scenes, the services, and the readers for TVmaze, TMDB and YouTube. |
 | `app/.../detect/` | The nudity detector and its first-run download. |
 | `app/.../ui/` | The design kit: colours and the viewer's colour choices (`Palette`), cards, rows, posters, controls, sounds. |
