@@ -1536,6 +1536,10 @@ open class BrowserActivity : AppCompatActivity() {
             return command
         }
 
+        /** Whether videos should play at their best quality: on the TV in TV Mode. */
+        @JavascriptInterface
+        fun bestQuality(): Boolean = tv != null
+
         /** A line for the phone's log each time the filter acts, so its work can be checked afterwards. */
         @JavascriptInterface
         fun note(text: String) = this@BrowserActivity.note(text)

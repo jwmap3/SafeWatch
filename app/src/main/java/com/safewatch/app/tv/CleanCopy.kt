@@ -436,7 +436,26 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
 
     // ---- Writing the clean copy ----
 
+    /** The picture's bitrate for the copy: at least what the original had, and plenty for its size, so it looks as good on a big TV. */
+    private var bitrate = 0
+
+    private fun bitrateFor(file: File): Int {
+        val r = MediaMetadataRetriever()
+        return try {
+            r.setDataSource(file.absolutePath)
+            val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val original = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0
+            if (w <= 0 || h <= 0) 0 else maxOf((w.toLong() * h * 30 / 5).toInt(), original).coerceIn(4_000_000, 50_000_000)
+        } catch (e: Exception) {
+            0
+        } finally {
+            try { r.release() } catch (e: Exception) { /* already released */ }
+        }
+    }
+
     private fun transform(input: File, output: File, plan: CleanPlan) {
+        bitrate = bitrateFor(input)
         if (plan.keep.sumOf { it.last - it.first } < 1000) {
             throw IOException("Everything in this video would be cut out, so there is no copy to make. Try Blur instead of Cut out.")
         }
@@ -479,6 +498,11 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
                 val t = Transformer.Builder(context)
                     .setVideoMimeType(MimeTypes.VIDEO_H264) // plays on every TV
                     .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                    .apply {
+                        if (bitrate > 0) setEncoderFactory(androidx.media3.transformer.DefaultEncoderFactory.Builder(context)
+                            .setRequestedVideoEncoderSettings(androidx.media3.transformer.VideoEncoderSettings.Builder().setBitrate(bitrate).build())
+                            .setEnableFallback(true).build())
+                    }
                     .apply { if (loader != null) setAssetLoaderFactory(loader) }
                     .addListener(object : Transformer.Listener {
                         override fun onCompleted(composition: Composition, exportResult: ExportResult) = done.countDown()

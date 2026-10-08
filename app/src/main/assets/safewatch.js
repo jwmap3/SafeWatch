@@ -1048,6 +1048,23 @@
     }
     if (!main) S.playingSince = 0;
 
+    // On the TV, YouTube is asked for its best picture, once for each video.
+    if (B.bestQuality && /(^|\.)youtube\.com$/.test(location.hostname)) {
+      try {
+        var yt = document.getElementById('movie_player');
+        var vid = yt && yt.getVideoData ? (yt.getVideoData() || {}).video_id : '';
+        if (vid && S.bestFor !== vid && B.bestQuality()) {
+          var levels = yt.getAvailableQualityLevels ? yt.getAvailableQualityLevels() : [];
+          if (levels && levels.length && levels[0] !== 'auto') {
+            if (yt.setPlaybackQualityRange) yt.setPlaybackQualityRange(levels[0], levels[0]);
+            if (yt.setPlaybackQuality) yt.setPlaybackQuality(levels[0]);
+            S.bestFor = vid;
+            say('YouTube on the TV at ' + levels[0]);
+          }
+        }
+      } catch (e) { /* the page may not offer it */ }
+    }
+
     // Tells the app which video is being watched, so Send to TV can offer a clean copy of a whole video file.
     if (B.source) {
       var src = watching.currentSrc || watching.src || '';

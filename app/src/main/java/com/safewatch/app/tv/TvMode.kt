@@ -95,6 +95,9 @@ class TvStage(context: Context, display: Display) : Presentation(context, displa
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // The sharpest picture the TV connection offers: its largest size, then its smoothest refresh.
+        display.supportedModes.maxWithOrNull(compareBy<android.view.Display.Mode>({ it.physicalWidth * it.physicalHeight }, { it.refreshRate }))
+            ?.let { best -> window?.attributes = window?.attributes?.apply { preferredDisplayModeId = best.modeId } }
         setContentView(FrameLayout(context).apply {
             addView(root, FrameLayout.LayoutParams(-1, -1))
             addView(pointer, FrameLayout.LayoutParams(POINTER, POINTER, Gravity.TOP or Gravity.START))
