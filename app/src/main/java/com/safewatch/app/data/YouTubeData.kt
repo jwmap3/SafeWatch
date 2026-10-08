@@ -66,8 +66,17 @@ object YouTubeData {
 
     fun search(query: String): List<Video> = videosIn(post("search", JSONObject().put("query", query)))
 
-    fun page(videoId: String): VideoPage {
-        val answer = post("next", JSONObject().put("videoId", videoId))
+    fun page(videoId: String): VideoPage = pageIn(post("next", JSONObject().put("videoId", videoId)), videoId)
+
+    /** Every video in answers YouTube's own website was given (see YouTubeMirror), in order, without repeats. */
+    fun videosIn(answers: List<JSONObject>): List<Video> {
+        val out = LinkedHashMap<String, Video>()
+        for (answer in answers) for (video in videosIn(answer as Any)) out.putIfAbsent(video.id, video)
+        return out.values.toList()
+    }
+
+    /** Reads a video's page from what YouTube's website was given for it. */
+    fun pageIn(answer: JSONObject, videoId: String): VideoPage {
         val primary = find(answer, "videoPrimaryInfoRenderer")
         val owner = find(answer, "videoOwnerRenderer")
         val secondary = find(answer, "videoSecondaryInfoRenderer")
@@ -89,8 +98,10 @@ object YouTubeData {
         )
     }
 
-    fun comments(token: String): List<Comment> {
-        val answer = post("next", JSONObject().put("continuation", token))
+    fun comments(token: String): List<Comment> = commentsIn(post("next", JSONObject().put("continuation", token)))
+
+    /** The comments in one of YouTube's answers; empty when it holds none. */
+    fun commentsIn(answer: JSONObject): List<Comment> {
         val out = ArrayList<Comment>()
         walk(answer) { key, value ->
             if (key == "commentEntityPayload" && value is JSONObject) {

@@ -31,10 +31,14 @@ your own services come first.
 **A title's page** shows its description, a Watch button for the service that
 has it, and every season and episode.
 
-**YouTube** has a tab of its own in the app's layout: shelves for subjects you
-choose, search, and a page per video with the description, what to watch next,
-and comments. Follow a channel from any video's page and its newest videos
-appear on the tab.
+**YouTube** has a tab of its own in the app's layout. Signed in to YouTube
+(once, on Google's own page, from the tab or from Settings), it shows your own
+YouTube: your subscriptions, your home feed and your searches. These are read
+from YouTube's website, signed in as you, in a browser that runs out of sight;
+the app shows what that website is given in its own layout. Each video has a
+page with its description, what YouTube suggests next and the comments, with
+filtered words part-hidden ("s***"). Not signed in, the tab shows shelves for
+subjects you choose and channels you follow here.
 
 **The player.** Watch opens a full-screen player with a title bar instead of
 an address bar. When the video plays the screen turns sideways and only the
@@ -44,7 +48,10 @@ forward ten seconds, and a bar to scrub along. For the streaming services the
 picture is the service's own web player, because the video can only come from
 the service.
 
-**Browser** is a tab for any other website, filtered the same way. It also
+**Browser** is a tab for any other website, filtered the same way. Searches go
+to Google. Pop-ups, message boxes and pages that send you to another site by
+themselves are blocked; while a video plays nothing can take you off its page.
+Outside a video a bar says what was blocked and offers to open it. It also
 appears in the phone's "Open with" list, and other browsers can send a page to
 it with their Share button.
 
@@ -56,7 +63,12 @@ Roku, Fire TV and most smart TVs, and shows the already filtered picture.
 - **Language:** Off, Low, Medium or High, a separate blasphemy switch, and
   "Choose words", which lists every built-in word part-hidden ("Sh*t",
   "F*ck") with its own switch. Extra words to mute and Words to allow cover
-  anything not listed.
+  anything not listed. Medium leaves the mild words (d*mn, h*ll, cr*p) alone;
+  High mutes them too. "Show captions" is off by default, so a muted word is
+  not printed on the screen instead. "No captions, no sound" plays a video the
+  filter has nothing to go on for without sound. "Filter report" lists what
+  the filter found and every mute with how long it lasted, to copy and send on
+  when something is missed.
 - **Nudity:** Off, Low, Medium or High, and whether to blur or skip. "Look
   ahead" (on by default) is described below. "Test the blur" blurs faces for
   two minutes, to see the blur working on any video with people in it.
@@ -94,12 +106,29 @@ is not seeing your video, so it is stopped and live checking carries on alone.
 Looking ahead plays the video twice, so it uses about twice the data. It can
 be switched off under Settings > Nudity.
 
-**Cursing: reading ahead.** Players download their captions as a file, usually
-the whole film's at once. The app watches for that download, reads the file,
-and so knows every line to mute before it is spoken. YouTube's caption files
-time each word, so there the mute covers the word alone. Where no file is
-seen, the app falls back to the captions as they appear on screen, which is a
-moment late.
+**Cursing: reading ahead.** Cursing is found in a video's captions, so the
+app works hard to get them, in this order:
+
+1. *The whole caption track, from the player's manifest.* Streaming players
+   are given a list of every piece of a film, captions included, cut into
+   small files. The app reads that list and downloads every caption piece
+   itself, nearest first, whether or not captions are switched on. This is
+   how HBO Max, and many other services, deliver captions.
+2. *A caption file the player downloads*, such as YouTube's, which times
+   every word, so there the mute covers the word alone. The app switches
+   YouTube's captions on (automatic ones included) so the file is fetched.
+   YouTube writes swear words in automatic captions as "[ __ ]"; that, and
+   other blanked forms ("sh*t", "[bleep]"), are muted at every setting.
+3. *The video's own caption track*, where the page uses one.
+4. *Captions as they appear on screen*, on players the app knows and on any
+   player by where the text sits over the video. These only appear as the
+   line is spoken, so a word arriving word by word is muted as it arrives,
+   and a whole line is muted over the part where the word should fall.
+
+Lines with times are checked against the captions on screen when both are
+there, and corrected if they are early or late. The player's bar says which
+the filter has: "Captions read", "Captions live", or "No captions" in red, in
+which case cursing cannot be muted and you are told so.
 
 ### The paid services
 
@@ -118,9 +147,6 @@ once, and the app remembers it for that title.
 - **Personal rows.** Continue Watching, My List and recommendations made for
   you are kept private by each service, so the app's own pages cannot show
   them. They are on the service's site, one tap away with "Open Netflix".
-- **YouTube sign-in.** Google does not allow signing in from inside another
-  app, so the YouTube tab is not your personal feed. Following channels inside
-  SafeWatch stands in for subscriptions.
 - **YouTube's lists** (search, up next, comments) are read from the same
   requests YouTube's website makes. YouTube does not publish that format and
   can change it, which would break those lists until the app is updated.
@@ -132,6 +158,16 @@ once, and the app remembers it for that title.
 - **"Signed in"** is worked out from the service's sign-in cookie where its
   name is known, and otherwise from having watched a sign-in go through. It can
   be wrong after signing out on the service's site.
+- **Cursing without captions.** A video with no captions in English cannot be
+  filtered for cursing. The player says so; "No captions, no sound" plays it
+  silent instead. Listening to the sound itself would cover these, and is not
+  built yet.
+- **HBO Max and the other paid services** were built from how their players
+  are known to deliver captions, and could not be tried here without a
+  subscription. If a title is not muted, the Filter report says why.
+- **YouTube sign-in** happens on Google's own page inside the app's browser.
+  Google sometimes refuses sign-ins it does not recognise as a full browser; if
+  it does, the tab stays on the signed-out shelves.
 - **Glimpses.** Where the look-ahead has not been (see above), a scene is only
   caught once it is on screen, so a fraction of a second can show before the
   blur. The blur then stays until the scene ends: it sits in a layer of its own,
@@ -167,10 +203,12 @@ word list, colour changes and the Browser tab display correctly; Watch opens
 the service's page for a title in the player; the detection model downloads
 and loads.
 
-Checked on a computer: the filter logic passes its 33 tests; the script that
+Checked on a computer: the filter logic passes its 36 tests; the script that
 controls a page's video passes its test in desktop Chromium, including muting
-from captions, skipping, blurring, reading a caption file ahead, the player controls and the
-look-ahead copy's behaviour; the detection model
+from captions, skipping, blurring, reading caption files and whole caption tracks from DASH and HLS
+manifests ahead, captions on screen (word by word, whole lines and unknown
+players), the strict no-captions choice, the player controls, the look-ahead
+copy's behaviour and the hidden YouTube page; the detection model
 was run on sample pictures to confirm the app reads its output correctly.
 
 Also checked on the test phone, with a film that has no nudity and the blur
@@ -181,9 +219,10 @@ film, moves in front of the viewer and has its pictures checked.
 
 Not yet checked anywhere: the look-ahead hiding a real scene before it arrives
 on a real phone (the test phone takes several seconds per check, a real phone
-a fraction of one); YouTube playback (YouTube turns the test phone away as a
-data-centre visitor); muting from a real service's caption file; playing a
-signed-in title on a paid service; casting to a TV; how the sound sets sound.
+a fraction of one); YouTube playback and the signed-in YouTube tab (YouTube
+turns the test phone away as a data-centre visitor, and it has no account);
+muting on a real service's captions, HBO Max included; playing a signed-in
+title on a paid service; casting to a TV; how the sound sets sound.
 
 ## Layout
 
@@ -224,6 +263,6 @@ To run the page script's test (needs Node, Playwright and ffmpeg):
 - Gore filtering.
 - Shared scene lists, so a title marked once does not need marking again by anyone else.
 - Remembering what the look-ahead found, so a video watched once is known in full the next time.
-- Speech recognition, for cursing in videos that have no captions.
+- Listening to the sound itself, for cursing in videos that have no captions.
 - Blurring only the detected area instead of the whole picture.
 - A Windows version.

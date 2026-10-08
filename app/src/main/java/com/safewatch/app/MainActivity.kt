@@ -182,6 +182,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        if (::youtube.isInitialized) youtube.close()
+        super.onDestroy()
+    }
+
     companion object {
         const val TAB_HOME = 0
         const val TAB_SEARCH = 1

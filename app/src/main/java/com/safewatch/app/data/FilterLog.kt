@@ -18,12 +18,21 @@ object FilterLog {
     private const val KEEP = 500
     private val lines = ArrayDeque<String>()
     private var loaded = false
+    private var store: File? = null
+    private var savedAt = 0L
     private val clock = SimpleDateFormat("HH:mm:ss", Locale.US)
 
     @Synchronized
     fun add(text: String) {
         lines.addLast("${clock.format(Date())}  $text")
         while (lines.size > KEEP) lines.removeFirst()
+        // Written out every few seconds, so the record survives the app being closed without warning.
+        val now = System.currentTimeMillis()
+        val file = store ?: return
+        if (now - savedAt > 4000) {
+            savedAt = now
+            try { file.writeText(lines.joinToString("\n")) } catch (e: Exception) { /* only a record */ }
+        }
     }
 
     private fun file(ctx: Context) = File(ctx.filesDir, "filter-report.txt")
@@ -33,6 +42,7 @@ object FilterLog {
     fun load(ctx: Context) {
         if (loaded) return
         loaded = true
+        store = file(ctx)
         val old = try { file(ctx).readLines() } catch (e: Exception) { emptyList() }
         val now = ArrayList(lines)
         lines.clear()
@@ -55,6 +65,7 @@ object FilterLog {
     fun clear(ctx: Context) {
         lines.clear()
         loaded = true
+        store = file(ctx)
         try { file(ctx).delete() } catch (e: Exception) { /* nothing to remove */ }
     }
 }

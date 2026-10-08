@@ -376,7 +376,7 @@ object Ui {
     private fun videoText(ctx: Context, video: Video, titleSize: Float): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
         addView(TextView(ctx).apply {
-            text = video.title
+            text = CleanText.of(ctx, video.title)
             textSize = titleSize
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END

@@ -13,10 +13,13 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.safewatch.app.browser.WatchActivity
+import com.safewatch.app.browser.YouTubeMirror
+import com.safewatch.app.data.Comment
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Video
 import com.safewatch.app.data.VideoPage
 import com.safewatch.app.data.YouTubeData
+import com.safewatch.app.ui.CleanText
 import com.safewatch.app.ui.Images
 import com.safewatch.app.ui.Sounds
 import com.safewatch.app.ui.Ui
@@ -33,6 +36,15 @@ class VideoActivity : AppCompatActivity() {
     private lateinit var details: LinearLayout
     private var channelId: String? = null
     private var channelName = ""
+    private var mirror: YouTubeMirror? = null
+    private var mirrorComments: List<Comment>? = null
+    private var waitingForComments: ((List<Comment>?) -> Unit)? = null
+
+    override fun onDestroy() {
+        mirror?.close()
+        mirror = null
+        super.onDestroy()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,7 +84,7 @@ class VideoActivity : AppCompatActivity() {
         })
 
         column.addView(TextView(this).apply {
-            text = video.title
+            text = CleanText.of(context, video.title)
             textSize = 20f
             typeface = Typeface.create("sans-serif", Typeface.BOLD)
             setTextColor(Ui.color(context, R.color.text))
@@ -130,6 +142,7 @@ class VideoActivity : AppCompatActivity() {
     }
 
     private fun load() {
+        if (YouTubeMirror.signedIn(this) && loadAsViewer()) return
         Thread {
             val page = try { YouTubeData.page(video.id) } catch (e: Exception) { null }
             runOnUiThread {
@@ -145,7 +158,48 @@ class VideoActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun show(page: VideoPage) {
+    /**
+     * Signed in: the page is read from YouTube's own website as the viewer sees it, so what to watch next
+     * is what YouTube would suggest to them. The comments are asked for as soon as the page is in.
+     */
+    private fun loadAsViewer(): Boolean {
+        val hidden = YouTubeMirror(this)
+        mirror = hidden
+        var shown = false
+        val opened = hidden.open(YouTubeMirror.watch(video.id)) { answer ->
+            if (isDestroyed) return@open
+            if (!shown && answer.kind == "initial") {
+                shown = true
+                show(YouTubeData.pageIn(answer.json, video.id), viewer = true)
+                // Give the page a moment to lay out, then scroll it to the comments so YouTube loads them.
+                details.postDelayed({ hidden.comments() }, 1500)
+                details.postDelayed({ hidden.comments() }, 4000)
+                return@open
+            }
+            val comments = YouTubeData.commentsIn(answer.json)
+            if (comments.isNotEmpty() && mirrorComments == null) {
+                mirrorComments = comments
+                waitingForComments?.invoke(comments)
+                waitingForComments = null
+            }
+        }
+        if (!opened) return false
+        details.postDelayed({
+            if (!shown && !isDestroyed) {
+                // YouTube's website did not answer in time: fall back to the public lists.
+                shown = true
+                hidden.close()
+                mirror = null
+                Thread {
+                    val page = try { YouTubeData.page(video.id) } catch (e: Exception) { null }
+                    runOnUiThread { if (!isDestroyed && page != null) show(page) }
+                }.start()
+            }
+        }, 12000)
+        return true
+    }
+
+    private fun show(page: VideoPage, viewer: Boolean = false) {
         val side = Ui.dp(this, 20)
         if (channelId == null && page.channelId != null) {
             channelId = page.channelId
@@ -154,7 +208,7 @@ class VideoActivity : AppCompatActivity() {
         }
         if (page.description.isNotEmpty()) {
             val text = TextView(this).apply {
-                this.text = page.description
+                this.text = CleanText.of(context, page.description)
                 textSize = 14f
                 maxLines = 4
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -173,14 +227,36 @@ class VideoActivity : AppCompatActivity() {
             details.addView(Ui.shelfTitle(this, "Up next"))
             page.related.take(12).forEach { next -> details.addView(Ui.videoRow(this, next) { open(this, next) }) }
         }
-        val token = page.commentsToken ?: return
+        val token = page.commentsToken
+        if (token == null && !viewer) return
         val holder = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         details.addView(Ui.shelfTitle(this, "Comments"))
         details.addView(holder)
         holder.addView(FrameLayout(this).apply {
             setPadding(side, 0, side, 0)
-            addView(Ui.actionButton(context, "Show comments", filled = false) { loadComments(token, holder) })
+            addView(Ui.actionButton(context, "Show comments", filled = false) {
+                if (viewer) showViewerComments(holder, token) else if (token != null) loadComments(token, holder)
+            })
         })
+    }
+
+    /** Comments as YouTube's website loaded them for the viewer, waiting for them if they are still on their way. */
+    private fun showViewerComments(holder: LinearLayout, token: String?) {
+        val ready = mirrorComments
+        if (ready != null) {
+            listComments(holder, ready)
+            return
+        }
+        holder.removeAllViews()
+        holder.addView(Ui.caption(this, "Loading comments…").apply { setPadding(Ui.dp(context, 20), 0, Ui.dp(context, 20), 0) })
+        mirror?.comments()
+        waitingForComments = { comments -> if (comments != null) listComments(holder, comments) }
+        holder.postDelayed({
+            if (waitingForComments != null && !isDestroyed) {
+                waitingForComments = null
+                if (token != null) loadComments(token, holder) else listComments(holder, emptyList())
+            }
+        }, 10000)
     }
 
     private fun loadComments(token: String, holder: LinearLayout) {
@@ -190,30 +266,34 @@ class VideoActivity : AppCompatActivity() {
         Thread {
             val comments = try { YouTubeData.comments(token) } catch (e: Exception) { null }
             runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                holder.removeAllViews()
-                if (comments.isNullOrEmpty()) {
-                    holder.addView(Ui.caption(this, "No comments could be loaded.").apply { setPadding(side, 0, side, 0) })
-                    return@runOnUiThread
-                }
-                for (c in comments.take(30)) holder.addView(LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(side, 0, side, Ui.dp(context, 16))
-                    addView(TextView(context).apply {
-                        text = listOf(c.author, if (c.likes.isEmpty() || c.likes == "0") "" else "${c.likes} likes").filter { it.isNotEmpty() }.joinToString("  ·  ")
-                        textSize = 12f
-                        setTextColor(Ui.color(context, R.color.text_secondary))
-                    })
-                    addView(TextView(context).apply {
-                        text = c.text
-                        textSize = 14f
-                        setLineSpacing(Ui.dp(context, 2).toFloat(), 1f)
-                        setTextColor(Ui.color(context, R.color.text))
-                        setPadding(0, Ui.dp(context, 2), 0, 0)
-                    })
-                })
+                if (!isDestroyed) listComments(holder, comments.orEmpty())
             }
         }.start()
+    }
+
+    private fun listComments(holder: LinearLayout, comments: List<Comment>) {
+        val side = Ui.dp(this, 20)
+        holder.removeAllViews()
+        if (comments.isEmpty()) {
+            holder.addView(Ui.caption(this, "No comments could be loaded.").apply { setPadding(side, 0, side, 0) })
+            return
+        }
+        for (c in comments.take(30)) holder.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(side, 0, side, Ui.dp(context, 16))
+            addView(TextView(context).apply {
+                text = listOf(CleanText.of(context, c.author), if (c.likes.isEmpty() || c.likes == "0") "" else "${c.likes} likes").filter { it.isNotEmpty() }.joinToString("  ·  ")
+                textSize = 12f
+                setTextColor(Ui.color(context, R.color.text_secondary))
+            })
+            addView(TextView(context).apply {
+                text = CleanText.of(context, c.text)
+                textSize = 14f
+                setLineSpacing(Ui.dp(context, 2).toFloat(), 1f)
+                setTextColor(Ui.color(context, R.color.text))
+                setPadding(0, Ui.dp(context, 2), 0, 0)
+            })
+        })
     }
 
     companion object {

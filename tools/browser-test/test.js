@@ -17,6 +17,7 @@ const made = (url) => {
     const n = +m[1], from = (n - 1) * 2;
     return ['text/vtt', `WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000\n\n${stamp(from + 0.3)} --> ${stamp(from + 1.3)}\n${n === 6 ? 'piece six has a BADWORD in it' : 'a clean line in piece ' + n}\n`];
   }
+  if (url === '/youtubei/v1/browse') return ['application/json', '{"onResponseReceivedActions":[{"videoRenderer":{"videoId":"zzz999yyy88"}}]}'];
   if (url === '/film.m3u8') return ['application/vnd.apple.mpegurl', '#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",LANGUAGE="en",NAME="English",URI="h/en.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=1,SUBTITLES="s"\nv.m3u8\n'];
   if (url === '/h/en.m3u8') return ['application/vnd.apple.mpegurl', '#EXTM3U\n#EXT-X-TARGETDURATION:2\n' + Array.from({ length: 15 }, (x, i) => `#EXTINF:2.0,\nen-${i + 1}.webvtt`).join('\n') + '\n#EXT-X-ENDLIST\n'];
   if ((m = /^\/h\/en-(\d+)\.webvtt$/.exec(url))) { // times counted from the start of each piece
@@ -265,5 +266,24 @@ const server = http.createServer((req, res) => {
   sv = await inner().evaluate(() => { const v = document.getElementById('v'); return { paused: v.paused, rate: v.playbackRate, state: window.__state }; });
   check('look-ahead copy: waits when far enough in front, keeping its speed', sv.paused && sv.rate === 3 && sv.state.paused === true, JSON.stringify(sv));
   check('no script errors on any page', pageErrors.length === 0, pageErrors.join(' | '));
+  // The hidden copy of YouTube's website: hands over what the page is given and keeps its video still.
+  const mirrorScript = fs.readFileSync(path.join(__dirname, '../../app/src/main/assets/mirror.js'), 'utf8');
+  const yt = await browser.newPage();
+  yt.on('pageerror', (e) => pageErrors.push(String(e)));
+  await yt.addInitScript(() => { window.__answers = []; window.MirrorBridge = { answer: (kind, text) => window.__answers.push([kind, text]) }; });
+  await yt.addInitScript(mirrorScript);
+  await yt.goto(`http://127.0.0.1:${port}/yt.html`);
+  await yt.waitForTimeout(800);
+  await yt.evaluate(() => fetch('/youtubei/v1/browse?prettyPrint=false', { method: 'POST', body: '{}' }).then((r) => r.json()));
+  await yt.evaluate(() => fetch('/t.vtt').then((r) => r.text()));
+  await yt.waitForTimeout(400);
+  const answers = await yt.evaluate(() => window.__answers);
+  check('youtube mirror: hands over what the page loaded with', answers.some((a) => a[0] === 'initial' && a[1].includes('abc123def45')), JSON.stringify(answers).slice(0, 200));
+  check('youtube mirror: hands over what the page asks for later, and nothing else', answers.some((a) => a[0] === 'browse' && a[1].includes('zzz999yyy88')) && answers.length === 2, answers.map((a) => a[0]).join(','));
+  check('youtube mirror: keeps the page\'s video still', await yt.evaluate(() => document.getElementById('v').paused));
+  await yt.evaluate(() => window.__mirrorMore());
+  check('youtube mirror: scrolls to the end to load more', await yt.evaluate(() => window.scrollY > 1000));
+  await yt.close();
+  check('no script errors anywhere', pageErrors.length === 0, pageErrors.join(' | '));
   await browser.close(); server.close(); console.log(fail ? `${fail} FAILED` : 'all passed'); process.exit(fail ? 1 : 0);
 });

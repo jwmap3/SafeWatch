@@ -74,7 +74,9 @@ for u in \
   echo "test film $u answered $code" | tee -a "$OUT/summary.txt"
   if [ -z "$VIDEO" ] && { [ "$code" = "200" ] || [ "$code" = "206" ]; }; then VIDEO="$u#t=40"; fi
 done
-tap "Test the blur";      sleep 1
+# The settings page is long: scroll until the row is in view.
+for i in 1 2 3 4 5; do timeout 60 python3 tools/tap.py "Test the blur" > /dev/null && { echo "tap: Test the blur" | tee -a "$OUT/summary.txt"; break; }; swipe_up; sleep 1; done
+sleep 1
 if [ -n "$VIDEO" ]; then
   adb shell am start -a android.intent.action.VIEW -d "$VIDEO" -n $PKG/.browser.BrowserActivity > /dev/null
   sleep 4; tap "Got it"

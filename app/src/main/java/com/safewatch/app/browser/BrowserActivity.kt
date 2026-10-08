@@ -214,7 +214,10 @@ open class BrowserActivity : AppCompatActivity() {
             javaScriptCanOpenWindowsAutomatically = false
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
-        mobileAgent = web.settings.userAgentString
+        // The browser introduces itself as the phone's Chrome. WebView's own name ("; wv") makes some
+        // sites, Google's sign-in among them, refuse it as an app rather than a browser.
+        mobileAgent = web.settings.userAgentString.replace("; wv)", ")").replace(Regex("Version/\\d+(\\.\\d+)* "), "")
+        hideAppName(web)
         FilterLog.load(applicationContext)
         web.addJavascriptInterface(Bridge(), "SafeWatchBridge")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -1332,6 +1335,13 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** Stops the browser telling every site the app's package name, as WebView otherwise may. */
+        fun hideAppName(view: WebView) {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                androidx.webkit.WebSettingsCompat.setRequestedWithHeaderOriginAllowList(view.settings, emptySet())
+            }
+        }
+
         const val EXTRA_URL = "url"
         const val EXTRA_SIGN_IN = "signIn"
         const val EXTRA_LABEL = "label"
