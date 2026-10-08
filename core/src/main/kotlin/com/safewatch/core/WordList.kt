@@ -24,15 +24,15 @@ data class WordGroup(
  */
 object WordList {
     val groups = listOf(
-        WordGroup("fuck", "F*ck", 3, listOf("*fuck*")),
+        WordGroup("fuck", "F*ck", 3, listOf("*fuck*", "fck*", "fuk*", "fking", "effing", "eff off", "wtf", "stfu", "lmfao", "mofo", "milf")),
         WordGroup("cunt", "C*nt", 3, listOf("cunt*")),
         WordGroup("cock", "C*ck", 3, listOf("cock", "cocks", "cocksuck*")),
         WordGroup("pussy", "P*ssy", 3, listOf("pussy", "pussies")),
         WordGroup("twat", "Tw*t", 3, listOf("twat*")),
         WordGroup("wank", "W*nk", 3, listOf("wank*")),
 
-        WordGroup("shit", "Sh*t", 2, listOf("*shit*")),
-        WordGroup("bitch", "B*tch", 2, listOf("*bitch*")),
+        WordGroup("shit", "Sh*t", 2, listOf("*shit*", "shite", "shyt")),
+        WordGroup("bitch", "B*tch", 2, listOf("*bitch*", "biatch")),
         WordGroup("ass", "A*s", 2, listOf("ass", "asses", "arse", "arses", "jackass*", "dumbass*", "badass*", "smartass*", "kickass", "asshat*")),
         WordGroup("asshole", "A**hole", 2, listOf("*asshole*", "*arsehole*")),
         WordGroup("bastard", "B*stard", 2, listOf("bastard*")),
@@ -43,15 +43,19 @@ object WordList {
         WordGroup("whore", "Wh*re", 2, listOf("whore*")),
         WordGroup("douche", "D*uche", 2, listOf("douche*")),
         WordGroup("bollocks", "B*llocks", 2, listOf("bollocks")),
-        WordGroup("tits", "T*ts", 2, listOf("tits", "titties")),
+        WordGroup("tits", "T*ts", 2, listOf("tits", "titties", "titty", "boobs", "boobies")),
+        WordGroup("sexual", "Bl*wjob, h*rny and the like", 2, listOf("blowjob*", "blow job", "handjob*", "hand job", "jerk off", "jerking off", "jack off",
+            "jacking off", "jerkoff*", "boner*", "horny", "dildo*", "cum", "cumming", "jizz*", "hooker*", "skank*", "butthole*", "nutsack*", "ballsack*")),
 
         WordGroup("damn", "D*mn", 1, listOf("*damn*", "dammit")),
         WordGroup("hell", "H*ll", 1, listOf("hell")),
-        WordGroup("crap", "Cr*p", 1, listOf("crap", "crappy", "crapped")),
+        WordGroup("crap", "Cr*p", 1, listOf("crap", "crappy", "crapped", "bullcrap")),
+        WordGroup("mild", "Scr*w you, s*cks, bl**dy", 1, listOf("screw you", "screw that", "screw this", "screwed up", "sucks", "sucked", "suck it",
+            "bloody", "bugger*", "turd*")),
         WordGroup("frick", "Fr*ck, fr*ggin", 1, listOf("frick*", "friggin*", "freakin", "freaking")),
 
         WordGroup("goddamn", "G*ddamn", 3, listOf("*goddam*", "god damn"), blasphemy = true),
-        WordGroup("omg", "Oh my G*d", 3, listOf("omg", "oh my god", "oh god", "my god", "good god", "swear to god", "for gods sake"), blasphemy = true),
-        WordGroup("jesus", "J*sus Chr*st", 3, listOf("jesus christ", "for christs sake"), blasphemy = true),
+        WordGroup("omg", "Oh my G*d", 3, listOf("omg", "oh my god", "oh god", "my god", "good god", "swear to god", "for gods sake", "good lord"), blasphemy = true),
+        WordGroup("jesus", "J*sus Chr*st", 3, listOf("jesus christ", "for christs sake", "oh jesus", "jesus h christ", "christ almighty", "holy christ", "sweet jesus", "oh christ"), blasphemy = true),
     )
 }

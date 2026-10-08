@@ -1,6 +1,13 @@
 // SafeWatch page script. Runs inside every page (and every frame) the built-in
 // browser opens. It never decides what is objectionable itself: it asks the app
 // through SafeWatchBridge, then mutes, skips or blurs the page's own <video>.
+//
+// How it knows when to mute, best source first:
+//   1. Caption data with times, known ahead: the film's caption track read from
+//      the player's manifest, a caption file the player downloaded, or the
+//      video's own text tracks.
+//   2. Captions drawn on the page, which only appear as the line is spoken.
+// The second stops being used once the first has been checked against the screen.
 (function () {
   'use strict';
   if (window.__safewatch) return;
@@ -12,16 +19,21 @@
     '.ytp-caption-segment',                 // YouTube
     '.player-timedtext-text-container',     // Netflix
     '[data-testid="CueBoxContainer"]',      // HBO Max
+    '[class*="CaptionWindow"]', '[class*="TextCue"]',
     '.atvwebplayersdk-captions-text',       // Prime Video
-    '.dss-subtitle-renderer-cue',           // Disney+
+    '.dss-subtitle-renderer-cue', '.dss-subtitle-renderer-line', // Disney+
     '.hive-subtitle-renderer-cue',
-    '.CaptionBox',                          // Hulu
+    '.CaptionBox', '.caption-text-box',     // Hulu
     '.video-player__subtitles',             // Peacock
     '.captions-text',
-    '.vjs-text-track-cue',                  // players built on video.js, JW Player, Shaka, Plyr
+    '.vjs-text-track-cue',                  // players built on video.js, JW Player, Shaka, Plyr, Bitmovin, THEOplayer
     '.jw-text-track-cue',
     '.shaka-text-container span',
-    '.plyr__caption'
+    '.plyr__caption',
+    '.bmpui-ui-subtitle-label',
+    '.theoplayer-texttracks span',
+    '.vp-captions-line',                    // Vimeo
+    '.ttr-cue'
   ].join(', ');
   var TICK_MS = 100;
   // True in the hidden second copy of a video that the app plays a few seconds ahead of the viewer
@@ -29,18 +41,23 @@
   // video, reports where it is and goes where it is told.
   var SCOUT = false;
   try { SCOUT = !!(B.scout && B.scout()); } catch (e) { /* an ordinary page */ }
-  var DOM_MUTE_MS = 1500;
 
   var S = window.__safewatch = {
-    version: -1, language: false, tags: [], domMuteUntil: 0, lastDomText: '', ticks: 0, filledAt: 0,
-    captionFiles: [], ahead: []
+    version: -1, language: false, showCaptions: true, strict: false, tags: [], ticks: 0, filledAt: 0,
+    sources: [],        // caption data with times, known ahead
+    screen: [],         // mute stretches worked out from captions drawn on the page, in video time
+    screenSeenAt: 0,    // when captions were last seen drawn on the page
+    lastState: '', lastStateAt: 0, playingSince: 0, address: ''
   };
   var states = new WeakMap();
+  var realFetch = window.fetch;
+
+  function say(text) { try { if (B.note) B.note(text); } catch (e) { /* ignore */ } }
 
   function stateOf(video) {
     var st = states.get(video);
     if (!st) {
-      st = { windows: [], seen: {}, cueCounts: new WeakMap(), mutedByUs: false, wasMuted: false,
+      st = { windows: [], starts: [], seen: {}, cueCounts: new WeakMap(), mutedByUs: false, wasMuted: false,
              blurredByUs: false, oldFilter: '' };
       states.set(video, st);
       watchForTrouble(video);
@@ -48,57 +65,450 @@
     return st;
   }
 
-  // ---- Reading the caption file ahead of time ----
+  // ---- Caption data with times ----
   //
-  // Players download their captions as a file, usually the whole film's at once.
-  // This watches what the page downloads, and when a download turns out to be a
-  // caption file it is handed to the app, which answers with every stretch to
-  // mute. Those are then known before they are spoken, so muting starts on time.
+  // A source is one set of caption lines with their times. `windows` are the stretches to mute,
+  // worked out by the app from the lines. `offset` moves them if the screen shows they are early or late.
 
-  function addAhead(text) {
-    try {
-      var found = JSON.parse(B.captionWindows(text));
-      for (var i = 0; i < found.length; i++) S.ahead.push(found[i]);
-      if (B.note) B.note('caption file read ahead: ' + found.length + ' stretches to mute');
-    } catch (e) { /* not a caption file after all */ }
+  function squash(text) { return text.toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+
+  function sourceFor(key, kind) {
+    for (var i = 0; i < S.sources.length; i++) if (S.sources[i].key === key) return S.sources[i];
+    var source = { key: key, kind: kind, made: Date.now(), cues: [], windows: [], starts: [], seen: {}, index: {},
+                   offset: 0, deltas: [], checked: kind === 'file', length: 0, segs: null, busy: 0, failed: 0, fetched: 0, dead: false };
+    S.sources.push(source);
+    if (S.sources.length > 6) S.sources.shift();
+    return source;
   }
 
-  function looksLikeCaptions(text) {
-    var head = text.slice(0, 1500);
-    if (head.indexOf('X-TIMESTAMP-MAP') >= 0) return false; // one small piece of many, timed differently
-    return /^\uFEFF?\s*WEBVTT/.test(head) || /<tt[\s:>]/.test(head) || head.indexOf('<timedtext') >= 0 ||
-      (head.indexOf('"events"') >= 0 && text.indexOf('tStartMs') >= 0) || /\d\d:\d\d:\d\d[,.]\d{3}\s*-->/.test(head);
+  function windowsFor(cues) {
+    var out = [];
+    if (!S.language || !cues.length || !B.cueWindows) return out;
+    for (var i = 0; i < cues.length; i += 400) {
+      try { out = out.concat(JSON.parse(B.cueWindows(JSON.stringify(cues.slice(i, i + 400))))); } catch (e) { /* skip this batch */ }
+    }
+    return out;
   }
 
+  // Adds caption lines, each [startMs, endMs, text], to a source. Returns how many were new.
+  function addCues(source, cues) {
+    var fresh = [];
+    for (var i = 0; i < cues.length; i++) {
+      var c = cues[i], id = c[0] + '|' + c[2];
+      if (source.seen[id] || !c[2]) continue;
+      source.seen[id] = true;
+      fresh.push(c);
+      source.cues.push(c);
+      source.starts.push(c[0]);
+      var words = squash(c[2]);
+      if (words.length >= 12) source.index[words] = (words in source.index) ? -1 : c[0];
+    }
+    var found = windowsFor(fresh);
+    for (i = 0; i < found.length; i++) source.windows.push(found[i]);
+    return fresh.length;
+  }
+
+  // Whether a source belongs to the video as it is now. A source read for a film does not apply
+  // while an advert of a different length is playing in the same player.
+  function applies(source, video, advert) {
+    if (advert) return false;
+    var length = isFinite(video.duration) ? video.duration : 0;
+    if (!source.length) {
+      if (length > 0 && Date.now() - source.made > 1000) source.length = length;
+      return true;
+    }
+    return !length || Math.abs(length - source.length) < 5;
+  }
+
+  // True when caption data whose times can be trusted has lines around this moment.
+  function trustedHere(video, st, t, advert) {
+    var n, k, source;
+    for (k = 0; k < st.starts.length; k++) if (Math.abs(st.starts[k] - t) < 45000) return true;
+    for (n = 0; n < S.sources.length; n++) {
+      source = S.sources[n];
+      if (!source.checked || !applies(source, video, advert)) continue;
+      for (k = 0; k < source.starts.length; k++) if (Math.abs(source.starts[k] + source.offset - t) < 45000) return true;
+    }
+    return false;
+  }
+
+  // ---- Reading caption files ----
+
+  var TIME = '((?:\\d+:)?\\d{1,2}:\\d{2}[.,]\\d{1,3})';
+  var TIMING = new RegExp('^\\s*' + TIME + '\\s*-->\\s*' + TIME);
+
+  function clock(text) {
+    var p = text.replace(',', '.').split(':'), s = 0;
+    for (var i = 0; i < p.length; i++) s = s * 60 + parseFloat(p[i]);
+    return Math.round(s * 1000);
+  }
+
+  function plain(text) {
+    return text.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&nbsp;/g, ' ').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+  }
+
+  // Reads WebVTT (or SRT) text into [startMs, endMs, text] lines.
+  function readVtt(text) {
+    var lines = text.replace(/\r\n?/g, '\n').split('\n'), cues = [], i = 0;
+    while (i < lines.length) {
+      var m = TIMING.exec(lines[i]);
+      i++;
+      if (!m) continue;
+      var words = [];
+      while (i < lines.length && lines[i].trim() !== '' && !TIMING.test(lines[i])) { words.push(lines[i]); i++; }
+      var said = plain(words.join(' ')), from = clock(m[1]), to = clock(m[2]);
+      if (said && to > from) cues.push([from, to, said]);
+    }
+    return cues;
+  }
+
+  // Caption pieces wrapped in a video container: pulls out the text they carry.
+  function readWrapped(bytes, text, length) {
+    var cues = [], at = text.indexOf('<tt'), end = text.lastIndexOf('</tt>');
+    if (at >= 0 && end > at && B.captionCues) {
+      try { return JSON.parse(B.captionCues(new TextDecoder('utf-8').decode(bytes.subarray(at, end + 5)))); } catch (e) { return cues; }
+    }
+    // Lines stored one per box, with their times kept elsewhere in the container: each is taken to be
+    // spoken somewhere within this piece.
+    for (at = text.indexOf('payl'); at >= 4; at = text.indexOf('payl', at + 4)) {
+      var size = (bytes[at - 4] << 24 | bytes[at - 3] << 16 | bytes[at - 2] << 8 | bytes[at - 1]) >>> 0;
+      if (size < 9 || size > 2000 || at - 4 + size > bytes.length) continue;
+      var said = plain(new TextDecoder('utf-8').decode(bytes.subarray(at + 4, at - 4 + size)));
+      if (said) cues.push([0, length, said, 'whole piece']);
+    }
+    return cues;
+  }
+
+  // A whole caption file the page's player downloaded.
   function offerCaptions(text) {
-    if (!text || text.length < 20 || text.length > 4000000 || !B.captionWindows || !looksLikeCaptions(text)) return;
-    for (var i = 0; i < S.captionFiles.length; i++) if (S.captionFiles[i] === text) return;
-    S.captionFiles.push(text);
-    if (S.captionFiles.length > 4) S.captionFiles.shift();
-    if (S.language) addAhead(text);
+    if (!text || text.length < 20 || text.length > 6000000 || !B.captionCues) return;
+    if (text.slice(0, 1500).indexOf('X-TIMESTAMP-MAP') >= 0) { offerPiece(text); return; }
+    var key = 'file:' + text.length + ':' + text.slice(200, 260);
+    for (var i = 0; i < S.sources.length; i++) if (S.sources[i].key === key) return;
+    var cues;
+    try { cues = JSON.parse(B.captionCues(text)); } catch (e) { return; }
+    if (!cues.length) return;
+    var source = sourceFor(key, 'file'), added = addCues(source, cues);
+    say('caption file read ahead: ' + added + ' lines, ' + source.windows.length + ' stretches to mute');
   }
 
-  // Whether a download is worth a look: small, and not plainly something else.
-  function worthALook(url, type, length) {
-    if (length > 4000000) return false;
-    if (/^(video|audio|image|font)\/|javascript|css|text\/html/.test(type)) return false;
-    if (/timedtext|\.vtt|\.ttml|\.dfxp|\.srt|subtitle|caption|ttml|text\/vtt/i.test(url + ' ' + type)) return true;
-    // A caption file can also hide behind an address and a type that say nothing (Netflix).
-    return length > 0 && length < 1500000 && /octet-stream|text\/plain|xml|json|^$/.test(type);
+  // One small piece of a caption track that the player downloaded for itself (it does this only while
+  // captions are switched on). Used when the whole track could not be read from the manifest.
+  function offerPiece(text) {
+    for (var i = 0; i < S.sources.length; i++) if (S.sources[i].segs && !S.sources[i].dead) return; // already reading the whole track
+    var cues = readVtt(text);
+    if (!cues.length) return;
+    var source = sourceFor('pieces', 'pieces');
+    if (addCues(source, cues) && source.cues.length === cues.length) say('reading caption pieces as the player downloads them');
   }
+
+  function looksLikeCaptions(head) {
+    return /^\uFEFF?\s*WEBVTT/.test(head) || /<tt[\s:>]/.test(head) || head.indexOf('<timedtext') >= 0 ||
+      (head.indexOf('"events"') >= 0 && head.indexOf('tStartMs') >= 0) || /\d\d:\d\d:\d\d[,.]\d{3}\s*-->/.test(head);
+  }
+
+  // ---- Reading the whole caption track from the player's manifest ----
+  //
+  // Streaming players are handed a manifest: a list of every piece of the film, including its
+  // caption tracks, each cut into small files. The player only downloads caption pieces if captions
+  // are switched on, and only a little ahead. Reading the manifest ourselves gives the whole film's
+  // captions, with times, whether or not the viewer has captions showing.
+
+  function absolute(url, base) { try { return new URL(url, base).href; } catch (e) { return url; } }
+
+  function seconds(iso) { // PT1H2M3.5S
+    var m = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?$/.exec(iso || '');
+    if (!m) return NaN;
+    return (+m[1] || 0) * 86400 + (+m[2] || 0) * 3600 + (+m[3] || 0) * 60 + (parseFloat(m[4]) || 0);
+  }
+
+  function childrenNamed(el, name) {
+    var out = [];
+    for (var i = 0; i < el.children.length; i++) if (el.children[i].localName === name) out.push(el.children[i]);
+    return out;
+  }
+
+  function english(lang) { return /^en/i.test(lang || ''); }
+
+  function readDash(text, address) {
+    var doc;
+    try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (e) { return; }
+    var mpd = doc.documentElement;
+    if (!mpd || mpd.localName !== 'MPD' || mpd.getAttribute('type') === 'dynamic') return;
+    var key = 'dash:' + address.split('?')[0];
+    for (var i = 0; i < S.sources.length; i++) if (S.sources[i].key === key) return;
+    var base = address, top = childrenNamed(mpd, 'BaseURL')[0];
+    if (top) base = absolute(top.textContent.trim(), base);
+    var total = seconds(mpd.getAttribute('mediaPresentationDuration')), periods = childrenNamed(mpd, 'Period');
+    var segs = [], at = 0, tracks = 0, other = 0;
+
+    for (var p = 0; p < periods.length; p++) {
+      var period = periods[p], start = seconds(period.getAttribute('start'));
+      if (isNaN(start)) start = at;
+      var length = seconds(period.getAttribute('duration'));
+      if (isNaN(length)) {
+        var next = periods[p + 1] ? seconds(periods[p + 1].getAttribute('start')) : total;
+        length = isNaN(next) ? 0 : Math.max(0, next - start);
+      }
+      at = start + length;
+      var periodBase = base, pb = childrenNamed(period, 'BaseURL')[0];
+      if (pb) periodBase = absolute(pb.textContent.trim(), base);
+
+      var sets = childrenNamed(period, 'AdaptationSet'), pick = null;
+      for (var a = 0; a < sets.length; a++) {
+        var set = sets[a], rep = childrenNamed(set, 'Representation')[0];
+        var kind = (set.getAttribute('contentType') || '') + ' ' + (set.getAttribute('mimeType') || '') + ' ' +
+          (rep ? (rep.getAttribute('mimeType') || '') + ' ' + (rep.getAttribute('codecs') || '') : '') + ' ' + (set.getAttribute('codecs') || '');
+        if (!/text|vtt|ttml|stpp/i.test(kind)) continue;
+        if (!english(set.getAttribute('lang'))) { other++; continue; }
+        var roles = childrenNamed(set, 'Role').map(function (r) { return r.getAttribute('value') || ''; }).join(' ');
+        if (/forced/i.test(roles)) continue; // only the odd line in another language
+        if (!pick || /caption/i.test(roles)) pick = set;
+      }
+      if (!pick) continue;
+      tracks++;
+      var rep0 = childrenNamed(pick, 'Representation')[0];
+      if (!rep0) continue;
+      var repBase = periodBase, sb = childrenNamed(pick, 'BaseURL')[0], rb = childrenNamed(rep0, 'BaseURL')[0];
+      if (sb) repBase = absolute(sb.textContent.trim(), repBase);
+      if (rb) repBase = absolute(rb.textContent.trim(), repBase);
+      var template = childrenNamed(rep0, 'SegmentTemplate')[0] || childrenNamed(pick, 'SegmentTemplate')[0];
+      if (!template) {
+        // The whole track as one file.
+        if (rb || sb) segs.push({ url: repBase, from: start, to: start + (length || 36000), shifts: [start, 0], whole: true });
+        continue;
+      }
+      var scale = parseFloat(template.getAttribute('timescale')) || 1, media = template.getAttribute('media') || '';
+      var number = parseInt(template.getAttribute('startNumber') || '1', 10), pto = parseFloat(template.getAttribute('presentationTimeOffset')) || 0;
+      var fill = function (n, time) {
+        return absolute(media.replace(/\$RepresentationID\$/g, rep0.getAttribute('id') || '')
+          .replace(/\$Bandwidth\$/g, rep0.getAttribute('bandwidth') || '')
+          .replace(/\$Number(?:%0(\d+)d)?\$/g, function (all, width) { var s = String(n); while (width && s.length < +width) s = '0' + s; return s; })
+          .replace(/\$Time\$/g, String(time)).replace(/\$\$/g, '$'), repBase);
+      };
+      var add = function (n, time, d) {
+        var from = start + (time - pto) / scale, to = from + d / scale;
+        // The times written inside a piece can be counted from different starting points. Each is tried
+        // against where the manifest says the piece belongs: see fits().
+        segs.push({ url: fill(n, time), from: from, to: to, shifts: [start - pto / scale, start, 0, from] });
+      };
+      var timeline = childrenNamed(template, 'SegmentTimeline')[0];
+      if (timeline) {
+        var time = 0, steps = childrenNamed(timeline, 'S');
+        for (var s = 0; s < steps.length && segs.length < 9000; s++) {
+          var t = steps[s].getAttribute('t'), d = parseFloat(steps[s].getAttribute('d')), r = parseInt(steps[s].getAttribute('r') || '0', 10);
+          if (t !== null) time = parseFloat(t);
+          if (r < 0) r = length ? Math.ceil((length * scale + pto - time) / d) - 1 : 0;
+          for (var k = 0; k <= r && segs.length < 9000; k++) { add(number++, time, d); time += d; }
+        }
+      } else {
+        var each = parseFloat(template.getAttribute('duration'));
+        if (each > 0 && length > 0) {
+          for (var n = 0, count = Math.ceil(length * scale / each); n < count && segs.length < 9000; n++) add(number + n, pto + n * each, each);
+        }
+      }
+    }
+    if (!segs.length) {
+      say('manifest read: ' + (tracks ? 'caption track found but its pieces are not listed' : other ? 'no English caption track (' + other + ' in other languages)' : 'it lists no caption track'));
+      return;
+    }
+    var source = sourceFor(key, 'manifest');
+    source.segs = segs;
+    say('manifest read: English caption track found, ' + segs.length + ' pieces over ' + Math.round(at / 60) + ' minutes; reading them ahead');
+  }
+
+  function readHls(text, address) {
+    if (text.indexOf('#EXT-X-STREAM-INF') >= 0 || text.indexOf('TYPE=SUBTITLES') >= 0) {
+      // The main list: find the English caption list it points to and fetch that.
+      var lines = text.split('\n'), pick = null;
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].indexOf('#EXT-X-MEDIA') !== 0 || !/TYPE=SUBTITLES/.test(lines[i])) continue;
+        var lang = (/LANGUAGE="([^"]*)"/.exec(lines[i]) || [])[1], uri = (/URI="([^"]*)"/.exec(lines[i]) || [])[1];
+        if (!uri || !english(lang) || /FORCED=YES/.test(lines[i])) continue;
+        if (!pick) pick = uri;
+      }
+      if (!pick || !realFetch) return;
+      var list = absolute(pick, address), key = 'hls:' + list.split('?')[0];
+      for (i = 0; i < S.sources.length; i++) if (S.sources[i].key === key) return;
+      sourceFor(key, 'manifest');
+      realFetch.call(window, list).then(function (res) { return res.text(); }).then(function (body) { readHlsList(body, list, key); }, function () {});
+      return;
+    }
+    if (/\.(web)?vtt(\?|\s|$)/im.test(text)) readHlsList(text, address, 'hls:' + address.split('?')[0]);
+  }
+
+  function readHlsList(text, address, key) {
+    if (text.indexOf('#EXT-X-ENDLIST') < 0) return; // a live broadcast: there is no "ahead" to read
+    var lines = text.split('\n'), segs = [], at = 0, length = 0;
+    for (var i = 0; i < lines.length && segs.length < 9000; i++) {
+      var line = lines[i].trim();
+      if (line.indexOf('#EXTINF:') === 0) { length = parseFloat(line.slice(8)) || 0; continue; }
+      if (!line || line.charAt(0) === '#') continue;
+      segs.push({ url: absolute(line, address), from: at, to: at + length, shifts: [0, at], hls: true });
+      at += length;
+    }
+    if (!segs.length) return;
+    var source = sourceFor(key, 'manifest');
+    if (source.segs) return;
+    source.segs = segs;
+    say('caption list read: ' + segs.length + ' pieces over ' + Math.round(at / 60) + ' minutes; reading them ahead');
+  }
+
+  // Which of a piece's possible starting points make its first line fall where the piece belongs.
+  // Near the start of a film several can, so a piece only settles the question when they agree.
+  function fits(seg, cues) {
+    var first = cues[0][0] / 1000, slack = (seg.to - seg.from) + 4, out = [];
+    for (var i = 0; i < seg.shifts.length; i++) {
+      var at = first + seg.shifts[i];
+      if (at >= seg.from - slack && at <= seg.to + 4) out.push(i);
+    }
+    return out;
+  }
+
+  function place(source, seg, cues) {
+    var shift = Math.round(seg.shifts[Math.min(source.shiftBy, seg.shifts.length - 1)] * 1000);
+    if (!source.saidTimes) {
+      source.saidTimes = true;
+      say('caption times: first line read at ' + Math.round(cues[0][0] / 1000) + 's, placed at ' + Math.round((cues[0][0] + shift) / 1000) +
+        's; its piece belongs at ' + Math.round(seg.from) + 's');
+    }
+    for (var i = 0; i < cues.length; i++) { cues[i][0] += shift; cues[i][1] += shift; }
+    addCues(source, cues);
+  }
+
+  // Pieces that could not settle how times are counted wait here until one does, or the track ends.
+  function placeWaiting(source) {
+    if (source.shiftBy === undefined) source.shiftBy = 0;
+    var waiting = source.waiting || [];
+    source.waiting = [];
+    for (var i = 0; i < waiting.length; i++) place(source, waiting[i][0], waiting[i][1]);
+  }
+
+  function takePiece(source, seg, bytes) {
+    var text = new TextDecoder('utf-8').decode(bytes), cues;
+    if (seg.whole) { offerCaptions(text); return; }
+    if (/^\uFEFF?\s*WEBVTT/.test(text.slice(0, 40)) || /-->/.test(text.slice(0, 4000))) {
+      cues = readVtt(text);
+      if (seg.hls) {
+        // "X-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000" ties the written times to the video's own clock.
+        var map = /X-TIMESTAMP-MAP=([^\n]*)/.exec(text);
+        if (map) {
+          var ts = /MPEGTS:(\d+)/.exec(map[1]), local = new RegExp('LOCAL:' + TIME).exec(map[1]);
+          var lead = (ts ? +ts[1] / 90000 : 0) - (local ? clock(local[1]) / 1000 : 0);
+          seg.shifts = [0, lead - 10, lead, seg.from];
+        }
+      }
+    } else {
+      cues = readWrapped(bytes, new TextDecoder('latin1').decode(bytes), Math.round((seg.to - seg.from) * 1000));
+      if (cues.length && cues[0][3]) seg.shifts = [seg.from];
+    }
+    if (!cues || !cues.length) return;
+    if (source.shiftBy !== undefined) { place(source, seg, cues); return; }
+    var good = fits(seg, cues), agreed = good.length > 0;
+    for (var i = 1; i < good.length; i++) if (Math.abs(seg.shifts[good[i]] - seg.shifts[good[0]]) > 0.5) agreed = false;
+    source.waiting = source.waiting || [];
+    source.waiting.push([seg, cues]);
+    if (agreed) { source.shiftBy = good[0]; placeWaiting(source); }
+    else if (source.waiting.length > 60) placeWaiting(source);
+  }
+
+  // Downloads the pieces of a caption track, a few at a time, those nearest the viewer first.
+  function readAhead(t) {
+    if (!realFetch) return;
+    for (var n = 0; n < S.sources.length; n++) {
+      var source = S.sources[n];
+      if (!source.segs || source.dead || source.finished) continue;
+      while (source.busy < 4) {
+        var pick = null, i;
+        for (i = 0; i < source.segs.length; i++) {
+          var seg = source.segs[i];
+          if (seg.done) continue;
+          if (seg.to >= t / 1000 - 5) { pick = seg; break; }
+          if (!pick) pick = seg;
+        }
+        if (!pick) {
+          if (source.busy === 0) {
+            source.finished = true;
+            placeWaiting(source);
+            say('caption track read in full: ' + source.cues.length + ' lines, ' + source.windows.length + ' stretches to mute');
+          }
+          break;
+        }
+        fetchPiece(source, pick);
+      }
+    }
+  }
+
+  function fetchPiece(source, seg) {
+    seg.done = true;
+    source.busy++;
+    var settle = function (ok) {
+      source.busy--;
+      if (ok) { source.fetched++; return; }
+      source.failed++;
+      if (source.failed >= 6 && source.fetched === 0 && !source.dead) {
+        source.dead = true;
+        say('caption pieces could not be downloaded; falling back to captions as they appear');
+      }
+    };
+    var get = function (options) {
+      return realFetch.call(window, seg.url, options).then(function (res) {
+        if (!res.ok) throw new Error('status ' + res.status);
+        return res.arrayBuffer();
+      });
+    };
+    get(undefined).catch(function () { return get({ credentials: 'include' }); }).then(function (buffer) {
+      try { takePiece(source, seg, new Uint8Array(buffer)); } catch (e) { /* an unreadable piece */ }
+      settle(true);
+    }, function () { settle(false); });
+  }
+
+  // ---- Watching what the page downloads ----
+
+  function interesting(head) {
+    if (head.indexOf('<MPD') >= 0) return 'dash';
+    if (/^\uFEFF?\s*#EXTM3U/.test(head)) return 'hls';
+    return looksLikeCaptions(head) ? 'captions' : '';
+  }
+
+  function take(kind, text, address) {
+    try {
+      if (kind === 'dash') readDash(text, address);
+      else if (kind === 'hls') readHls(text, address);
+      else offerCaptions(text);
+    } catch (e) { say('could not read a ' + kind + ' download: ' + e.message); }
+  }
+
+  function skippable(type) { return /^(video|audio|image|font)\/|javascript|css|text\/html|wasm/.test(type); }
 
   (function watchDownloads() {
-    if (!B.captionWindows) return;
-    var realFetch = window.fetch;
+    if (SCOUT || !B.captionCues) return;
     if (realFetch) {
       window.fetch = function () {
         var answer = realFetch.apply(this, arguments);
         try {
           answer.then(function (res) {
             try {
-              var type = res.headers.get('content-type') || '';
-              var length = parseInt(res.headers.get('content-length') || '0', 10) || 0;
-              if (res.ok && worthALook(res.url || '', type, length)) res.clone().text().then(offerCaptions, function () {});
+              if (!res.ok || !res.body || skippable(res.headers.get('content-type') || '')) return;
+              if ((parseInt(res.headers.get('content-length') || '0', 10) || 0) > 6000000) return;
+              // Looks at the first part of a copy of the download, and reads on only if it is a manifest or captions.
+              var reader = res.clone().body.getReader(), parts = [], size = 0, kind = null;
+              var pump = function () {
+                reader.read().then(function (step) {
+                  if (step.value) { parts.push(step.value); size += step.value.byteLength; }
+                  if (kind === null && (size >= 300 || step.done)) {
+                    kind = parts.length ? interesting(new TextDecoder('utf-8').decode(parts[0].subarray(0, 2000))) : '';
+                    if (!kind) { reader.cancel().catch(function () {}); return; }
+                  }
+                  if (size > 6000000) { reader.cancel().catch(function () {}); return; }
+                  if (!step.done) { pump(); return; }
+                  var all = new Uint8Array(size), at = 0;
+                  for (var i = 0; i < parts.length; i++) { all.set(parts[i], at); at += parts[i].byteLength; }
+                  take(kind, new TextDecoder('utf-8').decode(all), res.url || '');
+                }, function () {});
+              };
+              pump();
             } catch (e) { /* leave the page's download alone */ }
           }, function () {});
         } catch (e) { /* leave the page's download alone */ }
@@ -112,16 +522,17 @@
         var xhr = this, address = String(url || '');
         xhr.addEventListener('load', function () {
           try {
-            var type = xhr.getResponseHeader('content-type') || '';
-            var length = parseInt(xhr.getResponseHeader('content-length') || '0', 10) || 0;
-            var kind = xhr.responseType;
-            if (kind === '' || kind === 'text') {
-              if (worthALook(address, type, length || xhr.responseText.length)) offerCaptions(xhr.responseText);
-            } else if (kind === 'arraybuffer' && xhr.response) {
-              if (worthALook(address, type, xhr.response.byteLength)) offerCaptions(new TextDecoder('utf-8').decode(xhr.response));
-            } else if (kind === 'json' && xhr.response) {
-              if (worthALook(address, type, length)) offerCaptions(JSON.stringify(xhr.response));
-            }
+            if (skippable(xhr.getResponseHeader('content-type') || '')) return;
+            var how = xhr.responseType, text = null;
+            if (how === '' || how === 'text') text = xhr.responseText;
+            else if (how === 'arraybuffer' && xhr.response && xhr.response.byteLength <= 6000000) {
+              if (!interesting(new TextDecoder('utf-8').decode(new Uint8Array(xhr.response, 0, Math.min(2000, xhr.response.byteLength))))) return;
+              text = new TextDecoder('utf-8').decode(xhr.response);
+            } else if (how === 'json' && xhr.response) text = JSON.stringify(xhr.response);
+            else if (how === 'document' && xhr.response) text = new XMLSerializer().serializeToString(xhr.response);
+            if (!text || text.length > 6000000) return;
+            var kind = interesting(text.slice(0, 2000));
+            if (kind) take(kind, text, absolute(xhr.responseURL || address, location.href));
           } catch (e) { /* leave the page's download alone */ }
         });
         return realOpen.apply(this, arguments);
@@ -134,9 +545,6 @@
   function watchForTrouble(video) {
     if (watched.has(video) || !B.note) return;
     watched.add(video);
-    // A new film in the same player: what was read ahead belonged to the old one.
-    video.addEventListener('emptied', function () { S.ahead = []; S.captionFiles = []; });
-    var say = function (text) { try { B.note(text); } catch (e) { /* ignore */ } };
     video.addEventListener('playing', function () { say('video playing'); }, { once: true });
     video.addEventListener('error', function () {
       var err = video.error;
@@ -150,18 +558,79 @@
     }, 2500);
   }
 
+  // Moving to another title on the same site: what was read ahead belonged to the last one.
+  // (What arrived in the last few seconds is the new title's, fetched as the page changed.)
+  function noticeNewPage() {
+    var address = location.href.split('#')[0];
+    if (address === S.address) return;
+    var first = !S.address, now = Date.now();
+    S.address = address;
+    if (first) return;
+    S.sources = S.sources.filter(function (source) { return now - source.made < 20000; });
+    S.screen = [];
+    S.youtubeDone = false;
+    S.youtubeTries = 0;
+  }
+
   function loadConfig() {
     try {
       var c = JSON.parse(B.config());
       S.version = c.version;
       S.language = !!c.language;
+      S.showCaptions = c.showCaptions !== false;
+      S.strict = !!c.strict;
       S.tags = c.tags || [];
-      // Word settings may have changed, so captions are checked again from scratch.
+      // Word settings may have changed, so every caption line is checked again from scratch.
       states = new WeakMap();
-      S.lastDomText = '';
-      S.ahead = [];
-      for (var i = 0; i < S.captionFiles.length; i++) addAhead(S.captionFiles[i]);
+      blocks = new WeakMap();
+      S.screen = [];
+      for (var i = 0; i < S.sources.length; i++) S.sources[i].windows = windowsFor(S.sources[i].cues);
+      styleCaptions();
     } catch (e) { /* keep the previous settings */ }
+  }
+
+  // The words being muted should not be printed on the screen either. Unless the viewer asks for
+  // captions, they are kept in the page (the filter reads them) but not shown.
+  function styleCaptions() {
+    var id = 'safewatch-captions', old = document.getElementById(id), hide = S.language && !S.showCaptions && !SCOUT;
+    if (!hide) { if (old) old.remove(); return; }
+    if (old || !document.documentElement) return;
+    var style = document.createElement('style');
+    style.id = id;
+    style.textContent = CAPTION_SELECTORS + ', .caption-window, .ytp-caption-window-container, .player-timedtext' +
+      '{opacity:0 !important}\nvideo::cue{color:transparent !important;background:transparent !important;text-shadow:none !important;opacity:0 !important}';
+    document.documentElement.appendChild(style);
+  }
+
+  // YouTube only downloads a video's captions once they are switched on, so they are switched on,
+  // automatic ones included. Those carry a time for every word.
+  function wakeYouTubeCaptions() {
+    if (S.youtubeDone || !/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) return;
+    var player = document.getElementById('movie_player');
+    if (!player || !player.getOption) return;
+    S.youtubeTries = (S.youtubeTries || 0) + 1;
+    try {
+      if (player.loadModule) player.loadModule('captions');
+      var list = player.getOption('captions', 'tracklist', { includeAsr: true }) || [], pick = null;
+      for (var i = 0; i < list.length; i++) {
+        if (!english(list[i].languageCode)) continue;
+        if (!pick || (pick.kind === 'asr' && list[i].kind !== 'asr')) pick = list[i];
+      }
+      var now = player.getOption('captions', 'track');
+      if (now && now.languageCode && english(now.languageCode)) { S.youtubeDone = true; say('YouTube captions are on'); return; }
+      if (pick) {
+        player.setOption('captions', 'track', pick);
+        say('YouTube captions switched on (' + (pick.kind === 'asr' ? 'automatic' : 'written') + ')');
+        S.youtubeDone = true;
+      } else if (list.length) {
+        say('YouTube: this video has captions but none in English');
+        S.youtubeDone = true;
+      } else if (S.youtubeTries > 10) {
+        if (player.toggleSubtitlesOn) player.toggleSubtitlesOn();
+        say('YouTube: no caption list offered for this video');
+        S.youtubeDone = true;
+      }
+    } catch (e) { if (S.youtubeTries > 10) { S.youtubeDone = true; say('YouTube captions could not be switched on: ' + e.message); } }
   }
 
   // Reads the video's caption tracks ahead of time and turns them into mute windows.
@@ -180,7 +649,7 @@
       // Nothing is switched on: load one track silently, preferring English.
       var pick = usable[0];
       for (i = 0; i < usable.length; i++) {
-        if ((usable[i].language || '').toLowerCase().indexOf('en') === 0) { pick = usable[i]; break; }
+        if (english(usable[i].language)) { pick = usable[i]; break; }
       }
       pick.mode = 'hidden';
     }
@@ -190,17 +659,34 @@
       if (track.mode === 'disabled' || !cues) continue;
       if (!rescan && st.cueCounts.get(track) === cues.length) continue;
       st.cueCounts.set(track, cues.length);
+      var fresh = [];
       for (var j = 0; j < cues.length; j++) {
-        var cue = cues[j], text = cue.text || '';
+        var cue = cues[j], text = plain(cue.text || '');
         var key = cue.startTime + '|' + cue.endTime + '|' + text;
-        if (st.seen[key]) continue;
+        if (st.seen[key] || !text) continue;
         st.seen[key] = true;
-        try {
-          var w = JSON.parse(B.muteWindows(cue.startTime * 1000, cue.endTime * 1000, text));
-          for (var n = 0; n < w.length; n++) st.windows.push(w[n]);
-        } catch (e) { /* skip this cue */ }
+        st.starts.push(cue.startTime * 1000);
+        fresh.push([Math.round(cue.startTime * 1000), Math.round(cue.endTime * 1000), text]);
       }
+      var found = windowsFor(fresh);
+      for (var n = 0; n < found.length; n++) st.windows.push(found[n]);
+      if (fresh.length && !st.saidTrack) { st.saidTrack = true; say('reading the video\'s own caption track'); }
     }
+  }
+
+  // ---- Captions drawn on the page ----
+  //
+  // These only appear as the line is spoken, with no times attached. A line that scrolls in word by
+  // word (YouTube's automatic captions) is muted as each flagged word arrives. A line that appears all
+  // at once is muted over the part of it where the word should fall, judged by where the word sits in
+  // the line and how fast people speak, and no longer than the line stays up.
+
+  var blocks = new WeakMap();
+  var changed = [];
+  var FAST = 24, SLOW = 9; // letters spoken per second, at the quickest and the slowest
+
+  function spansIn(text) {
+    try { return JSON.parse(B.spans(text)); } catch (e) { return []; }
   }
 
   // Length of the longest ending of `before` that `after` begins with.
@@ -212,34 +698,132 @@
     return 0;
   }
 
-  // Captions drawn into the page only appear as the words are spoken, so this
-  // path reacts a moment late. It checks just the newly added words.
-  function checkDomCaptions() {
-    var els = document.querySelectorAll(CAPTION_SELECTORS);
-    if (!els.length) { S.lastDomText = ''; return; }
-    var text = '';
-    for (var i = 0; i < els.length; i++) text += ' ' + (els[i].textContent || '');
-    text = text.replace(/\s+/g, ' ').trim();
-    if (text === S.lastDomText) return;
-    var k = overlap(S.lastDomText, text);
-    S.lastDomText = text;
-    var fresh = text.slice(Math.max(0, k - 12));
-    if (!fresh) return;
-    try {
-      if (B.profane(fresh)) S.domMuteUntil = Date.now() + DOM_MUTE_MS;
-    } catch (e) { /* ignore */ }
+  function cut(st, t) {
+    for (var i = 0; i < st.mine.length; i++) st.mine[i][1] = Math.min(st.mine[i][1], t + 500);
+    st.mine = [];
   }
 
-  function setMuted(video, st, mute) {
+  function readBlock(block, text, t) {
+    var st = blocks.get(block);
+    if (!st) { st = { text: '', shown: '', goneAt: -1, mine: [] }; blocks.set(block, st); }
+    if (!text) {
+      // The line has gone. Players sometimes redraw a line, so it is given a moment to come back
+      // before what was planned for it is cut short.
+      if (st.text) { st.text = ''; st.goneAt = t; }
+      else if (st.goneAt >= 0 && Math.abs(t - st.goneAt) > 400) { cut(st, st.goneAt); st.goneAt = -1; st.shown = ''; }
+      return;
+    }
+    if (text === st.text) return;
+    S.screenSeenAt = Date.now();
+    var before = st.text || (st.goneAt >= 0 ? st.shown : '');
+    st.text = text;
+    st.goneAt = -1;
+    if (text === st.shown) return; // the same line, redrawn
+    st.shown = text;
+    var kept = before ? (text.indexOf(before) === 0 ? before.length : overlap(before, text)) : 0;
+    var rolling = kept >= Math.min(8, before.length) && kept > 0;
+    if (!rolling) {
+      cut(st, t);
+      kept = 0;
+      calibrate(text, t);
+    }
+    var spans = spansIn(text);
+    for (var i = 0; i < spans.length; i++) {
+      if (spans[i][1] <= kept) continue; // already dealt with when it first appeared
+      var from, to;
+      if (rolling) {
+        from = t - 250;
+        to = t + 1100;
+      } else {
+        from = t + Math.max(0, spans[i][0] / FAST * 1000 - 600);
+        to = t + Math.min(spans[i][1] / SLOW * 1000 + 900, 7000);
+      }
+      var stretch = [from, to];
+      st.mine.push(stretch);
+      S.screen.push(stretch);
+      if (S.screen.length > 400) S.screen.shift();
+    }
+  }
+
+  // A line on screen that also appears in the caption data shows whether that data's times are right.
+  // Several lines agreeing on the same difference move the data to match.
+  function calibrate(text, t) {
+    var words = squash(text);
+    if (words.length < 12) return;
+    for (var n = 0; n < S.sources.length; n++) {
+      var source = S.sources[n], at = source.index[words];
+      if (at === undefined || at < 0) continue;
+      source.deltas.push(t - (at + source.offset));
+      if (source.deltas.length > 5) source.deltas.shift();
+      if (source.deltas.length < 3) continue;
+      var sorted = source.deltas.slice().sort(function (a, b) { return a - b; }), middle = sorted[sorted.length >> 1];
+      if (sorted[sorted.length - 1] - sorted[0] > 800) continue; // they do not agree
+      if (Math.abs(middle) > 600) {
+        source.offset += middle;
+        source.deltas = [];
+        say('caption times moved by ' + Math.round(middle) + ' ms to match the screen');
+      } else if (!source.checked || !source.saidChecked) {
+        source.saidChecked = true;
+        say('caption times checked against the screen: within ' + Math.round(Math.abs(middle)) + ' ms');
+      }
+      source.checked = true;
+    }
+  }
+
+  // Text that changes on top of the video, on players this script has no name for, is very likely captions.
+  var observer = null;
+  function watchPageText() {
+    if (observer || SCOUT || !window.MutationObserver || !document.documentElement) return;
+    observer = new MutationObserver(function (records) {
+      for (var i = 0; i < records.length && changed.length < 40; i++) {
+        var node = records[i].target;
+        if (node.nodeType === 3) node = node.parentElement;
+        if (node && node.nodeType === 1 && changed.indexOf(node) < 0) changed.push(node);
+      }
+    });
+    observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+  }
+
+  function overVideo(el, box) {
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    var x = r.left + r.width / 2, y = r.top + r.height / 2;
+    return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom && r.height < box.height * 0.45;
+  }
+
+  function checkScreenCaptions(video, t) {
+    var els = document.querySelectorAll(CAPTION_SELECTORS), named = '', i;
+    for (i = 0; i < els.length; i++) named += ' ' + (els[i].textContent || '');
+    named = named.replace(/\s+/g, ' ').trim();
+    readBlock(document.documentElement, named, t);
+
+    var list = changed;
+    changed = [];
+    if (named || !list.length) return;
+    var box = video.getBoundingClientRect();
+    for (i = 0; i < list.length; i++) {
+      var el = list[i];
+      if (!el.isConnected || el.closest('button, a, input, select, textarea, nav, [role=button], [role=slider], [role=menu], [role=dialog]')) continue;
+      // The whole caption, not one word of it: the largest piece of the page around it that is still a line or two of text.
+      while (el.parentElement && el.parentElement !== document.body && el.parentElement !== document.documentElement &&
+             (el.parentElement.textContent || '').length <= 220 && !el.parentElement.querySelector('video, button, input')) el = el.parentElement;
+      var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (text.length > 220 || (text && !overVideo(el, box))) continue;
+      readBlock(el, text, t);
+    }
+  }
+
+  function setMuted(video, st, mute, why) {
     if (mute) {
       if (!st.mutedByUs) {
-        st.wasMuted = video.muted; st.mutedByUs = true;
-        try { if (B.note) B.note('muted at ' + Math.round(video.currentTime) + 's'); } catch (e) { /* ignore */ }
+        st.wasMuted = video.muted; st.mutedByUs = true; st.mutedAt = Date.now();
+        say('muted at ' + (Math.round(video.currentTime * 10) / 10) + 's (' + why + ')');
       }
       if (!video.muted) video.muted = true;
     } else if (st.mutedByUs) {
       st.mutedByUs = false;
       video.muted = st.wasMuted;
+      say('sound back after ' + (Date.now() - st.mutedAt) + ' ms');
     }
   }
 
@@ -356,60 +940,98 @@
     } catch (e) { /* ignore */ }
   }
 
+  // Why the sound should be off at this moment of this video, or '' when it should be on.
+  function muteReason(video, st, t, advert, live) {
+    var n, k, source, at;
+    for (n = 0; n < st.windows.length; n++) if (t >= st.windows[n][0] && t < st.windows[n][1]) return 'caption track';
+    for (n = 0; n < S.sources.length; n++) {
+      source = S.sources[n];
+      if (!applies(source, video, advert)) continue;
+      at = t - source.offset;
+      for (k = 0; k < source.windows.length; k++) if (at >= source.windows[k][0] && at < source.windows[k][1]) return 'captions read ahead';
+    }
+    if (live) for (n = 0; n < S.screen.length; n++) if (t >= S.screen[n][0] && t < S.screen[n][1]) return 'captions on screen';
+    return '';
+  }
+
+  // Tells the app, for the video being watched, what the language filter has to go on.
+  function report(video, st, advert) {
+    var now = Date.now(), lines = st.starts.length, kind = 'none', n;
+    for (n = 0; n < S.sources.length; n++) if (applies(S.sources[n], video, advert)) lines += S.sources[n].cues.length;
+    if (lines > 0) kind = 'ahead';
+    else if (now - S.screenSeenAt < 300000) kind = 'screen';
+    S.covered = kind !== 'none';
+    if (!B.captionState) return;
+    var state = kind + ':' + (lines > 0 ? Math.ceil(lines / 50) : 0);
+    if (state === S.lastState && now - S.lastStateAt < 5000) return;
+    S.lastState = state;
+    S.lastStateAt = now;
+    try { B.captionState(kind, lines); } catch (e) { /* ignore */ }
+  }
+
   function tick() {
     S.ticks++;
     try { if (B.version() !== S.version) loadConfig(); } catch (e) { return; }
+    if (!SCOUT) noticeNewPage();
     var videos = document.querySelectorAll('video');
     if (!videos.length) return;
     if (SCOUT) { scoutTick(videos); return; }
-    if (S.language) checkDomCaptions();
-    var now = Date.now(), main = null, mainArea = -1, biggest = null, biggestArea = -1;
+    if (S.ticks % 20 === 1) { styleCaptions(); watchPageText(); if (S.language) wakeYouTubeCaptions(); }
+    var main = null, mainArea = -1, biggest = null, biggestArea = -1, i, video, st, area;
 
-    for (var i = 0; i < videos.length; i++) {
-      var video = videos[i], st = stateOf(video);
-      if (S.language) harvestCues(video, st);
-      var t = video.currentTime * 1000;
-      var mute = S.language && now < S.domMuteUntil, blur = false, skipTo = -1, n;
+    for (i = 0; i < videos.length; i++) {
+      video = videos[i];
+      area = video.clientWidth * video.clientHeight;
+      if (area > biggestArea) { biggestArea = area; biggest = video; }
+      if (!video.paused && !video.ended && area > mainArea) { mainArea = area; main = video; }
+    }
+    var watching = main || biggest, watchingAt = watching.currentTime * 1000;
+    var advert = !!document.querySelector('.ad-showing, .ad-interrupting');
+    if (S.language) {
+      for (i = 0; i < videos.length; i++) harvestCues(videos[i], stateOf(videos[i]));
+      readAhead(watchingAt);
+      // Captions drawn on the page are read for the video being watched.
+      checkScreenCaptions(watching, watchingAt);
+    }
+
+    for (i = 0; i < videos.length; i++) {
+      video = videos[i];
+      st = stateOf(video);
+      var t = video.currentTime * 1000, why = '', blur = false, skipTo = -1, n;
 
       for (n = 0; n < S.tags.length; n++) {
         var tag = S.tags[n];
         if (t < tag.s || t >= tag.e) continue;
         if (tag.a === 'skip') skipTo = Math.max(skipTo, tag.e);
         else if (tag.a === 'blur') blur = true;
-        else mute = true;
+        else why = 'marked scene';
       }
-      if (!mute) {
-        for (n = 0; n < st.windows.length; n++) {
-          if (t >= st.windows[n][0] && t < st.windows[n][1]) { mute = true; break; }
-        }
-      }
-      if (!mute) {
-        for (n = 0; n < S.ahead.length; n++) {
-          if (t >= S.ahead[n][0] && t < S.ahead[n][1]) { mute = true; break; }
-        }
-      }
+      // Captions on screen are acted on until better data has proved itself for this part of the video.
+      if (!why && S.language) why = muteReason(video, st, t, advert, video === watching && !trustedHere(video, st, t, advert));
       if (skipTo >= 0) {
         var target = skipTo / 1000;
         if (isFinite(video.duration)) target = Math.min(target, video.duration);
         if (target > video.currentTime) seekTo(video, target);
-        mute = true; // stay silent until the jump lands
+        why = 'skipping'; // stay silent until the jump lands
       }
-      setMuted(video, st, mute);
+      if (video === main && S.language) {
+        report(video, st, advert);
+        // The strict choice: with nothing to go on, the video being watched plays without sound.
+        if (!S.playingSince) S.playingSince = Date.now();
+        if (!why && S.strict && !S.covered && Date.now() - S.playingSince > 8000 && !(video.muted && !st.mutedByUs)) why = 'no captions found';
+      }
+      setMuted(video, st, !!why, why);
       setBlurred(video, st, blur);
-
-      var area = video.clientWidth * video.clientHeight;
-      if (area > biggestArea) { biggestArea = area; biggest = video; }
-      if (!video.paused && !video.ended && area > mainArea) { mainArea = area; main = video; }
     }
+    if (!main) S.playingSince = 0;
+
     // Tells the app a video is playing and where it is, for scene marking and live detection.
     // The app's player controls work on the playing video, or the largest one when nothing is playing.
-    var target = main || biggest;
-    if (target && B.state) {
+    if (B.state) {
       try {
-        B.state(target.currentTime * 1000, isFinite(target.duration) ? target.duration * 1000 : 0, target.paused,
-          !!document.querySelector('.ad-showing, .ad-interrupting'));
+        B.state(watching.currentTime * 1000, isFinite(watching.duration) ? watching.duration * 1000 : 0, watching.paused, advert);
         var command = B.command();
-        if (command) obey(target, command);
+        if (command) obey(watching, command);
       } catch (e) { /* ignore */ }
     }
     if (main) {

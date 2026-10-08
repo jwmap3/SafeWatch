@@ -74,7 +74,31 @@ class ProfanityMatcherTest {
     @Test fun alreadyCensoredCaptionsStillCount() {
         assertTrue(matcher().containsProfanity("what the [ __ ] is that"))
         assertTrue(matcher().containsProfanity("oh f*** off"))
-        assertFalse(matcher(FilterSettings(language = Strictness.LOW)).containsProfanity("what the [ __ ]"))
+        // Whatever the caption writer blanked out is muted at every setting but Off.
+        assertTrue(matcher(FilterSettings(language = Strictness.LOW)).containsProfanity("what the [ __ ]"))
+        assertFalse(matcher(FilterSettings(language = Strictness.OFF)).containsProfanity("what the [ __ ]"))
+    }
+
+    @Test fun everyUsualWayOfBlankingAWordCounts() {
+        for (line in listOf("oh sh*t", "you b*tch", "f**k that", "what the f___", "s__t happens", "[bleep] off", "(BLEEPING) car",
+            "you [expletive] idiot", "what the @#\$%!", "that is ****", "[\u00a0__\u00a0] this")) {
+            assertTrue(matcher().containsProfanity(line))
+        }
+    }
+
+    @Test fun ordinaryPunctuationIsNotTakenForABlankedWord() {
+        for (line in listOf("I--I don't know", "wait--what?", "No!!!!", "5 * 3 * 2", "a_b_c", "snake_case_name", "*laughs*", "[music]",
+            "(sighs)", "Rated 4**", "e-mail me @home", "100% sure!!")) {
+            assertFalse(matcher().containsProfanity(line))
+        }
+    }
+
+    @Test fun commonSpellingsAndShorthandAreCaught() {
+        for (line in listOf("wtf is that", "effing hell", "stfu", "what a biatch", "bull shite")) assertTrue(matcher().containsProfanity(line))
+        // Sincere uses are left alone.
+        for (line in listOf("Thank God you're safe", "Dear God, we pray", "Jesus said to them", "she began to sob")) {
+            assertFalse(matcher().containsProfanity(line))
+        }
     }
 }
 
@@ -94,7 +118,7 @@ class SubtitleTest {
 
     @Test fun shortCueIsMutedWhole() {
         val tags = CueTagger.tagsFor(Cue(10000, 11000, "Oh shit"), ProfanityMatcher(FilterSettings()))
-        assertEquals(listOf(Tag(9850, 11150, Category.LANGUAGE, Action.MUTE, 2, Tag.SOURCE_CAPTIONS)), tags)
+        assertEquals(listOf(Tag(10000 - CueTagger.EDGE_MS, 11000 + CueTagger.EDGE_MS, Category.LANGUAGE, Action.MUTE, 2, Tag.SOURCE_CAPTIONS)), tags)
     }
 
     @Test fun longCueMutesOnlyAroundTheWord() {

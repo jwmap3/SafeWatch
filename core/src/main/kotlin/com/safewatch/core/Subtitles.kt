@@ -48,10 +48,10 @@ object SubtitleParser {
  * on both sides. Short lines are muted whole.
  */
 object CueTagger {
-    const val PAD_BEFORE_MS = 400L
-    const val PAD_AFTER_MS = 500L
+    const val PAD_BEFORE_MS = 600L
+    const val PAD_AFTER_MS = 700L
     const val SHORT_CUE_MS = 1200L
-    const val EDGE_MS = 150L
+    const val EDGE_MS = 250L
 
     fun tagsFor(cue: Cue, matcher: ProfanityMatcher): List<Tag> {
         val text = SubtitleParser.cleanText(cue.text)

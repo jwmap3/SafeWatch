@@ -4,7 +4,30 @@ const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
 const script = fs.readFileSync(path.join(__dirname, '../../app/src/main/assets/safewatch.js'), 'utf8');
 const types = { '.html': 'text/html', '.webm': 'video/webm', '.vtt': 'text/vtt', '.xml': 'application/octet-stream' };
+// A streaming service's caption track, cut into two-second pieces, as a DASH manifest and as an HLS list.
+const stamp = (s) => { const m = Math.floor(s / 60), r = (s - m * 60).toFixed(3); return `00:${String(m).padStart(2, '0')}:${r.padStart(6, '0')}`; };
+const made = (url) => {
+  let m;
+  if (url === '/film.mpd') return ['application/dash+xml', `<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT30S">
+    <Period id="0" start="PT0S"><AdaptationSet contentType="video" mimeType="video/mp4"><Representation id="v1"/></AdaptationSet>
+    <AdaptationSet contentType="text" mimeType="text/vtt" lang="es"><Representation id="es"><SegmentTemplate media="t/es-$Number$.vtt" timescale="1000" startNumber="1"><SegmentTimeline><S t="0" d="2000" r="14"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet>
+    <AdaptationSet contentType="text" mimeType="text/vtt" lang="en-US"><Role schemeIdUri="urn:mpeg:dash:role:2011" value="caption"/><Representation id="en"><SegmentTemplate media="t/$RepresentationID$-$Number%03d$.vtt" timescale="1000" startNumber="1"><SegmentTimeline><S t="0" d="2000" r="14"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet>
+    </Period></MPD>`];
+  if ((m = /^\/t\/en-(\d+)\.vtt$/.exec(url))) { // times counted from the start of the film
+    const n = +m[1], from = (n - 1) * 2;
+    return ['text/vtt', `WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000\n\n${stamp(from + 0.3)} --> ${stamp(from + 1.3)}\n${n === 6 ? 'piece six has a BADWORD in it' : 'a clean line in piece ' + n}\n`];
+  }
+  if (url === '/film.m3u8') return ['application/vnd.apple.mpegurl', '#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",LANGUAGE="en",NAME="English",URI="h/en.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=1,SUBTITLES="s"\nv.m3u8\n'];
+  if (url === '/h/en.m3u8') return ['application/vnd.apple.mpegurl', '#EXTM3U\n#EXT-X-TARGETDURATION:2\n' + Array.from({ length: 15 }, (x, i) => `#EXTINF:2.0,\nen-${i + 1}.webvtt`).join('\n') + '\n#EXT-X-ENDLIST\n'];
+  if ((m = /^\/h\/en-(\d+)\.webvtt$/.exec(url))) { // times counted from the start of each piece
+    const n = +m[1];
+    return ['application/octet-stream', `WEBVTT\n\n00:00:00.400 --> 00:00:01.400\n${n === 3 ? 'piece three has a BADWORD too' : 'another clean line ' + n}\n`];
+  }
+  return null;
+};
 const server = http.createServer((req, res) => {
+  const dynamic = made(req.url.split('?')[0]);
+  if (dynamic) { res.writeHead(200, { 'Content-Type': dynamic[0], 'Access-Control-Allow-Origin': '*' }); return res.end(dynamic[1]); }
   const f = path.join(__dirname, req.url.split('?')[0]);
   if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); }
   const buf = fs.readFileSync(f), range = req.headers.range;
@@ -23,12 +46,19 @@ const server = http.createServer((req, res) => {
     window.__tags = [{ s: 8000, e: 12000, a: 'skip' }, { s: 11500, e: 14000, a: 'skip' }, { s: 16000, e: 17000, a: 'blur' }, { s: 18000, e: 19000, a: 'mute' }];
     window.SafeWatchBridge = {
       version: () => window.__ver,
-      config: () => JSON.stringify({ version: window.__ver, language: true, tags: window.__tags }),
-      muteWindows: (s, e, text) => JSON.stringify(/badword/i.test(text) ? [[s, e]] : []),
-      profane: (text) => /badword/i.test(text),
+      config: () => JSON.stringify({ version: window.__ver, language: true, showCaptions: false, strict: !!window.__strict, tags: window.__tags }),
+      cueWindows: (lines) => JSON.stringify(JSON.parse(lines).filter((l) => /badword/i.test(l[2])).map((l) => [l[0], l[1]])),
+      spans: (text) => { const out = [], re = /badword/gi; let m; while ((m = re.exec(text))) out.push([m.index, m.index + m[0].length]); return JSON.stringify(out); },
+      captionState: (kind, lines) => { window.__caption = { kind, lines }; },
       beat: (t, share) => { window.__beats.push(t); window.__share = share; },
       fullPicture: () => !!window.__full,
-      captionWindows: (file) => { const m = file.match(/(\d\d):(\d\d):(\d\d)[.,](\d+)\D+(\d\d):(\d\d):(\d\d)[.,](\d+)/); if (!m || !/badword/i.test(file)) return '[]'; const ms = (i) => ((+m[i] * 60 + +m[i + 1]) * 60 + +m[i + 2]) * 1000 + +m[i + 3]; return JSON.stringify([[ms(1), ms(5)]]); },
+      captionCues: (file) => {
+        const ms = (t) => { const p = t.replace(',', '.').split(':'); return Math.round(((+p[0] * 60 + +p[1]) * 60 + parseFloat(p[2])) * 1000); };
+        const out = [], vtt = /(\d\d:\d\d:\d\d[.,]\d+)\s*-->\s*(\d\d:\d\d:\d\d[.,]\d+)[^\n]*\n([^\n]+)/g, ttml = /<p begin="([^"]+)" end="([^"]+)">([^<]*)<\/p>/g;
+        let m; while ((m = vtt.exec(file))) out.push([ms(m[1]), ms(m[2]), m[3]]);
+        while ((m = ttml.exec(file))) out.push([ms(m[1]), ms(m[2]), m[3]]);
+        return JSON.stringify(out);
+      },
       state: (pos, dur, paused, ad) => { window.__state = { pos, dur, paused, ad }; },
       command: () => { const c = window.__command || ''; window.__command = ''; return c; },
       note: (text) => { (window.__notes = window.__notes || []).push(text); },
@@ -57,14 +87,6 @@ const server = http.createServer((req, res) => {
   await page.evaluate(() => { const v = document.getElementById('v'); v.muted = true; v.currentTime = 17.9; });
   r = await at(19.2); check('keeps the viewer\'s own mute', r.muted, JSON.stringify(r));
   await page.evaluate(() => { document.getElementById('v').muted = false; });
-
-  // Captions drawn into the page (YouTube style, rolling).
-  await page.evaluate(() => { document.getElementById('caps').innerHTML = '<span class="ytp-caption-segment">hello there</span>'; });
-  await page.waitForTimeout(300); r = await at(0); check('clean on-page caption does not mute', !r.muted);
-  await page.evaluate(() => { document.querySelector('.ytp-caption-segment').textContent = 'hello there you badword'; });
-  await page.waitForTimeout(300); r = await at(0); check('on-page caption with a filtered word mutes', r.muted);
-  await page.evaluate(() => { document.querySelector('.ytp-caption-segment').textContent = 'hello there you badword and more words'; });
-  await page.waitForTimeout(2000); r = await at(0); check('mute ends even though the word is still on screen', !r.muted);
 
   // New tags arrive when the app bumps the version.
   await page.evaluate(() => { const v = document.getElementById('v'); window.__tags = [{ s: 0, e: 30000, a: 'blur' }]; window.__ver = 2; });
@@ -103,6 +125,111 @@ const server = http.createServer((req, res) => {
   check('the play control resumes the video', await page.evaluate(() => !document.getElementById('v').paused));
   check('each mute is noted for the app', await page.evaluate(() => (window.__notes || []).length > 0));
   const beats = await page.evaluate(() => window.__beats.length); check('reports playback position to the app', beats > 20, `beats=${beats}`);
+
+  // The whole caption track of a streaming service, read from its manifest without captions being switched on.
+  await page.evaluate(async () => {
+    window.__notes = []; const v = document.getElementById('v'); v.pause();
+    await fetch('film.mpd').then((r) => r.text());
+  });
+  await page.waitForFunction(() => (window.__notes || []).some((n) => /read in full/.test(n)), null, { timeout: 15000 }).catch(() => {});
+  let notes = await page.evaluate(() => window.__notes);
+  check('manifest: the English caption track is found and read in full', notes.some((n) => /English caption track found, 15 pieces/.test(n)) && notes.some((n) => /read in full: 15 lines, 1 stretches/.test(n)), notes.join(' | '));
+  await page.evaluate(() => { const v = document.getElementById('v'); v.currentTime = 9.6; return v.play(); });
+  await page.waitForTimeout(300);
+  r = await at(0); check('manifest: not muted before the line', !r.muted && r.t < 10.3, JSON.stringify(r));
+  r = await at(10.5); check('manifest: muted on the line found in piece six', r.muted, JSON.stringify(r));
+  r = await at(11.6); check('manifest: unmuted after it', !r.muted, JSON.stringify(r));
+  // The same from an HLS list, whose pieces count their times from their own start.
+  await page.evaluate(async () => { window.__notes = []; await fetch('film.m3u8').then((r) => r.text()); });
+  await page.waitForFunction(() => (window.__notes || []).some((n) => /read in full/.test(n)), null, { timeout: 15000 }).catch(() => {});
+  notes = await page.evaluate(() => window.__notes);
+  check('caption list: read in full', notes.some((n) => /caption list read: 15 pieces/.test(n)) && notes.some((n) => /read in full: 15 lines, 1 stretches/.test(n)), notes.join(' | '));
+  await seek(3.0); await page.waitForTimeout(400);
+  r = await at(0); check('caption list: not muted before the line', !r.muted && r.t < 4.2, JSON.stringify(r));
+  r = await at(4.7); check('caption list: muted on the line found in piece three, placed by its piece and not at the start', r.muted, JSON.stringify(r));
+  r = await at(6.1); check('caption list: unmuted after it', !r.muted, JSON.stringify(r));
+  check('says what it has to go on', await page.evaluate(() => window.__caption && window.__caption.kind === 'ahead' && window.__caption.lines >= 15), JSON.stringify(await page.evaluate(() => window.__caption)));
+  check('captions are kept off the screen unless asked for', await page.evaluate(() => !!document.getElementById('safewatch-captions')));
+
+  // Captions drawn on the page, on a video with nothing better to go on.
+  const live = await browser.newPage();
+  live.on('pageerror', (e) => pageErrors.push(String(e)));
+  await live.addInitScript(() => {
+    window.__ver = 1;
+    window.SafeWatchBridge = {
+      version: () => window.__ver, fullPicture: () => false, beat: () => {}, state: () => {}, command: () => '',
+      config: () => JSON.stringify({ version: window.__ver, language: true, showCaptions: true, strict: !!window.__strict, tags: [] }),
+      cueWindows: () => '[]', captionCues: () => '[]',
+      spans: (text) => { const out = [], re = /badword/gi; let m; while ((m = re.exec(text))) out.push([m.index, m.index + m[0].length]); return JSON.stringify(out); },
+      captionState: (kind) => { window.__caption = kind; },
+      note: (text) => { (window.__notes = window.__notes || []).push(text); },
+    };
+  });
+  await live.addInitScript(script);
+  await live.goto(`http://127.0.0.1:${port}/screen.html`);
+  await live.evaluate(() => document.getElementById('v').play());
+  const muted = () => live.evaluate(() => document.getElementById('v').muted);
+  const caps = (html, id = 'caps') => live.evaluate(([h, i]) => { document.getElementById(i).innerHTML = h; }, [html, id]);
+  await live.waitForTimeout(700);
+  // Scrolling in word by word, as YouTube's automatic captions do.
+  await caps('<span class="ytp-caption-segment">hello there</span>');
+  await live.waitForTimeout(300); check('on screen: a clean line does not mute', !(await muted()));
+  let wordAt = Date.now();
+  await caps('<span class="ytp-caption-segment">hello there you badword</span>');
+  await live.waitForTimeout(300); check('on screen: a word scrolling in is muted as it arrives', await muted());
+  // More words keep arriving for three seconds. The mute must not be stretched by them.
+  const words = ['and', 'then', 'some', 'more', 'words', 'keep', 'coming', 'along', 'here', 'now'];
+  let line = 'hello there you badword', soundBackAt = 0;
+  for (const w of words) {
+    line += ' ' + w; await caps(`<span class="ytp-caption-segment">${line}</span>`); await live.waitForTimeout(300);
+    if (!soundBackAt && !(await muted())) soundBackAt = Date.now();
+  }
+  check('on screen: the mute lasts about a second however long the word stays up', soundBackAt > 0 && soundBackAt - wordAt < 2200, `sound back after ${soundBackAt - wordAt} ms`);
+  // The first line scrolls away and the rest carries on: still not muted again.
+  await caps('<span class="ytp-caption-segment">words keep coming along here now and on</span>');
+  await live.waitForTimeout(400); check('on screen: scrolling the line up does not mute again', !(await muted()));
+  // A whole line appearing at once, with the word near its end.
+  await caps('');
+  await live.waitForTimeout(700);
+  const whole = 'this is a long line and the word comes late badword';
+  await caps(`<span class="ytp-caption-segment">${whole}</span>`);
+  await live.waitForTimeout(250); check('on screen: a word late in a line is not muted the moment the line appears', !(await muted()));
+  await live.waitForTimeout(1500); check('on screen: it is muted when the line reaches it', await muted());
+  await caps('');
+  await live.waitForTimeout(1300); check('on screen: the mute ends once the line has gone', !(await muted()));
+  // Captions on a player this script has no name for.
+  await caps('<div class="some-unknown-caption-box"><span>badword right at the start</span></div>', 'odd');
+  await live.waitForTimeout(400); check('on screen: captions on an unknown player are found by where they are', await muted());
+  await caps('', 'odd');
+  await live.waitForTimeout(1900);
+  check('on screen: says captions are being read live', await live.evaluate(() => window.__caption) === 'screen');
+  // Text that changes elsewhere on the page is not taken for captions.
+  await live.evaluate(() => { document.getElementById('below').textContent = 'badword in an article under the player'; });
+  await live.waitForTimeout(500); check('text outside the video is ignored', !(await muted()));
+  let liveNotes = await live.evaluate(() => window.__notes || []);
+  check('each mute is recorded with how long it lasted', liveNotes.some((n) => /^muted at .*captions on screen/.test(n)) && liveNotes.some((n) => /^sound back after \d+ ms/.test(n)), liveNotes.join(' | '));
+  await live.close();
+
+  // The strict choice: nothing to go on, so no sound.
+  const strict = await browser.newPage();
+  await strict.addInitScript(() => {
+    window.SafeWatchBridge = {
+      version: () => 1, fullPicture: () => false, beat: () => {}, state: () => {}, command: () => '', note: () => {},
+      config: () => JSON.stringify({ version: 1, language: true, showCaptions: false, strict: true, tags: [] }),
+      cueWindows: () => '[]', captionCues: () => '[]', spans: () => '[]', captionState: (kind) => { window.__caption = kind; },
+    };
+  });
+  await strict.addInitScript(script);
+  await strict.goto(`http://127.0.0.1:${port}/screen.html`);
+  await strict.evaluate(() => document.getElementById('v').play());
+  await strict.waitForTimeout(3000);
+  check('strict: sound is left on for the first moments', !(await strict.evaluate(() => document.getElementById('v').muted)));
+  await strict.waitForTimeout(6500);
+  check('strict: a video with no captions plays without sound', await strict.evaluate(() => document.getElementById('v').muted && window.__caption === 'none'));
+  await strict.evaluate(() => { document.getElementById('caps').innerHTML = '<span class="ytp-caption-segment">a clean line appears</span>'; });
+  await strict.waitForTimeout(600);
+  check('strict: sound returns once captions are found', !(await strict.evaluate(() => document.getElementById('v').muted)));
+  await strict.close();
 
   // The hidden copy that looks ahead: silent, filling its screen, filtering nothing, going where it is told.
   const scout = await browser.newPage({ viewport: { width: 640, height: 360 } });

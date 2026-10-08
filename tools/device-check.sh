@@ -98,6 +98,11 @@ adb logcat -d -s SafeWatch:I > "$OUT/filter-log.txt"; echo "(end of filter log)"
 
 start;                    sleep 5
 tap "Settings";           sleep 2
+swipe_up;                 sleep 1
+tap "Filter report";      shot 14r-filter-report 3
+
+start;                    sleep 5
+tap "Settings";           sleep 2
 swipe_up; swipe_up; swipe_up; swipe_up; swipe_up; shot 15-appearance 2
 tap "Light";              shot 17-light 5
 start;                    shot 17b-light-home 8

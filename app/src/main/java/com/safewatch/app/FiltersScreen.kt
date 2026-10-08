@@ -8,6 +8,7 @@ import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
 import com.safewatch.app.browser.WatchActivity
 import com.safewatch.app.data.Accounts
+import com.safewatch.app.data.FilterLog
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Services
 import com.safewatch.app.detect.ModelSetup
@@ -89,6 +90,21 @@ class FiltersScreen(private val activity: MainActivity) {
             })
         })
         column.addView(languageNote)
+        if (settings.language != Strictness.OFF) {
+            column.addView(Ui.sectionHeader(ctx, ""))
+            column.addView(Ui.card(ctx).apply {
+                addView(Ui.switchRow(ctx, "Show captions", Prefs.showCaptions(ctx)) { Prefs.setShowCaptions(ctx, it) })
+                addView(Ui.divider(ctx))
+                addView(Ui.switchRow(ctx, "No captions, no sound", Prefs.silentWithoutCaptions(ctx)) { Prefs.setSilentWithoutCaptions(ctx, it) })
+                addView(Ui.divider(ctx))
+                addView(Ui.row(ctx, "Filter report") { showReport() })
+            })
+            column.addView(Ui.caption(ctx,
+                "Cursing is found by reading a video's captions, ahead of time where the player allows. Captions stay hidden " +
+                    "unless you switch them on, so a muted word is not printed instead. A video with no captions cannot be " +
+                    "filtered: the player says so, and \"No captions, no sound\" plays such a video silent. " +
+                    "The report lists what the filter found and when it muted."))
+        }
 
         // Nudity
         column.addView(Ui.sectionHeader(ctx, "Nudity"))
@@ -139,6 +155,15 @@ class FiltersScreen(private val activity: MainActivity) {
         }
         if (!installed) column.addView(Ui.caption(ctx,
             "Automatic detection downloads a small file (about 11 MB) the first time. Tap Detection if it has not finished."))
+
+        // Browser
+        column.addView(Ui.sectionHeader(ctx, "Browser"))
+        column.addView(Ui.card(ctx).apply {
+            addView(Ui.switchRow(ctx, "Block pop-ups and redirects", Prefs.blockPopups(ctx)) { Prefs.setBlockPopups(ctx, it) })
+        })
+        column.addView(Ui.caption(ctx,
+            "Stops pages opening new windows or sending you to another site by themselves. While a video is playing, " +
+                "nothing can take you off its page."))
 
         // Catalog
         val hasKey = Prefs.catalogKey(ctx).isNotEmpty()
@@ -258,6 +283,32 @@ class FiltersScreen(private val activity: MainActivity) {
     private fun editCatalogKey() = textDialog("TMDB catalog key", Prefs.catalogKey(activity), "Paste your key", 1) {
         Prefs.setCatalogKey(activity, it)
         rebuild()
+    }
+
+    /** What the filters did lately, to read or to copy and send on when something was missed. */
+    private fun showReport() {
+        val report = FilterLog.text(activity)
+        val words = android.widget.TextView(activity).apply {
+            text = report
+            textSize = 12f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextIsSelectable(true)
+            setTextColor(Ui.color(activity, R.color.text))
+            setPadding(Ui.dp(activity, 20), Ui.dp(activity, 12), Ui.dp(activity, 20), Ui.dp(activity, 12))
+        }
+        val scroll = android.widget.ScrollView(activity).apply { addView(words) }
+        AlertDialog.Builder(activity)
+            .setTitle("Filter report")
+            .setView(scroll)
+            .setPositiveButton("Copy") { _, _ ->
+                val board = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                board.setPrimaryClip(android.content.ClipData.newPlainText("SafeWatch filter report", report))
+                Ui.toast(activity, "Report copied")
+            }
+            .setNeutralButton("Clear") { _, _ -> FilterLog.clear(activity) }
+            .setNegativeButton("Close", null)
+            .show()
+        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
     }
 
     private fun editWords(title: String, words: Set<String>, onSave: (Set<String>) -> Unit) =

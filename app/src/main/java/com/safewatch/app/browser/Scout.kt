@@ -123,6 +123,7 @@ class Scout(private val activity: Activity, private val pageScript: String) {
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 userAgentString = agent
+                setSupportMultipleWindows(true) // and no window is ever given: pop-ups go nowhere
             }
             if (WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO)) WebViewCompat.setAudioMuted(newWeb, true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(newWeb, true)
@@ -132,7 +133,12 @@ class Scout(private val activity: Activity, private val pageScript: String) {
             newWeb.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val scheme = request.url.scheme.orEmpty()
-                    return scheme != "http" && scheme != "https" // never leaves for another app
+                    if (scheme != "http" && scheme != "https") return true // never leaves for another app
+                    // It stays on the page it was given: a move to another site is an advert's doing.
+                    val here = android.net.Uri.parse(view.url.orEmpty()).host.orEmpty().removePrefix("www.")
+                    val there = request.url.host.orEmpty().removePrefix("www.")
+                    return request.isForMainFrame && !request.isRedirect && here.isNotEmpty() && here != there &&
+                        !here.endsWith(".$there") && !there.endsWith(".$here")
                 }
                 override fun onPageFinished(view: WebView, url: String) {
                     if (!atStart) view.evaluateJavascript(pageScript, null)

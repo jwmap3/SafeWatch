@@ -97,6 +97,21 @@ object Prefs {
     fun startBlurTest(ctx: Context) =
         prefs(ctx).edit().putLong("testBlurUntil", System.currentTimeMillis() + 2 * 60 * 1000).apply()
 
+    /** Whether a video's captions are shown. Off by default: a word that is muted should not be printed on the screen instead. */
+    fun showCaptions(ctx: Context): Boolean = prefs(ctx).getBoolean("showCaptions", false)
+
+    fun setShowCaptions(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("showCaptions", on).apply()
+
+    /** The strict choice: a video with no captions to go on plays without sound. */
+    fun silentWithoutCaptions(ctx: Context): Boolean = prefs(ctx).getBoolean("silentWithoutCaptions", false)
+
+    fun setSilentWithoutCaptions(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("silentWithoutCaptions", on).apply()
+
+    /** Whether pages are stopped from opening new windows and from sending the browser somewhere else. */
+    fun blockPopups(ctx: Context): Boolean = prefs(ctx).getBoolean("blockPopups", true)
+
+    fun setBlockPopups(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("blockPopups", on).apply()
+
     /** Whether a hidden second copy of a video may play ahead of the viewer, so scenes are hidden before they arrive. */
     fun lookAhead(ctx: Context): Boolean = prefs(ctx).getBoolean("lookAhead", true)
 

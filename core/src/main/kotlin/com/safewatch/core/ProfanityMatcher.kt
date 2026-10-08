@@ -13,7 +13,8 @@ class ProfanityMatcher(settings: FilterSettings) {
     private val contains = ArrayList<Pair<String, Int>>()
     private val phrases = ArrayList<Pair<List<String>, Int>>()
     private val allowed = settings.allowedWords.map(::normalize).filter { it.isNotEmpty() }.toSet()
-    private val censoredLevel = if (settings.language.filters(2)) 2 else 0
+    // Whatever a caption writer saw fit to blank out is muted at every setting but Off.
+    private val censoredLevel = if (settings.language != Strictness.OFF) 3 else 0
 
     init {
         if (settings.language != Strictness.OFF) {
@@ -55,9 +56,12 @@ class ProfanityMatcher(settings: FilterSettings) {
                 }
             }
         }
-        // Captions that arrive already censored ("f***", "[ __ ]") still mark spoken profanity.
+        // Captions that arrive already censored ("f***", "sh*t", "[ __ ]", "[bleep]") still mark spoken profanity.
+        // YouTube's automatic captions write every swear word as "[ __ ]".
         if (censoredLevel > 0) {
-            CENSORED.findAll(text).forEach { out += WordMatch(it.range.first, it.range.last + 1, censoredLevel) }
+            for (pattern in CENSORED) {
+                pattern.findAll(text).forEach { out += WordMatch(it.range.first, it.range.last + 1, censoredLevel) }
+            }
         }
         return out.sortedBy { it.start }
     }
@@ -66,7 +70,13 @@ class ProfanityMatcher(settings: FilterSettings) {
 
     companion object {
         private val TOKEN = Regex("[\\p{L}\\p{N}]+(?:['’][\\p{L}]+)*")
-        private val CENSORED = Regex("\\p{L}+\\*{2,}\\p{L}*|\\[\\s*_+\\s*]")
+        private val CENSORED = listOf(
+            Regex("\\p{L}+\\*+\\p{L}+|\\p{L}+\\*{2,}"),                 // f**k, sh*t, f***
+            Regex("\\[[\\s\\u00A0]*_+[\\s\\u00A0]*]"),                      // [ __ ], as YouTube writes it
+            Regex("(?<![\\p{L}_])\\p{L}{1,2}_{2,}\\p{L}{0,2}(?![\\p{L}_])"), // f___, s__t
+            Regex("[\\[(]\\s*(?:bleep\\w*|beep\\w*|expletive\\w*|censored)\\s*[\\])]", RegexOption.IGNORE_CASE),
+            Regex("(?=[@#$%&!*]*[@#$%&*])[@#$%&!*]{4,}"),              // @#$%!, ****
+        )
 
         fun normalize(word: String): String =
             word.lowercase().filter { it.isLetterOrDigit() }

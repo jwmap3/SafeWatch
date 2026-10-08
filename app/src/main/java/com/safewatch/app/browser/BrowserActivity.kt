@@ -26,6 +26,9 @@ import android.view.inputmethod.InputMethodManager
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
+import android.os.Message
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -50,6 +53,7 @@ import androidx.webkit.WebViewFeature
 import com.safewatch.app.MainActivity
 import com.safewatch.app.R
 import com.safewatch.app.data.Accounts
+import com.safewatch.app.data.FilterLog
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Service
 import com.safewatch.app.data.Services
@@ -59,7 +63,6 @@ import com.safewatch.app.ui.SceneDialog
 import com.safewatch.app.ui.Ui
 import com.safewatch.core.Action
 import com.safewatch.core.CaptionFormats
-import com.safewatch.core.Cue
 import com.safewatch.core.CueTagger
 import com.safewatch.core.FilterEngine
 import com.safewatch.core.FilterSettings
@@ -146,6 +149,20 @@ open class BrowserActivity : AppCompatActivity() {
     private var aheadHidden = false
     private var playingYoutube: String? = null
     private var playingFile: String? = null
+
+    // What the language filter has to go on for the video being watched, as its page last reported.
+    @Volatile private var captionKind = ""
+    @Volatile private var captionLines = 0
+    @Volatile private var captionKindAt = 0L
+    private var captionKey = ""
+    private var playingUnfilteredSince = 0L
+    private var warnedNoCaptions = ""
+    private val statusLabels = ArrayList<TextView>()
+
+    // Pop-ups and redirects.
+    private var pageStartedAt = 0L
+    private var allowOnce: String? = null
+    private var blockedBar: TextView? = null
     private var fullscreenView: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private var pageScript = ""
@@ -192,9 +209,13 @@ open class BrowserActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = false
             useWideViewPort = true
             loadWithOverviewMode = true
+            // A page asking for a new window has to ask the app (see Chrome.onCreateWindow), which says no.
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = false
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
         mobileAgent = web.settings.userAgentString
+        FilterLog.load(applicationContext)
         web.addJavascriptInterface(Bridge(), "SafeWatchBridge")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             // Runs in every frame before the page's own scripts, so embedded players are covered too.
@@ -346,6 +367,15 @@ open class BrowserActivity : AppCompatActivity() {
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
             setTextColor(if (overPicture) Color.WHITE else Ui.color(context, R.color.text))
         }, LinearLayout.LayoutParams(0, -2, 1f))
+        val status = TextView(context).apply {
+            textSize = 12f
+            maxLines = 1
+            visibility = View.GONE
+            setPadding(Ui.dp(context, 10), Ui.dp(context, 5), Ui.dp(context, 10), Ui.dp(context, 5))
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = Ui.dp(context, 8) }
+        }
+        statusLabels += status
+        addView(status)
         val mark = Ui.pill(context, MARK_START, filled = false) { onMarkTapped() }
         if (overPicture) {
             mark.setTextColor(Color.WHITE)
@@ -461,6 +491,57 @@ open class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Says, in the player's bar, what the language filter has to go on: captions read ahead of
+     * time, captions as they appear on screen, or nothing. With nothing, cursing cannot be muted,
+     * and the viewer is told so once per video.
+     */
+    private fun refreshLanguageStatus(now: Long) {
+        if (captionKey != pageKey) {
+            captionKey = pageKey
+            captionKind = ""
+            playingUnfilteredSince = 0
+        }
+        val on = settings.language != Strictness.OFF
+        val playing = videoIsPlaying() && lastWidthShare >= 0.5 && !advertPlaying
+        val kind = if (now - captionKindAt < 8000) captionKind else ""
+        val text = when {
+            !on || !(playing || playerView) -> ""
+            kind == "ahead" -> "Captions read"
+            kind == "screen" -> "Captions live"
+            kind == "none" -> "No captions"
+            else -> ""
+        }
+        val warning = kind == "none"
+        for (label in statusLabels) {
+            label.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+            if (label.text.toString() != text) {
+                label.text = text
+                label.setTextColor(Color.WHITE)
+                label.background = Ui.rounded(if (warning) Color.argb(230, 190, 60, 40) else Color.argb(90, 255, 255, 255), Ui.dp(this, 12).toFloat())
+            }
+        }
+        // Told once per video, after it has played a while with nothing to go on.
+        if (on && playing && warning) {
+            if (playingUnfilteredSince == 0L) playingUnfilteredSince = now
+            if (now - playingUnfilteredSince > 15000 && warnedNoCaptions != pageKey) {
+                warnedNoCaptions = pageKey
+                note("no captions found after 15 s of playing; told the viewer")
+                Ui.toast(this, if (Prefs.silentWithoutCaptions(this)) "No captions found for this video, so it is playing without sound"
+                    else "No captions found for this video. Cursing cannot be muted here.")
+                showPlayerBar()
+            }
+        } else if (!warning) {
+            playingUnfilteredSince = 0
+        }
+    }
+
+    /** A line for the phone's log and for the filter report. */
+    private fun note(text: String) {
+        Log.i("SafeWatch", "filter: $text on $pageKey")
+        FilterLog.add("$text  [${pageKey.take(70)}]")
+    }
+
     // ---- The player view: sideways, full screen, nothing but the picture ----
 
     private fun setPlayerView(on: Boolean) {
@@ -542,6 +623,7 @@ open class BrowserActivity : AppCompatActivity() {
         web.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){m.pause()})", null)
         web.onPause()
         web.url?.let { if (it.startsWith("http")) Prefs.setLastPage(this, it) }
+        FilterLog.save(applicationContext)
     }
 
     override fun onDestroy() {
@@ -704,6 +786,10 @@ open class BrowserActivity : AppCompatActivity() {
                 }
                 return true
             }
+            if (request.isForMainFrame && isUnwantedRedirect(view, request)) {
+                blocked("redirect", url)
+                return true
+            }
             if (request.isForMainFrame) {
                 fixedKey = null
                 playingYoutube = null
@@ -726,6 +812,10 @@ open class BrowserActivity : AppCompatActivity() {
                 markStartMs = null
                 setMarkLabel(MARK_START)
             }
+        }
+
+        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            pageStartedAt = SystemClock.elapsedRealtime()
         }
 
         override fun onPageFinished(view: WebView, url: String) {
@@ -762,6 +852,50 @@ open class BrowserActivity : AppCompatActivity() {
             pageTitle = title.orEmpty()
         }
 
+        // A page asking to open a new window. A link the viewer tapped that was merely set to open
+        // in a new tab is opened here instead. Anything else is a pop-up and is refused.
+        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
+            if (!Prefs.blockPopups(this@BrowserActivity)) {
+                // Not blocking: find out where the new window was going and go there in this one.
+                val asked = WebView(this@BrowserActivity)
+                asked.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
+                        val target = request.url.toString()
+                        ui.post { if (!isDestroyed && target.startsWith("http")) load(target); asked.destroy() }
+                        return true
+                    }
+                }
+                (resultMsg.obj as WebView.WebViewTransport).webView = asked
+                resultMsg.sendToTarget()
+                return true
+            }
+            val link = tappedLink(view)
+            if (isUserGesture && !inVideo() && link != null) load(link) else blocked("pop-up", link ?: "")
+            return false
+        }
+
+        // Message boxes are a favourite way to trap a viewer on a page. While a video plays they are dismissed unseen.
+        override fun onJsAlert(view: WebView, url: String?, message: String?, result: JsResult): Boolean =
+            dismissed(result)
+
+        override fun onJsConfirm(view: WebView, url: String?, message: String?, result: JsResult): Boolean =
+            dismissed(result)
+
+        override fun onJsPrompt(view: WebView, url: String?, message: String?, defaultValue: String?, result: JsPromptResult): Boolean =
+            dismissed(result)
+
+        override fun onJsBeforeUnload(view: WebView, url: String?, message: String?, result: JsResult): Boolean {
+            result.confirm() // never asked "are you sure you want to leave?"
+            return true
+        }
+
+        private fun dismissed(result: JsResult): Boolean {
+            if (!Prefs.blockPopups(this@BrowserActivity) || !inVideo()) return false
+            result.cancel()
+            note("blocked a message box from the page")
+            return true
+        }
+
         // Streaming sites ask for this before they will play protected video.
         override fun onPermissionRequest(request: PermissionRequest) {
             val wanted = request.resources.filter { it == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID }
@@ -789,6 +923,84 @@ open class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    // ---- Pop-ups and redirects ----
+    //
+    // While a video is playing nothing may take the viewer off its page: no new windows, no message
+    // boxes, no move to another site. Elsewhere a move to another site is allowed when the viewer
+    // tapped a link to it, when it is part of signing in, or when it happens as a page first loads.
+    // A move a page makes by itself, or on a tap that was not on a link while a video is on the
+    // page, is refused, with a bar offering to go there after all.
+
+    private fun inVideo(): Boolean = playerView || (videoIsPlaying() && lastWidthShare >= 0.3)
+
+    /** The address of the link under the viewer's last touch, if it was on a link. */
+    private fun tappedLink(view: WebView): String? {
+        val hit = view.hitTestResult
+        val onLink = hit.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
+        return hit.extra?.takeIf { onLink && it.startsWith("http") }
+    }
+
+    /** The part of an address that says whose site it is: "play.hbomax.com" and "auth.hbomax.com" are both "hbomax.com". */
+    private fun siteOf(url: String?): String {
+        val host = (Uri.parse(url.orEmpty()).host ?: "").lowercase().removePrefix("www.")
+        val parts = host.split('.')
+        if (parts.size <= 2) return host
+        val twoPart = parts[parts.size - 1].length == 2 && parts[parts.size - 2] in setOf("co", "com", "org", "net", "gov", "ac", "edu")
+        return parts.takeLast(if (twoPart) 3 else 2).joinToString(".")
+    }
+
+    private fun isUnwantedRedirect(view: WebView, request: WebResourceRequest): Boolean {
+        if (!Prefs.blockPopups(this)) return false
+        val to = request.url.toString()
+        if (to == allowOnce) {
+            allowOnce = null
+            return false
+        }
+        val from = view.url ?: return false
+        if (!from.startsWith("http")) return false // the start page, or a page of the app's own
+        val ownPlayer = from.startsWith(APP_ORIGIN)
+        if (!ownPlayer && siteOf(from) == siteOf(to)) return false
+        if (!ownPlayer) {
+            if (request.isRedirect) return false // a further hop of a move already allowed
+            if (signingInTo != null || Accounts.looksLikeSignIn(to) || Accounts.looksLikeSignIn(from)) return false
+            if (Services.forUrl(to) != null) return false
+        }
+        if (ownPlayer || inVideo()) return true
+        if (!request.hasGesture()) return SystemClock.elapsedRealtime() - pageStartedAt > 4000
+        // The viewer tapped. A tap on a link goes where the link says. A tap on a page with a video on it
+        // that sends the browser elsewhere is the page's doing, not the viewer's.
+        val videoOnPage = SystemClock.elapsedRealtime() - lastStateAt < 1500
+        return videoOnPage && tappedLink(view) == null
+    }
+
+    private fun blocked(what: String, url: String) {
+        val where = Uri.parse(url).host ?: ""
+        note("blocked a $what${if (where.isEmpty()) "" else " to $where"}")
+        if (playerView || !url.startsWith("http")) return
+        // Outside the player a bar says what happened and offers to go there after all.
+        val bar = blockedBar ?: TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            background = Ui.rounded(Color.argb(235, 40, 40, 44), Ui.dp(context, 14).toFloat())
+            setPadding(Ui.dp(context, 16), Ui.dp(context, 10), Ui.dp(context, 16), Ui.dp(context, 10))
+            stage.addView(this, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = Ui.dp(context, 14)
+            })
+            blockedBar = this
+        }
+        bar.text = "Blocked a $what to $where. Tap to open it."
+        bar.visibility = View.VISIBLE
+        bar.setOnClickListener {
+            bar.visibility = View.GONE
+            allowOnce = url
+            load(url)
+        }
+        ui.removeCallbacks(hideBlockedBar)
+        ui.postDelayed(hideBlockedBar, 6000)
+    }
+
+    private val hideBlockedBar = Runnable { blockedBar?.visibility = View.GONE }
+
     // ---- What the page script can ask (called on a background thread) ----
 
     private inner class Bridge {
@@ -804,34 +1016,64 @@ open class BrowserActivity : AppCompatActivity() {
             return JSONObject()
                 .put("version", version.get())
                 .put("language", settings.language != Strictness.OFF)
+                .put("showCaptions", Prefs.showCaptions(applicationContext))
+                .put("strict", Prefs.silentWithoutCaptions(applicationContext))
                 .put("tags", tags)
                 .toString()
         }
 
-        /** Mute ranges for one caption line, as `[[startMs, endMs], ...]`. */
+        /**
+         * Given caption lines as `[[startMs, endMs, "text"], ...]`, answers with every stretch to
+         * mute, as `[[startMs, endMs], ...]`.
+         */
         @JavascriptInterface
-        fun muteWindows(startMs: Double, endMs: Double, text: String): String {
+        fun cueWindows(lines: String): String {
             val out = JSONArray()
-            for (t in CueTagger.tagsFor(Cue(startMs.toLong(), endMs.toLong(), text), matcher)) {
-                out.put(JSONArray().put(t.startMs).put(t.endMs))
+            try {
+                val given = JSONArray(lines)
+                val cues = ArrayList<com.safewatch.core.Cue>(given.length())
+                for (i in 0 until given.length()) {
+                    val line = given.getJSONArray(i)
+                    cues += com.safewatch.core.Cue(line.getLong(0), line.getLong(1), line.getString(2))
+                }
+                for (t in CueTagger.tagsFor(cues, matcher)) out.put(JSONArray().put(t.startMs).put(t.endMs))
+            } catch (e: Exception) {
+                // Not lines after all; nothing to mute.
             }
             return out.toString()
         }
 
-        @JavascriptInterface
-        fun profane(text: String): Boolean = matcher.containsProfanity(text)
-
         /**
-         * Given a whole caption file the page's player downloaded, answers with every stretch
-         * to mute, as `[[startMs, endMs], ...]`. Answers `[]` for anything that is not a caption file.
+         * Given a whole caption file the page's player downloaded, in any of the usual formats, answers
+         * with its lines as `[[startMs, endMs, "text"], ...]`. Answers `[]` for anything that is not one.
          */
         @JavascriptInterface
-        fun captionWindows(file: String): String {
+        fun captionCues(file: String): String {
             val out = JSONArray()
             if (!CaptionFormats.recognises(file)) return out.toString()
             val cues = try { CaptionFormats.parse(file) } catch (e: Exception) { emptyList() }
-            for (t in CueTagger.tagsFor(cues, matcher)) out.put(JSONArray().put(t.startMs).put(t.endMs))
+            for (c in cues) out.put(JSONArray().put(c.startMs).put(c.endMs).put(c.text))
             return out.toString()
+        }
+
+        /** Where the filtered words sit in a piece of text, as `[[start, end], ...]` counted in letters. */
+        @JavascriptInterface
+        fun spans(text: String): String {
+            val out = JSONArray()
+            for (m in matcher.find(text)) out.put(JSONArray().put(m.start).put(m.end))
+            return out.toString()
+        }
+
+        /**
+         * What the language filter has to go on for the video being watched: "ahead" (caption lines
+         * with times, [lines] of them so far), "screen" (captions as they appear) or "none".
+         */
+        @JavascriptInterface
+        fun captionState(kind: String, lines: Int) {
+            if (kind != captionKind) FilterLog.add("captions for this video: $kind${if (lines > 0) " ($lines lines so far)" else ""}  [${pageKey.take(70)}]")
+            captionKind = kind
+            captionLines = lines
+            captionKindAt = SystemClock.elapsedRealtime()
         }
 
         /**
@@ -866,9 +1108,7 @@ open class BrowserActivity : AppCompatActivity() {
 
         /** A line for the phone's log each time the filter acts, so its work can be checked afterwards. */
         @JavascriptInterface
-        fun note(text: String) {
-            Log.i("SafeWatch", "filter: $text on $pageKey")
-        }
+        fun note(text: String) = this@BrowserActivity.note(text)
 
         /** True while the player view is up, so the page should let its video fill the screen. */
         @JavascriptInterface
@@ -931,6 +1171,7 @@ open class BrowserActivity : AppCompatActivity() {
                 Log.i("SafeWatch", "filter: picture shown again on $pageKey")
             }
             refreshOwnControls()
+            refreshLanguageStatus(now)
             // In watch mode, a video that plays with sound across most of the page for a moment is the feature: show it as a player.
             if (watchMode && !playerView) {
                 playingChecks = if (videoIsPlaying() && lastWidthShare >= 0.6) playingChecks + 1 else 0
@@ -1099,7 +1340,7 @@ open class BrowserActivity : AppCompatActivity() {
         private val YOUTUBE_PLAYER = Regex("^safewatch://youtube/([A-Za-z0-9_-]{6,20})$")
         private val DIRECT_VIDEO = Regex("^https?://[^?#]+\\.(mp4|m4v|webm|mov|ogv)([?#].*)?$", RegexOption.IGNORE_CASE)
         const val START_PAGE = "file:///android_asset/start.html"
-        const val WEB_SEARCH = "https://duckduckgo.com/?q="
+        const val WEB_SEARCH = "https://www.google.com/search?q="
         private const val MARK_START = "Mark scene"
         private const val MARK_END = "End scene"
         private const val CHECK_EVERY_MS = 250L
