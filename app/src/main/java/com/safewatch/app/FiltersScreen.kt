@@ -245,6 +245,8 @@ class FiltersScreen(private val activity: MainActivity) {
                 })
             }
             addView(Ui.divider(ctx))
+            addView(Ui.row(ctx, "Superclean a video link") { supercleanLink() })
+            addView(Ui.divider(ctx))
             addView(Ui.row(ctx, "What it takes out", SupercleanChoices.summary(Prefs.supercleanChoices(ctx))) {
                 SupercleanChoices.edit(activity, "What Superclean takes out", Prefs.supercleanChoices(ctx)) {
                     Prefs.setSupercleanChoices(ctx, it)
@@ -421,6 +423,50 @@ class FiltersScreen(private val activity: MainActivity) {
                 Ui.toast(activity, "Make a key at platform.claude.com/settings/keys")
             }
         }
+    }
+
+    /**
+     * Superclean from a link pasted in: the video's own address (an .mp4, or an .m3u8 or .mpd stream), for when a
+     * site's player hides the real video behind pop-ups or its own embedded player.
+     */
+    private fun supercleanLink() {
+        val ctx = activity
+        fun field(hint: String, type: Int) = EditText(ctx).apply {
+            this.hint = hint
+            inputType = type
+            maxLines = 3
+        }
+        val uri = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        val link = field("Video link (https://…)", uri)
+        val title = field("Title, for the Parents Guide", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS)
+        val captions = field("Captions link, if you have one (.vtt or .srt)", uri)
+        val page = field("Page it plays on, if the site needs it", uri)
+        (ctx.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip?.getItemAt(0)?.text?.toString()?.trim())
+            ?.takeIf { it.startsWith("http") }?.let { link.setText(it) }
+        val form = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Ui.dp(ctx, 20), Ui.dp(ctx, 8), Ui.dp(ctx, 20), 0)
+            addView(Ui.caption(ctx, "Paste the address of the video itself (it often ends in .mp4 or .m3u8), not the page. Captions let " +
+                "cursing be muted; without them Claude can only go by the pictures.").apply { setPadding(0, 0, 0, Ui.dp(ctx, 8)) })
+            listOf(link, title, captions, page).forEach { addView(it) }
+        }
+        AlertDialog.Builder(ctx)
+            .setTitle("Superclean a video link")
+            .setView(android.widget.ScrollView(ctx).apply { addView(form) })
+            .setPositiveButton("Next") { _, _ ->
+                val address = link.text.toString().trim()
+                if (!address.startsWith("http")) {
+                    Ui.toast(ctx, "That does not look like a link: it should start with https://")
+                    return@setPositiveButton
+                }
+                val name = title.text.toString().trim().ifEmpty { android.net.Uri.parse(address).lastPathSegment ?: "Video" }
+                val subs = captions.text.toString().trim().takeIf { it.startsWith("http") }?.let { listOf(it) }.orEmpty()
+                val source = com.safewatch.app.tv.CleanSource(name, com.safewatch.core.MediaKey.forUrl(address), address, subs,
+                    page.text.toString().trim(), com.safewatch.app.tv.CleanSource.streamKind(address))
+                com.safewatch.app.tv.SupercleanActivity.open(ctx, source)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun editCatalogKey() = textDialog("TMDB catalog key", Prefs.catalogKey(activity), "Paste your key", 1) {

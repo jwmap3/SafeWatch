@@ -452,7 +452,7 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         failure.get()?.let {
             output.delete()
             if (it.message != "Stopped") android.util.Log.i("SafeWatch", "$step failed", it)
-            val why = generateSequence(it as Throwable) { e -> e.cause }.drop(1).mapNotNull { e -> e.message }.firstOrNull()
+            val why = generateSequence(it as Throwable) { e -> e.cause }.drop(1).mapNotNull { e -> e.message }.lastOrNull()
             throw IOException(if (it.message == "Stopped") "Stopped" else "$step failed: ${it.message}" + (why?.let { w -> " ($w)" } ?: ""))
         }
     }
