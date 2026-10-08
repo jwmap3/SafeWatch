@@ -36,6 +36,8 @@ object TvState {
     data class Job(val title: String, val step: String, val percent: Int, val error: String? = null, val made: CleanCopyFile? = null)
 
     @Volatile var job: Job? = null
+    /** Whether the background work has answered since the last time something was asked of it. */
+    @Volatile var serviceAnswered = false
     /** Copies waiting their turn, by title, after the one being made. */
     @Volatile var queued: List<String> = emptyList()
     @Volatile var playingTitle: String? = null
@@ -92,6 +94,8 @@ class TvService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        TvState.serviceAnswered = true
+        FilterLog.add("TV work: ${intent?.action ?: "restarted"}")
         CleanCopy.deleteOld(this)
         when (intent?.action) {
             ACTION_PREPARE -> prepare(CleanSource.fromJson(intent.getStringExtra(EXTRA_SOURCE) ?: return START_NOT_STICKY), intent.getStringExtra(EXTRA_REPLACES))

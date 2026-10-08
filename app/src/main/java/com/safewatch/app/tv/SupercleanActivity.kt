@@ -449,7 +449,36 @@ class SupercleanActivity : AppCompatActivity() {
                 return
             }
             val waiting = TvState.job?.let { it.made == null && it.error == null } == true
-            TvService.prepare(ctx, source.copy(superclean = wishes.toJson()))
+            com.safewatch.app.data.FilterLog.add("superclean asked: ${source.title} | ${source.address.take(160)}" +
+                (if (source.stream.isNotEmpty()) " | ${source.stream} stream" else "") + " | from ${source.referrer.take(80)}")
+            if (!waiting) {
+                // Shown on Home at once, before the background work has even begun.
+                TvState.job = TvState.Job(source.title, "Starting", -1)
+                TvState.changed()
+            }
+            TvState.serviceAnswered = false
+            try {
+                TvService.prepare(ctx, source.copy(superclean = wishes.toJson()))
+            } catch (e: Exception) {
+                com.safewatch.app.data.FilterLog.add("superclean could not start: $e")
+                val why = "Android would not start edenOS's background work: ${e.message}"
+                TvState.rememberFailure(ctx, source.title, why)
+                TvState.job = TvState.Job(source.title, "Not made", -1, error = why)
+                TvState.changed()
+                Ui.toast(ctx, why)
+                return
+            }
+            // If the background work has not answered in a while, say so on Home instead of showing nothing.
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (!TvState.serviceAnswered && TvState.job?.title == source.title && TvState.job?.step == "Starting") {
+                    val why = "edenOS's background work did not start. Open edenOS's app settings on the phone, make sure " +
+                        "Battery is set to Unrestricted, then try again."
+                    com.safewatch.app.data.FilterLog.add("superclean: the background work never started")
+                    TvState.rememberFailure(ctx.applicationContext, source.title, why)
+                    TvState.job = TvState.Job(source.title, "Not made", -1, error = why)
+                    TvState.changed()
+                }
+            }, 12_000)
             Ui.toast(ctx, (if (waiting) "${source.title} is next in line to be Supercleaned." else "Supercleaning ${source.title}.") +
                 " Follow it on Home, under Your Scrubbed Movies.")
         }

@@ -150,7 +150,14 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
         shareTo = to
     }
 
-    private fun report(step: String, percent: Int) =
+    private var lastStep = ""
+
+    private fun report(step: String, percent: Int) {
+        if (step != lastStep) { lastStep = step; com.safewatch.app.data.FilterLog.add("copy: $step") }
+        reportShare(step, percent)
+    }
+
+    private fun reportShare(step: String, percent: Int) =
         tell(step, if (percent < 0) -1 else shareFrom + (shareTo - shareFrom) * percent.coerceIn(0, 100) / 100)
 
     /** Runs every step. Call off the main thread. Returns the copy, or throws with a reason a person can read. */
