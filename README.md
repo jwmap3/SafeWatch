@@ -57,9 +57,9 @@ Roku, Fire TV and most smart TVs, and shows the already filtered picture.
   "Choose words", which lists every built-in word part-hidden ("Sh*t",
   "F*ck") with its own switch. Extra words to mute and Words to allow cover
   anything not listed.
-- **Nudity:** Off, Low, Medium or High, and whether to blur or skip. "Test the
-  blur" blurs faces for two minutes, to see the blur working on any video with
-  people in it.
+- **Nudity:** Off, Low, Medium or High, and whether to blur or skip. "Look
+  ahead" (on by default) is described below. "Test the blur" blurs faces for
+  two minutes, to see the blur working on any video with people in it.
 - **Appearance:** dark by default, with light and automatic modes, and three
   colours to choose: primary, background and cards.
 - **Sounds:** a few sets of tap and play sounds, all made for this app. A
@@ -69,12 +69,41 @@ Roku, Fire TV and most smart TVs, and shows the already filtered picture.
 
 | | Cursing | Nudity |
 |---|---|---|
-| YouTube | Yes, from captions (the player switches them on) | Yes, detected live |
-| Ordinary websites and video links | Yes, where the video has captions | Yes, detected live |
+| YouTube | Yes, from captions, read ahead of time | Yes, looked at ahead of time, and live |
+| Ordinary websites and video links | Yes, where the video has captions | Yes, looked at ahead of time where a second copy will play, and live |
 | Video files on the phone | Yes, with the film's subtitle file | Yes, live or by scanning the whole film first |
 | Netflix, HBO Max, Prime Video, Disney+, Hulu and similar | Yes, from captions (switch captions on in the player) | Only scenes that have been marked |
 
-The last row is a hard limit, not a missing feature. Those services scramble
+### Knowing before it happens
+
+**Nudity: looking ahead.** While you watch, the app plays a second copy of the
+same video where you cannot see or hear it, a few seconds in front of yours.
+Each picture from that copy is checked and the result is kept against its
+place in the video. By the time your copy gets there the player already knows:
+the blur goes up two seconds before the scene and comes down two seconds after
+its last flagged picture, and one missed picture in the middle does not lift
+it. On a phone that checks slowly the hidden copy runs further in front.
+
+The screen you are watching is still checked live as well. That covers what
+has not been looked at ahead (the first second or so of a video, the moments
+after you jump somewhere, sites where a second copy will not play) and gives a
+second opinion everywhere else. Each live look is also compared with what the
+hidden copy showed at the same moment; if they keep differing, the hidden copy
+is not seeing your video, so it is stopped and live checking carries on alone.
+
+Looking ahead plays the video twice, so it uses about twice the data. It can
+be switched off under Settings > Nudity.
+
+**Cursing: reading ahead.** Players download their captions as a file, usually
+the whole film's at once. The app watches for that download, reads the file,
+and so knows every line to mute before it is spoken. YouTube's caption files
+time each word, so there the mute covers the word alone. Where no file is
+seen, the app falls back to the captions as they appear on screen, which is a
+moment late.
+
+### The paid services
+
+The last row of the table is a hard limit, not a missing feature. Those services scramble
 their picture so that only the screen can show it. No app or browser on the
 phone can look at the frames, so nothing can detect what is in them. For those
 services "Mark scene" in the player lets you mark a scene's start and end
@@ -103,9 +132,13 @@ once, and the app remembers it for that title.
 - **"Signed in"** is worked out from the service's sign-in cookie where its
   name is known, and otherwise from having watched a sign-in go through. It can
   be wrong after signing out on the service's site.
-- **Live blur** is checked from the screen, so a blurred picture cannot be
-  re-checked. The blur holds for a few seconds, lifts, and is re-applied if the
-  scene is still going, which can let a brief glimpse through.
+- **Glimpses.** Where the look-ahead has not been (see above), a scene is only
+  caught once it is on screen, so a fraction of a second can show before the
+  blur. The blur then stays until the scene ends: it sits in a layer of its own,
+  and the app goes on checking the real picture underneath it.
+- **Looking ahead on websites** needs the site to play the same video to a
+  second visitor. Sites that need a tap to start, or hand out one-time links,
+  will not, and the app then checks live only.
 - **Detection makes mistakes.** Expect some misses and some false alarms.
 - **Casting.** Apple TV cannot be reached from an Android phone's screen
   casting. The protected services usually show a black picture when cast
@@ -134,15 +167,23 @@ word list, colour changes and the Browser tab display correctly; Watch opens
 the service's page for a title in the player; the detection model downloads
 and loads.
 
-Checked on a computer: the filter logic passes its 24 tests; the script that
+Checked on a computer: the filter logic passes its 33 tests; the script that
 controls a page's video passes its test in desktop Chromium, including muting
-from captions, skipping, blurring and the player controls; the detection model
+from captions, skipping, blurring, reading a caption file ahead, the player controls and the
+look-ahead copy's behaviour; the detection model
 was run on sample pictures to confirm the app reads its output correctly.
 
-Not yet checked anywhere: a video actually playing on a phone, and so muting,
-blurring and the player's controls during real playback (the test phone could
-not be made to play video); playing a signed-in title on a paid service;
-casting to a TV; how the sound sets sound.
+Also checked on the test phone, with a film that has no nudity and the blur
+test switched on: the player plays the film full screen with its own controls;
+the blur goes up, stays up while the app keeps checking the picture under it,
+and comes down afterwards; the hidden look-ahead copy starts, finds the same
+film, moves in front of the viewer and has its pictures checked.
+
+Not yet checked anywhere: the look-ahead hiding a real scene before it arrives
+on a real phone (the test phone takes several seconds per check, a real phone
+a fraction of one); YouTube playback (YouTube turns the test phone away as a
+data-centre visitor); muting from a real service's caption file; playing a
+signed-in title on a paid service; casting to a TV; how the sound sets sound.
 
 ## Layout
 
@@ -153,7 +194,7 @@ casting to a TV; how the sound sets sound.
 | `app/.../HomeScreen.kt`, `SearchScreen.kt`, `YouTubeScreen.kt`, `FiltersScreen.kt` | The Home, Search, YouTube and Settings tabs. `MainActivity.kt` holds them. |
 | `app/.../TitleActivity.kt`, `ServiceActivity.kt`, `VideoActivity.kt` | The pages for a title, a service and a YouTube video. |
 | `app/.../WelcomeActivity.kt`, `WordsActivity.kt` | The first-launch screen and the word list. |
-| `app/.../browser/` | The built-in browser (`BrowserActivity`), the player built on it (`WatchActivity`), and live detection. |
+| `app/.../browser/` | The built-in browser (`BrowserActivity`), the player built on it (`WatchActivity`), live detection, the hidden look-ahead copy (`Scout`), and the blur and controls layers (`Layers`). |
 | `app/src/main/assets/safewatch.js` | The script added to every page to control its video. |
 | `app/.../player/` | The player for video files on the phone and the ahead-of-time scan. |
 | `app/.../data/` | Saved settings, marked scenes, the services, and the readers for TVmaze, TMDB and YouTube. |
@@ -182,7 +223,7 @@ To run the page script's test (needs Node, Playwright and ffmpeg):
 
 - Gore filtering.
 - Shared scene lists, so a title marked once does not need marking again by anyone else.
-- Reading a service's caption file ahead of time, so muting lands exactly on the word instead of on the whole caption line.
+- Remembering what the look-ahead found, so a video watched once is known in full the next time.
 - Speech recognition, for cursing in videos that have no captions.
 - Blurring only the detected area instead of the whole picture.
 - A Windows version.
