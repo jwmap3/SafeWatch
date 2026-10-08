@@ -1,17 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A play triangle inside a shield outline. -->
+<!-- The app's mark: an eye with a halo above it. Drawn inside the middle of the canvas, which is the part every launcher shows. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Halo -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#F5C542"
+        android:strokeWidth="3.2"
+        android:pathData="M40,35 a14,4.6 0 1,0 28,0 a14,4.6 0 1,0 -28,0" />
+    <!-- Eye outline -->
     <path
         android:fillColor="#00000000"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="4"
+        android:strokeWidth="3.6"
         android:strokeLineJoin="round"
-        android:pathData="M54,30 L72,37 V53 C72,65 64,74 54,78 C44,74 36,65 36,53 V37 Z" />
+        android:pathData="M29,61 Q54,41 79,61 Q54,81 29,61 Z" />
+    <!-- Iris, with the pupil left open -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M49,44 L63,53 L49,62 Z" />
+        android:fillType="evenOdd"
+        android:pathData="M54,61 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 M54,61 m-3.6,0 a3.6,3.6 0 1,0 7.2,0 a3.6,3.6 0 1,0 -7.2,0" />
 </vector>

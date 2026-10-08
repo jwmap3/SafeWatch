@@ -121,7 +121,10 @@
 
   function setMuted(video, st, mute) {
     if (mute) {
-      if (!st.mutedByUs) { st.wasMuted = video.muted; st.mutedByUs = true; }
+      if (!st.mutedByUs) {
+        st.wasMuted = video.muted; st.mutedByUs = true;
+        try { if (B.note) B.note('muted at ' + Math.round(video.currentTime) + 's'); } catch (e) { /* ignore */ }
+      }
       if (!video.muted) video.muted = true;
     } else if (st.mutedByUs) {
       st.mutedByUs = false;
@@ -180,13 +183,21 @@
     } catch (e) { /* not allowed right now */ }
   }
 
+  // Carries out a press on the app's own player controls.
+  function obey(video, command) {
+    if (command === 'play') { var p = video.play(); if (p && p.catch) p.catch(function () {}); }
+    else if (command === 'pause') video.pause();
+    else if (command.indexOf('seek:') === 0) seekTo(video, parseFloat(command.slice(5)));
+    else if (command.indexOf('skip:') === 0) seekTo(video, Math.max(0, video.currentTime + parseFloat(command.slice(5))));
+  }
+
   function tick() {
     S.ticks++;
     try { if (B.version() !== S.version) loadConfig(); } catch (e) { return; }
     var videos = document.querySelectorAll('video');
     if (!videos.length) return;
     if (S.language) checkDomCaptions();
-    var now = Date.now(), main = null, mainArea = -1;
+    var now = Date.now(), main = null, mainArea = -1, biggest = null, biggestArea = -1;
 
     for (var i = 0; i < videos.length; i++) {
       var video = videos[i], st = stateOf(video);
@@ -215,12 +226,21 @@
       setMuted(video, st, mute);
       setBlurred(video, st, blur);
 
-      if (!video.paused && !video.ended) {
-        var area = video.clientWidth * video.clientHeight;
-        if (area > mainArea) { mainArea = area; main = video; }
-      }
+      var area = video.clientWidth * video.clientHeight;
+      if (area > biggestArea) { biggestArea = area; biggest = video; }
+      if (!video.paused && !video.ended && area > mainArea) { mainArea = area; main = video; }
     }
     // Tells the app a video is playing and where it is, for scene marking and live detection.
+    // The app's player controls work on the playing video, or the largest one when nothing is playing.
+    var target = main || biggest;
+    if (target && B.state) {
+      try {
+        B.state(target.currentTime * 1000, isFinite(target.duration) ? target.duration * 1000 : 0, target.paused,
+          !!document.querySelector('.ad-showing, .ad-interrupting'));
+        var command = B.command();
+        if (command) obey(target, command);
+      } catch (e) { /* ignore */ }
+    }
     if (main) {
       try {
         // A video the page itself keeps silent (a preview behind a title's page) is not the feature.

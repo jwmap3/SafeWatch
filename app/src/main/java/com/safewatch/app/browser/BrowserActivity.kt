@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable
 import android.content.pm.ActivityInfo
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -28,7 +29,11 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.content.res.ColorStateList
+import android.util.Log
 import android.widget.EditText
+import android.widget.ImageView
+import android.widget.SeekBar
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.PopupMenu
@@ -92,6 +97,21 @@ open class BrowserActivity : AppCompatActivity() {
     @Volatile private var lastWidthShare = 0.0
     @Volatile private var wantsFullPicture = false
 
+    // The app's own play, skip and scrub controls. Used where the page's controls are switched off (YouTube).
+    private var ownControls = false
+    private var touchCatcher: View? = null
+    private var controlViews: List<View> = emptyList()
+    private var playButton: ImageView? = null
+    private var scrubber: SeekBar? = null
+    private var timeNow: TextView? = null
+    private var timeTotal: TextView? = null
+    private var scrubbing = false
+    @Volatile private var pendingCommand = ""
+    @Volatile private var videoPositionMs = 0L
+    @Volatile private var videoLengthMs = 0L
+    @Volatile private var videoPaused = true
+    @Volatile private var advertPlaying = false
+
     private val ui = Handler(Looper.getMainLooper())
     private val background = Executors.newSingleThreadExecutor()
     private val version = AtomicInteger(1)
@@ -120,6 +140,10 @@ open class BrowserActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (handOffToPlayer(intent)) {
+            finish()
+            return
+        }
         label = intent.getStringExtra(EXTRA_LABEL).orEmpty()
         root = buildLayout()
         setContentView(root)
@@ -151,7 +175,21 @@ open class BrowserActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (handOffToPlayer(intent)) return
         requestedUrl(intent)?.let { load(it) }
+    }
+
+    /**
+     * A link straight to a video file, opened from another app or typed into the browser,
+     * is better watched in the player than on a bare browser page. Returns true when the
+     * link was passed on.
+     */
+    private fun handOffToPlayer(intent: Intent): Boolean {
+        if (watchMode) return false
+        val url = intent.dataString ?: intent.getStringExtra(EXTRA_URL) ?: return false
+        if (!DIRECT_VIDEO.containsMatchIn(url) && !YOUTUBE_PLAYER.containsMatchIn(url)) return false
+        WatchActivity.open(this, url, Uri.parse(url).lastPathSegment.orEmpty())
+        return true
     }
 
     /**
@@ -213,7 +251,8 @@ open class BrowserActivity : AppCompatActivity() {
         val stageHolder = object : FrameLayout(this) {
             override fun dispatchTouchEvent(event: MotionEvent): Boolean {
                 // Any touch on the picture brings the player's controls back for a moment.
-                if (event.actionMasked == MotionEvent.ACTION_DOWN && playerView) showPlayerBar()
+                // (With the app's own controls up, the layer over the picture does this itself.)
+                if (event.actionMasked == MotionEvent.ACTION_DOWN && playerView && touchCatcher?.visibility != View.VISIBLE) showPlayerBar()
                 return super.dispatchTouchEvent(event)
             }
         }.apply {
@@ -225,6 +264,7 @@ open class BrowserActivity : AppCompatActivity() {
             // A slim bar while browsing to the video, and a see-through one over the picture once it plays.
             val bar = watchControls(overPicture = false)
             val floating = watchControls(overPicture = true).apply { visibility = View.GONE }
+            addOwnControls(stageHolder)
             stageHolder.addView(floating, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
             playerBar = floating
             root.addView(bar)
@@ -285,6 +325,106 @@ open class BrowserActivity : AppCompatActivity() {
         addView(Ui.iconButton(context, R.drawable.ic_tv, "Send to TV", tint) { Ui.sendToTv(this@BrowserActivity) })
     }
 
+    /**
+     * Builds the app's own playback controls: back ten seconds, play or pause, forward ten
+     * seconds, and a bar to scrub along. They sit over the picture and fade with the title bar.
+     */
+    private fun addOwnControls(holder: FrameLayout) {
+        // A see-through layer that takes taps on the picture, so a tap shows or hides the controls
+        // instead of reaching the page underneath.
+        val catcher = View(this).apply {
+            visibility = View.GONE
+            setOnClickListener { if (controlViews.firstOrNull()?.visibility == View.VISIBLE) hidePlayerBar.run() else showPlayerBar() }
+        }
+        holder.addView(catcher, FrameLayout.LayoutParams(-1, -1))
+        touchCatcher = catcher
+
+        fun round(child: View, size: Int, onClick: () -> Unit) = FrameLayout(this).apply {
+            background = Ui.rounded(Color.argb(110, 0, 0, 0), Ui.dp(context, size / 2).toFloat())
+            addView(child, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            layoutParams = LinearLayout.LayoutParams(Ui.dp(context, size), Ui.dp(context, size)).apply {
+                marginStart = Ui.dp(context, 18)
+                marginEnd = Ui.dp(context, 18)
+            }
+            setOnClickListener { onClick() }
+        }
+        fun label(text: String) = TextView(this).apply {
+            this.text = text
+            textSize = 15f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setTextColor(Color.WHITE)
+        }
+        val play = ImageView(this).apply {
+            setImageResource(R.drawable.ic_pause)
+            layoutParams = FrameLayout.LayoutParams(Ui.dp(context, 34), Ui.dp(context, 34))
+        }
+        playButton = play
+        val middle = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            addView(round(label("−10"), 54) { send("skip:-10") }.apply { contentDescription = "Back 10 seconds" })
+            addView(round(play, 72) { send(if (videoPaused) "play" else "pause") }.apply { contentDescription = "Play or pause" })
+            addView(round(label("+10"), 54) { send("skip:10") }.apply { contentDescription = "Forward 10 seconds" })
+        }
+        holder.addView(middle, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+
+        val accent = ColorStateList.valueOf(Ui.color(this, R.color.accent))
+        val bar = SeekBar(this).apply {
+            progressTintList = accent
+            thumbTintList = accent
+            progressBackgroundTintList = ColorStateList.valueOf(Color.argb(120, 255, 255, 255))
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
+                    if (fromUser) timeNow?.text = Ui.time(progress * 1000L)
+                }
+                override fun onStartTrackingTouch(bar: SeekBar) {
+                    scrubbing = true
+                    ui.removeCallbacks(hidePlayerBar)
+                }
+                override fun onStopTrackingTouch(bar: SeekBar) {
+                    scrubbing = false
+                    send("seek:${bar.progress}")
+                }
+            })
+        }
+        scrubber = bar
+        val now = label("0:00").apply { textSize = 13f }
+        val total = label("0:00").apply { textSize = 13f }
+        timeNow = now
+        timeTotal = total
+        val bottom = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(Color.argb(190, 0, 0, 0), Color.TRANSPARENT))
+            setPadding(Ui.dp(context, 18), Ui.dp(context, 26), Ui.dp(context, 18), Ui.dp(context, 12))
+            addView(now)
+            addView(bar, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(total)
+        }
+        holder.addView(bottom, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        controlViews = listOf(middle, bottom)
+    }
+
+    /** Passes a press on the app's controls to the page, which carries it out on its video. */
+    private fun send(command: String) {
+        pendingCommand = command
+        showPlayerBar()
+    }
+
+    /** Keeps the app's controls in step with the video. Called a few times a second. */
+    private fun refreshOwnControls() {
+        if (!ownControls) return
+        // During an advert the page keeps its taps, so its Skip button can be pressed.
+        touchCatcher?.visibility = if (playerView && videoLengthMs > 0 && !advertPlaying) View.VISIBLE else View.GONE
+        playButton?.setImageResource(if (videoPaused) R.drawable.ic_play else R.drawable.ic_pause)
+        timeTotal?.text = Ui.time(videoLengthMs)
+        if (!scrubbing) {
+            scrubber?.max = (videoLengthMs / 1000).toInt()
+            scrubber?.progress = (videoPositionMs / 1000).toInt()
+            timeNow?.text = Ui.time(videoPositionMs)
+        }
+    }
+
     // ---- The player view: sideways, full screen, nothing but the picture ----
 
     private fun setPlayerView(on: Boolean) {
@@ -308,17 +448,25 @@ open class BrowserActivity : AppCompatActivity() {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             ui.removeCallbacks(hidePlayerBar)
             playerBar?.visibility = View.GONE
+            controlViews.forEach { it.visibility = View.GONE }
+            touchCatcher?.visibility = View.GONE
         }
     }
 
     private fun showPlayerBar() {
         val bar = playerBar ?: return
         bar.visibility = View.VISIBLE
+        if (ownControls) controlViews.forEach { it.visibility = View.VISIBLE }
         ui.removeCallbacks(hidePlayerBar)
         ui.postDelayed(hidePlayerBar, PLAYER_BAR_MS)
     }
 
-    private val hidePlayerBar = Runnable { playerBar?.visibility = View.GONE }
+    private val hidePlayerBar: Runnable = Runnable {
+        // While paused with the app's own controls, they stay up: there is nothing else to press play on.
+        if (ownControls && videoPaused && playerView) return@Runnable
+        playerBar?.visibility = View.GONE
+        controlViews.forEach { it.visibility = View.GONE }
+    }
 
     private fun setMarkLabel(text: String) = markButtons.forEach { it.text = text }
 
@@ -349,6 +497,12 @@ open class BrowserActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
+        if (!::web.isInitialized) {
+            // Closed straight away after passing a video link to the player; nothing was set up.
+            background.shutdown()
+            super.onDestroy()
+            return
+        }
         val open = detector
         detector = null
         background.execute { open?.close() }
@@ -400,6 +554,7 @@ open class BrowserActivity : AppCompatActivity() {
             // A YouTube video picked in the app plays in YouTube's embedded player, filling the screen.
             // YouTube only plays embedded when it is told which app is asking, hence the app's own address.
             web.settings.userAgentString = mobileAgent
+            ownControls = watchMode
             val key = MediaKey.forUrl("https://www.youtube.com/watch?v=$video")
             fixedKey = key
             pageKey = key
@@ -407,7 +562,23 @@ open class BrowserActivity : AppCompatActivity() {
             web.loadDataWithBaseURL(APP_ORIGIN, youtubePage(video), "text/html", "utf-8", null)
             return
         }
+        if (watchMode && DIRECT_VIDEO.containsMatchIn(url)) {
+            // A plain video file gets a page with nothing on it but the video, and the app's own controls.
+            ownControls = true
+            val key = MediaKey.forUrl(url)
+            fixedKey = key
+            pageKey = key
+            version.incrementAndGet()
+            val source = url.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;")
+            web.loadDataWithBaseURL(APP_ORIGIN, """
+                <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}video{width:100%;height:100%;object-fit:contain;background:#000}</style>
+                </head><body><video src="$source" autoplay playsinline></video></body></html>
+            """.trimIndent(), "text/html", "utf-8", null)
+            return
+        }
         fixedKey = null
+        ownControls = false
         web.settings.userAgentString = agentFor(url)
         web.loadUrl(url)
     }
@@ -418,7 +589,7 @@ open class BrowserActivity : AppCompatActivity() {
         <meta name="referrer" content="strict-origin-when-cross-origin">
         <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style>
         </head><body>
-        <iframe src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&cc_load_policy=1&rel=0&origin=$APP_ORIGIN"
+        <iframe src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&cc_load_policy=1&rel=0&iv_load_policy=3&controls=${if (ownControls) 0 else 1}&fs=0&origin=$APP_ORIGIN"
           referrerpolicy="strict-origin-when-cross-origin"
           allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
         </body></html>
@@ -586,6 +757,29 @@ open class BrowserActivity : AppCompatActivity() {
             lastBeatAt = SystemClock.elapsedRealtime()
         }
 
+        /** Sent several times a second for the page's main video, playing or not, to keep the app's controls in step. */
+        @JavascriptInterface
+        fun state(positionMs: Double, lengthMs: Double, paused: Boolean, advert: Boolean) {
+            videoPositionMs = positionMs.toLong()
+            videoLengthMs = lengthMs.toLong()
+            videoPaused = paused
+            advertPlaying = advert
+        }
+
+        /** The latest press on the app's controls that the page has not yet carried out; empty when there is none. */
+        @JavascriptInterface
+        fun command(): String {
+            val command = pendingCommand
+            pendingCommand = ""
+            return command
+        }
+
+        /** A line for the phone's log each time the filter acts, so its work can be checked afterwards. */
+        @JavascriptInterface
+        fun note(text: String) {
+            Log.i("SafeWatch", "filter: $text on $pageKey")
+        }
+
         /** True while the player view is up, so the page should let its video fill the screen. */
         @JavascriptInterface
         fun fullPicture(): Boolean = wantsFullPicture
@@ -633,6 +827,7 @@ open class BrowserActivity : AppCompatActivity() {
         override fun run() {
             val now = SystemClock.elapsedRealtime()
             if (hidden && now >= hiddenUntil) setHidden(false)
+            refreshOwnControls()
             // In watch mode, a video that plays with sound across most of the page for a moment is the feature: show it as a player.
             if (watchMode && !playerView) {
                 playingChecks = if (videoIsPlaying() && lastWidthShare >= 0.6) playingChecks + 1 else 0
@@ -673,6 +868,7 @@ open class BrowserActivity : AppCompatActivity() {
                     ui.post {
                         checking = false
                         if (level > 0 && settings.nudity.filters(level)) {
+                            if (!hidden) Log.i("SafeWatch", "filter: picture hidden (level $level) on $pageKey")
                             hiddenUntil = SystemClock.elapsedRealtime() + HOLD_MS
                             setHidden(true)
                         }
@@ -691,6 +887,7 @@ open class BrowserActivity : AppCompatActivity() {
         private const val PLAYER_BAR_MS = 3500L
         private const val APP_ORIGIN = "https://com.safewatch.app"
         private val YOUTUBE_PLAYER = Regex("^safewatch://youtube/([A-Za-z0-9_-]{6,20})$")
+        private val DIRECT_VIDEO = Regex("^https?://[^?#]+\\.(mp4|m4v|webm|mov|ogv)([?#].*)?$", RegexOption.IGNORE_CASE)
         const val START_PAGE = "file:///android_asset/start.html"
         const val WEB_SEARCH = "https://duckduckgo.com/?q="
         private const val MARK_START = "Mark scene"

@@ -42,11 +42,10 @@ adb shell input text "ted%screativity"; adb shell input keyevent 66
 shot 08-youtube-search 10
 adb shell input tap 300 760
 shot 09-video 10
-swipe_up;                 shot 09b-video-lower 3
-tap "Show comments";      shot 09c-comments 8
-adb shell input swipe 540 600 540 1900 300; adb shell input swipe 540 600 540 1900 300; sleep 1
-tap "Play";               shot 10-player 25
-shot 10b-player-later 8
+swipe_up; swipe_up;       sleep 1
+tap "Show comments";      shot 09b-comments 8
+# Playing a YouTube video is not tried here: YouTube asks visitors from data centres, such as
+# this test phone, to sign in first. On a home or mobile connection it plays.
 
 start;                    sleep 5
 tap "Settings";           shot 11-settings 3
@@ -56,18 +55,33 @@ start;                    sleep 5
 tap "Settings";           sleep 2
 swipe_up; swipe_up;       shot 13-settings-nudity 2
 tap "Test the blur";      sleep 1
-# A talk with the speaker on screen, in the app's YouTube player: the blur test should hide it.
-adb shell am start -a android.intent.action.VIEW -d "safewatch://youtube/iG9CE55wbtY" -n $PKG/.browser.BrowserActivity > /dev/null
-shot 14-blur-test 25
-shot 14b-blur-test-later 6
+
+# A film with people in it, opened as a link the way another app would hand one over. It should
+# play in the app's player, turned sideways, and the blur test should hide the picture when faces show.
+VIDEO=""
+for u in \
+  "https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" \
+  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" \
+  "https://media.w3.org/2010/05/sintel/trailer.mp4" \
+  "https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov"; do
+  code=$(curl -s -o /dev/null -r 0-2000 -m 20 -w '%{http_code}' "$u")
+  echo "test film $u answered $code" | tee -a "$OUT/summary.txt"
+  if [ -z "$VIDEO" ] && { [ "$code" = "200" ] || [ "$code" = "206" ]; }; then VIDEO="$u"; fi
+done
+if [ -n "$VIDEO" ]; then
+  adb shell am start -a android.intent.action.VIEW -d "$VIDEO" -n $PKG/.browser.BrowserActivity > /dev/null
+  shot 14-player 12
+  adb shell input tap 1200 540
+  shot 14b-player-controls 1
+  shot 14c-player-25s 12
+  shot 14d-player-40s 15
+  shot 14e-player-55s 15
+fi
+adb logcat -d -s SafeWatch:I > "$OUT/filter-log.txt"; echo "(end of filter log)" >> "$OUT/filter-log.txt"
 
 start;                    sleep 5
 tap "Settings";           sleep 2
-swipe_up; swipe_up; swipe_up; swipe_up; shot 15-appearance 2
-tap "Colour FF4D5E";      shot 16-recolored 5
-start;                    shot 16b-recolored-home 8
-tap "Settings";           sleep 2
-swipe_up; swipe_up; swipe_up; swipe_up; sleep 1
+swipe_up; swipe_up; swipe_up; swipe_up; swipe_up; shot 15-appearance 2
 tap "Light";              shot 17-light 5
 start;                    shot 17b-light-home 8
 echo "phone state at the end: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"

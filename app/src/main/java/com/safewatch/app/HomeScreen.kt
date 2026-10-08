@@ -77,7 +77,12 @@ class HomeScreen(private val activity: MainActivity) {
 
     private fun header(): View = LinearLayout(activity).apply {
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(Ui.dp(context, 20), Ui.dp(context, 10), Ui.dp(context, 8), Ui.dp(context, 6))
+        setPadding(Ui.dp(context, 18), Ui.dp(context, 10), Ui.dp(context, 8), Ui.dp(context, 6))
+        addView(ImageView(context).apply {
+            setImageResource(if (Ui.isNight(context)) R.drawable.ic_logo else R.drawable.ic_logo_dark)
+            contentDescription = "SafeWatch"
+            setOnClickListener { onNameTapped() }
+        }, LinearLayout.LayoutParams(Ui.dp(context, 34), Ui.dp(context, 34)).apply { marginEnd = Ui.dp(context, 8) })
         addView(TextView(context).apply {
             text = "SafeWatch"
             setOnClickListener { onNameTapped() }
@@ -206,6 +211,8 @@ class HomeScreen(private val activity: MainActivity) {
                         LinearLayout.LayoutParams(0, -2, 1f))
                 })
             }, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+            // A sliver of the page colour along the bottom edge, so no line of the picture shows under the fade.
+            addView(View(context).apply { setBackgroundColor(bg) }, FrameLayout.LayoutParams(-1, Ui.dp(context, 2), Gravity.BOTTOM))
             setOnClickListener { TitleActivity.open(activity, title) }
         }
     }

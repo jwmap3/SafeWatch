@@ -28,6 +28,9 @@ const server = http.createServer((req, res) => {
       profane: (text) => /badword/i.test(text),
       beat: (t, share) => { window.__beats.push(t); window.__share = share; },
       fullPicture: () => !!window.__full,
+      state: (pos, dur, paused, ad) => { window.__state = { pos, dur, paused, ad }; },
+      command: () => { const c = window.__command || ''; window.__command = ''; return c; },
+      note: (text) => { (window.__notes = window.__notes || []).push(text); },
     };
   });
   await page.addInitScript(script);
@@ -71,6 +74,18 @@ const server = http.createServer((req, res) => {
   check('a video the page keeps silent is not treated as the feature', await page.evaluate(() => window.__share) === 0);
   await page.evaluate(() => { document.getElementById('v').muted = false; window.__full = true; }); await page.waitForTimeout(600);
   check('asking for the full picture causes no errors', pageErrors.length === 0, pageErrors.join(' | '));
+  // The app's own player controls.
+  await page.evaluate(() => { window.__full = false; window.__command = 'pause'; }); await page.waitForTimeout(400);
+  let st = await page.evaluate(() => ({ paused: document.getElementById('v').paused, state: window.__state }));
+  check('the pause control pauses the video', st.paused && st.state.paused === true, JSON.stringify(st));
+  check('reports the video length', Math.abs(st.state.dur - 30000) < 1500, `dur=${st.state.dur}`);
+  await page.evaluate(() => { window.__command = 'seek:12'; }); await page.waitForTimeout(400);
+  check('the scrub control moves the video', Math.abs(await page.evaluate(() => document.getElementById('v').currentTime) - 12) < 0.5);
+  await page.evaluate(() => { window.__command = 'skip:-10'; }); await page.waitForTimeout(400);
+  check('the back-10 control moves the video', Math.abs(await page.evaluate(() => document.getElementById('v').currentTime) - 2) < 0.5);
+  await page.evaluate(() => { window.__command = 'play'; }); await page.waitForTimeout(500);
+  check('the play control resumes the video', await page.evaluate(() => !document.getElementById('v').paused));
+  check('each mute is noted for the app', await page.evaluate(() => (window.__notes || []).length > 0));
   const beats = await page.evaluate(() => window.__beats.length); check('reports playback position to the app', beats > 20, `beats=${beats}`);
   await browser.close(); server.close(); console.log(fail ? `${fail} FAILED` : 'all passed'); process.exit(fail ? 1 : 0);
 });

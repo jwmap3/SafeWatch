@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The eye-and-halo mark at a size for use inside the app. The eye takes the tint it is given; the halo stays gold. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="60"
+    android:viewportHeight="60">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#F5C542"
+        android:strokeWidth="3.4"
+        android:pathData="M16,10 a14,4.6 0 1,0 28,0 a14,4.6 0 1,0 -28,0" />
+    <path
+        android:name="eye"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0E0E11"
+        android:strokeWidth="3.8"
+        android:strokeLineJoin="round"
+        android:pathData="M5,36 Q30,16 55,36 Q30,56 5,36 Z" />
+    <path
+        android:fillColor="#FF0E0E11"
+        android:fillType="evenOdd"
+        android:pathData="M30,36 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 M30,36 m-3.6,0 a3.6,3.6 0 1,0 7.2,0 a3.6,3.6 0 1,0 -7.2,0" />
+</vector>
