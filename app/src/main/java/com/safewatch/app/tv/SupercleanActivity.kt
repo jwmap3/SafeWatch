@@ -107,7 +107,7 @@ class SupercleanActivity : AppCompatActivity() {
             "Starts from your usual choices in Settings > Superclean; changes here are for this title only. Cut scenes are taken " +
                 "out of the copy; blurred ones stay, too blurred to see."))
 
-        body.addView(Ui.actionButton(this, if (replaces == null) "Superclean and make the copy" else "Superclean and replace the copy") { start() }.apply {
+        body.addView(Ui.actionButton(this, if (replaces == null) "Review and Superclean" else "Review and Superclean again") { start() }.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = Ui.dp(context, 28) }
         })
         val model = Prefs.claudeModel(this)
@@ -275,11 +275,86 @@ class SupercleanActivity : AppCompatActivity() {
         if (mine() && Lookup.running) {
             AlertDialog.Builder(this).setTitle("Start without the Parents Guide?")
                 .setMessage("Claude is still reading it. Wait a moment to choose scenes from it, or start with your other choices.")
-                .setPositiveButton("Start now") { _, _ -> begin(emptyList()) }
+                .setPositiveButton("Continue without it") { _, _ -> review(emptyList()) }
                 .setNegativeButton("Wait", null).show()
             return
         }
-        begin(items)
+        review(items)
+    }
+
+    /**
+     * The last step before anything goes to Claude: every single thing Superclean is about to take out, ticked.
+     * The viewer unticks what should stay, and nothing starts until they approve.
+     */
+    private fun review(items: List<String>) {
+        val ctx = this
+        val accent = Ui.color(ctx, R.color.accent)
+        val tint = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(accent, Ui.color(ctx, R.color.text_secondary)))
+        val choiceBoxes = LinkedHashMap<String, CheckBox>()
+        val itemBoxes = LinkedHashMap<String, CheckBox>()
+        val column = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(0, Ui.dp(ctx, 4), 0, Ui.dp(ctx, 12)) }
+        fun heading(text: String) = column.addView(TextView(ctx).apply {
+            this.text = text.uppercase()
+            textSize = 13f
+            letterSpacing = 0.04f
+            setTextColor(Ui.color(ctx, R.color.text_secondary))
+            setPadding(Ui.dp(ctx, 24), Ui.dp(ctx, 16), Ui.dp(ctx, 24), Ui.dp(ctx, 4))
+        })
+        fun line(text: String, detail: String?, box: CheckBox) = column.addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(Ui.dp(ctx, 24), Ui.dp(ctx, 4), Ui.dp(ctx, 14), Ui.dp(ctx, 4))
+            addView(LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(ctx).apply { this.text = text; textSize = 15f; setTextColor(Ui.color(ctx, R.color.text)) })
+                if (detail != null) addView(TextView(ctx).apply { this.text = detail; textSize = 12f; setTextColor(Ui.color(ctx, R.color.text_secondary)) })
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(box)
+            foreground = Ui.ripple(ctx)
+            setOnClickListener { box.toggle() }
+        })
+        column.addView(TextView(ctx).apply {
+            text = "Everything below will be " + (if (cut) "cut out" else "blurred") + " or muted. Untick anything that should stay, " +
+                "then approve. Nothing is sent to Claude until you do."
+            textSize = 14f
+            setTextColor(Ui.color(ctx, R.color.text))
+            setPadding(Ui.dp(ctx, 24), Ui.dp(ctx, 4), Ui.dp(ctx, 24), 0)
+        })
+        if (items.isNotEmpty()) {
+            heading("From the Parents Guide")
+            for (item in items) {
+                val box = CheckBox(ctx).apply { isChecked = true; buttonTintList = tint }
+                itemBoxes[item] = box
+                line(item.substringAfter(": "), item.substringBefore(": "), box)
+            }
+        }
+        for (group in Superclean.GROUPS) {
+            val chosen = Superclean.CHOICES.filter { it.group == group && it.id in remove }
+            if (chosen.isEmpty()) continue
+            heading(group)
+            for (choice in chosen) {
+                val box = CheckBox(ctx).apply { isChecked = true; buttonTintList = tint }
+                choiceBoxes[choice.id] = box
+                line(choice.name, choice.detail, box)
+            }
+        }
+        AlertDialog.Builder(ctx)
+            .setTitle("Superclean will take out")
+            .setView(android.widget.ScrollView(ctx).apply { addView(column) })
+            .setPositiveButton("Approve and start") { _, _ ->
+                val keepRemove = choiceBoxes.filterValues { it.isChecked }.keys.toSet()
+                val keepItems = itemBoxes.filterValues { it.isChecked }.keys.toList()
+                if (keepRemove.isEmpty() && keepItems.isEmpty()) {
+                    Ui.toast(ctx, "Nothing was left ticked, so Superclean did not start")
+                } else {
+                    remove = keepRemove
+                    Lookup.ticked?.retainAll(keepItems.toSet())
+                    begin(keepItems)
+                }
+            }
+            .setNegativeButton("Go back", null)
+            .show()
     }
 
     private fun begin(items: List<String>) {

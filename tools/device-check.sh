@@ -11,6 +11,8 @@ alive() { if [ -z "$(timeout 20 adb shell pidof $PKG | tr -d '\r')" ]; then echo
 tap() { timeout 60 python3 tools/tap.py "$@" | tee -a "$OUT/summary.txt"; }
 back() { adb shell input keyevent 4; sleep 1; }
 swipe_up() { adb shell input swipe 540 1700 540 600 400; }
+# The test phone's own launcher sometimes stops answering just after it starts; its "isn't responding" box would cover the app.
+no_anr() { timeout 30 python3 tools/tap.py "Wait" exact > /dev/null && echo "dismissed an 'isn't responding' box" | tee -a "$OUT/summary.txt"; }
 start() { adb shell am force-stop $PKG; adb shell am start -W -n $PKG/.MainActivity > /dev/null; }
 # Taps something further down a long screen, scrolling until it is in view.
 tap_scrolling() { for i in 1 2 3 4 5 6 7 8 9 10; do timeout 60 python3 tools/tap.py "$1" > /dev/null && { echo "tap: $1" | tee -a "$OUT/summary.txt"; return 0; }; swipe_up; sleep 1; done; echo "tap: '$1' not found on the screen" | tee -a "$OUT/summary.txt"; }
@@ -40,7 +42,7 @@ shot 00b-opening 0.5
 shot 00c-opening 0.4
 wait $recording; adb pull /sdcard/opening.mp4 "$OUT/00-opening.mp4" > /dev/null 2>&1
 animations 0
-sleep 1;                  shot 00-welcome 2
+sleep 1;                  no_anr; shot 00-welcome 2
 tap_scrolling "Start watching"; shot 01-home 16
 swipe_up;                 shot 02-home-shelves 3
 
@@ -157,7 +159,7 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   back; back
 
   # ---- Superclean, with the test computer standing in for Anthropic (the app uses it only with this made-up key) ----
-  start;                  sleep 5
+  start;                  sleep 5; no_anr
   tap "Settings";         sleep 2
   tap_scrolling "Claude API key"; sleep 2
   timeout 60 python3 tools/tap.py "sk-ant-" contains > /dev/null
@@ -176,7 +178,9 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   shot 22e-superclean-guide 8
   swipe_up;               shot 22f-superclean-guide-lower 2
   swipe_up; swipe_up;     shot 22g-superclean-start 2
-  tap_scrolling "Superclean and make the copy"; sleep 3
+  tap_scrolling "Review and Superclean"; shot 22g2-superclean-review 2
+  swipe_up;               shot 22g3-superclean-review-lower 2
+  tap "APPROVE AND START"; sleep 3
   timeout 60 python3 tools/tap.py "Allow" > /dev/null
   shot 22h-superclean-making 4
   for i in $(seq 1 60); do
