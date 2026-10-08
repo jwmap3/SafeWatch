@@ -203,10 +203,22 @@ class Intro private constructor(private val activity: Activity, private val onDo
                 then()
                 return false
             }
-            val intro = Intro(activity, then)
-            (activity.window.decorView as ViewGroup).addView(intro, ViewGroup.LayoutParams(-1, -1))
-            intro.post { intro.start() }
-            return true
+            // The opening must never stop the app from opening: anything going wrong just skips it.
+            return try {
+                val intro = Intro(activity, then)
+                (activity.window.decorView as ViewGroup).addView(intro, ViewGroup.LayoutParams(-1, -1))
+                intro.post {
+                    try {
+                        intro.start()
+                    } catch (e: Exception) {
+                        intro.finish(quick = true)
+                    }
+                }
+                true
+            } catch (e: Exception) {
+                then()
+                false
+            }
         }
     }
 }
