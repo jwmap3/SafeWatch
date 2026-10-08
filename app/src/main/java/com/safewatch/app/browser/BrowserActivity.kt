@@ -158,6 +158,7 @@ open class BrowserActivity : AppCompatActivity() {
     private var playingUnfilteredSince = 0L
     private var warnedNoCaptions = ""
     private val statusLabels = ArrayList<TextView>()
+    private val titleViews = ArrayList<TextView>()
 
     // Pop-ups and redirects.
     private var pageStartedAt = 0L
@@ -306,25 +307,27 @@ open class BrowserActivity : AppCompatActivity() {
         curtain = Curtain(stage)
         val stageHolder = stage
 
+        // Whenever a video fills the screen (the player, or any page's own full-screen video in the
+        // browser), the controls sit in a layer of their own over the picture, above the blur, so they
+        // can always be seen: back, the title, Mark scene and Send to TV.
+        val layer = PlayerLayer(this, below = { fullscreenView ?: web }, onTouched = {
+            // Any touch on the picture brings the controls back for a moment.
+            // (With the app's own controls up, the layer over the picture decides that itself.)
+            if (touchCatcher?.visibility != View.VISIBLE) showPlayerBar()
+        })
+        val floating = watchControls(overPicture = true).apply { visibility = View.GONE }
+        addOwnControls(layer)
+        layer.addView(floating, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+        playerBar = floating
+        playerLayer = layer
+        stage.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (playerView) layer.showOver(stage) }
+
         if (watchMode) {
-            // A slim bar while browsing to the video. Once it plays, the controls move to a layer
-            // of their own over the picture, above the blur, so they can always be seen.
+            // A slim bar while browsing to the video.
             val bar = watchControls(overPicture = false)
-            val layer = PlayerLayer(this, below = { fullscreenView ?: web }, onTouched = {
-                // Any touch on the picture brings the controls back for a moment.
-                // (With the app's own controls up, the layer over the picture decides that itself.)
-                if (touchCatcher?.visibility != View.VISIBLE) showPlayerBar()
-            })
-            val floating = watchControls(overPicture = true).apply { visibility = View.GONE }
-            addOwnControls(layer)
-            layer.addView(floating, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
-            playerBar = floating
-            playerLayer = layer
             root.addView(bar)
             root.addView(stageHolder, LinearLayout.LayoutParams(-1, 0, 1f))
             chrome = listOf(bar)
-            // The layer follows the picture's place on screen, through turning the phone and the bars coming and going.
-            stage.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (playerView) layer.showOver(stage) }
             return root
         }
 
@@ -338,7 +341,7 @@ open class BrowserActivity : AppCompatActivity() {
             addView(Ui.spacer(context))
             addView(markButton)
             addView(Ui.spacer(context))
-            addView(Ui.iconButton(context, R.drawable.ic_tv, "Send to TV") { Ui.sendToTv(this@BrowserActivity) })
+            addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV") { Ui.sendToTv(this@BrowserActivity) })
             addView(Ui.iconButton(context, R.drawable.ic_filters, "Filters") { MainActivity.open(context, MainActivity.TAB_FILTERS) })
         }
 
@@ -361,8 +364,9 @@ open class BrowserActivity : AppCompatActivity() {
         } else {
             setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 8), Ui.dp(context, 4))
         }
-        addView(Ui.iconButton(context, R.drawable.ic_back, "Back", tint) { finish() })
+        addView(Ui.iconButton(context, R.drawable.ic_back, "Back", tint) { goBack() })
         addView(TextView(context).apply {
+            titleViews += this
             text = label
             textSize = 16f
             maxLines = 1
@@ -386,7 +390,7 @@ open class BrowserActivity : AppCompatActivity() {
         }
         markButtons += mark
         addView(mark)
-        addView(Ui.iconButton(context, R.drawable.ic_tv, "Send to TV", tint) { Ui.sendToTv(this@BrowserActivity) })
+        addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV", tint) { Ui.sendToTv(this@BrowserActivity) })
     }
 
     /**
@@ -563,6 +567,7 @@ open class BrowserActivity : AppCompatActivity() {
             }
         }
         if (on) {
+            titleViews.forEach { it.text = label.ifEmpty { pageTitle } }
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             stage.post { playerLayer?.showOver(stage) }
             showPlayerBar()
@@ -654,7 +659,10 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
+    override fun onBackPressed() = goBack()
+
+    /** Back: out of a page's full-screen video first, then out of the player, then back a page. */
+    private fun goBack() {
         when {
             fullscreenView != null -> web.webChromeClient?.onHideCustomView()
             watchMode && playerView -> finish()

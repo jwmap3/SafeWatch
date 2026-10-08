@@ -147,7 +147,7 @@ class PlayerActivity : AppCompatActivity() {
         bar.addView(markButton)
         bar.addView(Ui.spacer(this))
         bar.addView(scanButton)
-        bar.addView(Ui.barButton(this, "TV") { Ui.sendToTv(this) })
+        bar.addView(Ui.iconButton(this, R.drawable.ic_cast, "Send to TV", R.color.text) { Ui.sendToTv(this) })
         bar.addView(Ui.barButton(this, "Filters") { MainActivity.open(this, MainActivity.TAB_FILTERS) })
     }
 

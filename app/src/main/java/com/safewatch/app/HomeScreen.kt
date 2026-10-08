@@ -85,7 +85,7 @@ class HomeScreen(private val activity: MainActivity) {
             addView(Ui.icon(context, R.drawable.ic_logo_halo, R.color.accent, 44))
             setOnClickListener { onNameTapped() }
         }, FrameLayout.LayoutParams(Ui.dp(context, 44), Ui.dp(context, 44), Gravity.CENTER))
-        addView(Ui.iconButton(context, R.drawable.ic_tv, "Send to TV") { Ui.sendToTv(activity) },
+        addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV") { Ui.sendToTv(activity) },
             FrameLayout.LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46), Gravity.END or Gravity.CENTER_VERTICAL))
     }
 
