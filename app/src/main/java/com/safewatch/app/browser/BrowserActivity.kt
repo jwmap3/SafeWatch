@@ -175,11 +175,13 @@ open class BrowserActivity : AppCompatActivity() {
     // Pop-ups and redirects.
     // The video file the page is playing, if it plays a whole file, and caption files that go with it.
     @Volatile private var pageVideoSrc = ""
+    /** The page the watched video's player is on: often not the page itself but a player embedded in it from another site. */
+    @Volatile private var pageVideoFrame = ""
     @Volatile private var pageVideoTracks: List<String> = emptyList()
 
     // Streams' manifests the page has loaded, and every caption line with times the page script has
     // read: what a clean copy for the TV is made from.
-    private class PageManifest(val kind: String, val address: String, val master: Boolean, val refusal: String?)
+    private class PageManifest(val kind: String, val address: String, val master: Boolean, val refusal: String?, val frame: String = "")
     private val pageManifests = ArrayList<PageManifest>()
     private val pageCues = LinkedHashMap<String, Triple<Long, Long, String>>()
 
@@ -1059,6 +1061,7 @@ open class BrowserActivity : AppCompatActivity() {
                 playingYoutube = null
                 playingFile = null
                 pageVideoSrc = ""
+                pageVideoFrame = ""
                 pageVideoTracks = emptyList()
                 forgetPageMedia()
             }
@@ -1278,19 +1281,23 @@ open class BrowserActivity : AppCompatActivity() {
         playingFile?.let { return com.safewatch.app.tv.CleanSource(title, pageKey, it, captions) to null }
         Services.forUrl(web.url)?.takeIf { it.protectedVideo }?.let { return null to "${it.name} locks its videos so they cannot be saved." }
         val src = pageVideoSrc
-        val referrer = web.url.orEmpty()
+        // Fetched as the site's own player fetched it: from the player's page (an embedded player's, if it is one)
+        // and as this browser, since many sites only hand their video to the player that asked for it.
+        val agent = web.settings.userAgentString.orEmpty()
+        val referrer = pageVideoFrame.takeIf { it.startsWith("http") } ?: web.url.orEmpty()
         // A whole video file.
         if (src.startsWith("http") && com.safewatch.app.tv.CleanSource.streamKind(src).isEmpty() && com.safewatch.app.tv.CleanSource.isWholeFile(src)) {
-            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer) to null
+            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer, agent = agent) to null
         }
         // A stream in pieces: the video's own manifest, or the one the page's player loaded.
         com.safewatch.app.tv.CleanSource.streamKind(src).takeIf { it.isNotEmpty() }?.let { kind ->
-            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer, kind) to null
+            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer, kind, agent = agent) to null
         }
         val manifest = synchronized(pageManifests) { pageManifests.lastOrNull { it.master } ?: pageManifests.lastOrNull() }
         if (manifest != null) {
             manifest.refusal?.let { return null to it }
-            return com.safewatch.app.tv.CleanSource(title, pageKey, manifest.address, captions, referrer, manifest.kind) to null
+            return com.safewatch.app.tv.CleanSource(title, pageKey, manifest.address, captions,
+                manifest.frame.takeIf { it.startsWith("http") } ?: referrer, manifest.kind, agent = agent) to null
         }
         if (src.isEmpty()) return null to "Start the video first, then tap Send to TV."
         return null to "The video's source could not be found on this page. Start it playing, then try again."
@@ -1502,8 +1509,13 @@ open class BrowserActivity : AppCompatActivity() {
 
         /** The address of the video being watched, and of English caption files given with it (as a JSON list). */
         @JavascriptInterface
-        fun source(address: String, captions: String) {
+        fun source(address: String, captions: String) = source(address, captions, "")
+
+        /** The same, with the address of the page (or embedded player) the video is on. */
+        @JavascriptInterface
+        fun source(address: String, captions: String, frame: String) {
             pageVideoSrc = address
+            pageVideoFrame = frame
             pageVideoTracks = try {
                 val list = JSONArray(captions)
                 (0 until list.length()).map { list.getString(it) }.filter { it.startsWith("http") }
@@ -1512,13 +1524,17 @@ open class BrowserActivity : AppCompatActivity() {
 
         /** A stream's manifest the page loaded: kept, with whether it may be saved, for Send to TV. */
         @JavascriptInterface
-        fun manifest(kind: String, address: String, text: String) {
+        fun manifest(kind: String, address: String, text: String) = manifest(kind, address, text, "")
+
+        /** The same, with the address of the page (or embedded player) that loaded it. */
+        @JavascriptInterface
+        fun manifest(kind: String, address: String, text: String, frame: String) {
             if (!address.startsWith("http")) return
             val master = kind == com.safewatch.app.tv.CleanSource.DASH || com.safewatch.core.StreamInfo.hlsIsMaster(text)
             val refusal = com.safewatch.core.StreamInfo.refusal(text)
             synchronized(pageManifests) {
                 pageManifests.removeAll { it.address == address }
-                pageManifests += PageManifest(kind, address, master, refusal)
+                pageManifests += PageManifest(kind, address, master, refusal, frame)
                 while (pageManifests.size > 12) pageManifests.removeAt(0)
             }
         }

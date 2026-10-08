@@ -486,7 +486,7 @@
   function take(kind, text, address) {
     // A stream's manifest is also passed to the app, so Send to TV can make a clean copy of the stream.
     if ((kind === 'dash' || kind === 'hls') && B.manifest && /^https?:/.test(address)) {
-      try { B.manifest(kind, address, text.length > 300000 ? text.slice(0, 300000) : text); } catch (e) { /* ignore */ }
+      try { B.manifest(kind, address, text.length > 300000 ? text.slice(0, 300000) : text, location.href); } catch (e) { /* ignore */ }
     }
     try {
       if (kind === 'dash') readDash(text, address);
@@ -1055,7 +1055,7 @@
         S.reportedSrc = src;
         var tracks = [], els = watching.querySelectorAll('track[src]');
         for (i = 0; i < els.length; i++) if (!els[i].srclang || english(els[i].srclang)) tracks.push(els[i].src);
-        try { B.source(src, JSON.stringify(tracks)); } catch (e) { /* ignore */ }
+        try { B.source(src, JSON.stringify(tracks), location.href); } catch (e) { /* ignore */ }
       }
     }
 
