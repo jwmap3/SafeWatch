@@ -236,7 +236,16 @@ class SupercleanRun(
                 // An organisation can turn off Claude's reading of web pages; searching alone still finds most guides.
                 if (e.status != 400) throw e
                 Log.i("SafeWatch", "parents guide: ${e.message}; searching only")
-                api.ask(Superclean.guideSystem(), question, maxTokens = 6000, timeoutMs = 240_000, tools = Superclean.SEARCH_TOOLS)
+                try {
+                    api.ask(Superclean.guideSystem(), question, maxTokens = 6000, timeoutMs = 240_000, tools = Superclean.SEARCH_TOOLS)
+                } catch (f: ClaudeApi.Failure) {
+                    val said = f.message.orEmpty()
+                    if (f.status == 400 && (said.contains("web search", true) || said.contains("web_search", true))) {
+                        throw ClaudeApi.Failure("Web search is turned off for your Anthropic account. It can be turned back on at " +
+                            "platform.claude.com/settings/capabilities.", 400)
+                    }
+                    throw f
+                }
             }
             return Superclean.readGuide(answer)
         }
