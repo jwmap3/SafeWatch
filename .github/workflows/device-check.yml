@@ -37,7 +37,7 @@ jobs:
           mkdir -p /tmp/tvsite
           (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg) > /tmp/tvsite/setup.log 2>&1 || true
           # Twelve seconds of a film with faces in it (the blur test counts faces), or, failing that, a made-up picture and sound.
-          ffmpeg -nostdin -loglevel error -ss 52 -t 12 -i https://media.xiph.org/tearsofsteel/tears_of_steel_720p.webm \
+          ffmpeg -nostdin -loglevel error -ss 52 -t 12 -i https://media.xiph.org/tearsofsteel/tears_of_steel_1080p.webm \
             -vf scale=640:-2 -c:v libvpx -b:v 900k -c:a libvorbis /tmp/tvsite/clip.webm >> /tmp/tvsite/setup.log 2>&1 \
           || ffmpeg -nostdin -loglevel error -f lavfi -i testsrc=size=640x360:rate=25 -f lavfi -i sine=frequency=440 -t 12 \
             -c:v libvpx -b:v 900k -c:a libvorbis /tmp/tvsite/clip.webm >> /tmp/tvsite/setup.log 2>&1 || true

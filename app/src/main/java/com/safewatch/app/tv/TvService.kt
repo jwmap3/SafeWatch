@@ -90,10 +90,12 @@ class TvService : Service() {
             val result = try {
                 val made = maker.make(source)
                 FilterLog.add("clean copy made: ${made.summary}")
+                Log.i("SafeWatch", "clean copy made: ${made.summary}")
                 TvState.Job(source.title, "Ready", 100, made = made)
             } catch (e: Exception) {
                 Log.i("SafeWatch", "clean copy failed", e)
                 FilterLog.add("clean copy not made: ${e.message}")
+                Log.i("SafeWatch", "clean copy not made: ${e.message}")
                 TvState.Job(source.title, "Not made", -1, error = e.message ?: "Something went wrong")
             }
             ui.post {
