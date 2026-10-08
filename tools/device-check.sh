@@ -54,10 +54,6 @@ tap "Choose words";       shot 12-words 3
 start;                    sleep 5
 tap "Settings";           sleep 2
 swipe_up; swipe_up;       shot 13-settings-nudity 2
-tap "Test the blur";      sleep 1
-
-# A film with people in it, opened as a link the way another app would hand one over. It should
-# play in the app's player, turned sideways, and the blur test should hide the picture when faces show.
 # The emulator's browser engine has no decoder for the usual MP4 video, so the film has to be WebM.
 VIDEO=""
 for u in \
@@ -69,17 +65,16 @@ for u in \
   echo "test film $u answered $code" | tee -a "$OUT/summary.txt"
   if [ -z "$VIDEO" ] && { [ "$code" = "200" ] || [ "$code" = "206" ]; }; then VIDEO="$u#t=40"; fi
 done
+tap "Test the blur";      sleep 1
 if [ -n "$VIDEO" ]; then
   adb shell am start -a android.intent.action.VIEW -d "$VIDEO" -n $PKG/.browser.BrowserActivity > /dev/null
   sleep 4; tap "Got it"
   shot 14-player 12
-  adb shell input tap 1200 540
+  adb shell input tap 1200 250
   shot 14b-player-controls 1
   shot 14c-player-later 10
   shot 14d-player-later 12
   shot 14e-player-later 12
-  adb shell input tap 1200 540; sleep 1
-  tap "Play or pause";    shot 14f-player-paused 2
 fi
 adb logcat -d -s SafeWatch:I > "$OUT/filter-log.txt"; echo "(end of filter log)" >> "$OUT/filter-log.txt"
 

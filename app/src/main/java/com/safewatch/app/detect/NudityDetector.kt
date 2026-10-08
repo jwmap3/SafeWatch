@@ -28,31 +28,42 @@ class NudityDetector private constructor(
 ) : AutoCloseable {
 
     private val inputName = session.inputNames.first()
-    private val square = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
-    private val canvas = Canvas(square)
-    private val pixels = IntArray(SIZE * SIZE)
-    private val input = FloatBuffer.allocate(3 * SIZE * SIZE)
+
+    /** The working space for one picture size. The usual size is kept; an unusual one is made when asked for. */
+    private class Work(val size: Int) {
+        val square: Bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(square)
+        val pixels = IntArray(size * size)
+        val input: FloatBuffer = FloatBuffer.allocate(3 * size * size)
+    }
+
+    private var work = Work(SIZE)
 
     @Synchronized
     fun maxLevel(frame: Bitmap, facesCount: Boolean = false, scoreThreshold: Float = 0.35f): Int {
-        // The model wants a square picture: fit the frame in the top-left corner, black elsewhere.
-        val scale = SIZE.toFloat() / maxOf(frame.width, frame.height)
-        val w = (frame.width * scale).toInt().coerceAtLeast(1)
-        val h = (frame.height * scale).toInt().coerceAtLeast(1)
-        canvas.drawColor(Color.BLACK)
-        canvas.drawBitmap(frame, null, Rect(0, 0, w, h), null)
-        square.getPixels(pixels, 0, SIZE, 0, 0, SIZE, SIZE)
+        // The model wants a square picture whose side is a multiple of 32: the frame is fitted into the
+        // top-left corner, black elsewhere. Frames are normally 320 across; a larger one gets a larger square.
+        val size = if (maxOf(frame.width, frame.height) > SIZE) 2 * SIZE else SIZE
+        if (work.size != size) work = Work(size)
+        val w = work
+        val scale = size.toFloat() / maxOf(frame.width, frame.height)
+        val fitW = (frame.width * scale).toInt().coerceAtLeast(1)
+        val fitH = (frame.height * scale).toInt().coerceAtLeast(1)
+        w.canvas.drawColor(Color.BLACK)
+        w.canvas.drawBitmap(frame, null, Rect(0, 0, fitW, fitH), null)
+        w.square.getPixels(w.pixels, 0, size, 0, 0, size, size)
 
-        val plane = SIZE * SIZE
+        val plane = size * size
+        val input = w.input
         for (i in 0 until plane) {
-            val p = pixels[i]
+            val p = w.pixels[i]
             input.put(i, ((p shr 16) and 0xFF) / 255f)
             input.put(plane + i, ((p shr 8) and 0xFF) / 255f)
             input.put(2 * plane + i, (p and 0xFF) / 255f)
         }
         input.rewind()
 
-        OnnxTensor.createTensor(env, input, longArrayOf(1, 3, SIZE.toLong(), SIZE.toLong())).use { tensor ->
+        OnnxTensor.createTensor(env, input, longArrayOf(1, 3, size.toLong(), size.toLong())).use { tensor ->
             session.run(mapOf(inputName to tensor)).use { result ->
                 val out = result.get(0) as OnnxTensor
                 val shape = out.info.shape // [1, 4 + classes, anchors]

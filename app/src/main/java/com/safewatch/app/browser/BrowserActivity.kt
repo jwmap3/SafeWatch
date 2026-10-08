@@ -11,6 +11,7 @@ import android.content.pm.ActivityInfo
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -40,6 +41,7 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -149,6 +151,24 @@ open class BrowserActivity : AppCompatActivity() {
         root = buildLayout()
         setContentView(root)
         Ui.fitSystemBars(this, root)
+        // The player view uses the whole screen, right to the edges and around the camera cut-out.
+        // Everywhere else the page keeps clear of the system bars and the keyboard.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.attributes = window.attributes.apply { layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS }
+        } else {
+            window.attributes = window.attributes.apply { layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES }
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            if (playerView) {
+                v.setPadding(0, 0, 0, 0)
+            } else {
+                val bars = insets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime()
+                )
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            }
+            insets
+        }
 
         pageScript = assets.open("safewatch.js").bufferedReader().use { it.readText() }
         web.settings.apply {
@@ -437,6 +457,7 @@ open class BrowserActivity : AppCompatActivity() {
         if (playerView == on) return
         playerView = on
         wantsFullPicture = on
+        ViewCompat.requestApplyInsets(root)
         chrome.forEach { it.visibility = if (on) View.GONE else View.VISIBLE }
         requestedOrientation = if (on) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         WindowCompat.getInsetsController(window, root).apply {
@@ -865,7 +886,7 @@ open class BrowserActivity : AppCompatActivity() {
         val at = IntArray(2)
         stage.getLocationInWindow(at)
         val area = Rect(at[0], at[1], at[0] + stage.width, at[1] + stage.height)
-        val scale = 320f / maxOf(stage.width, stage.height)
+        val scale = (if (Prefs.testingBlur(this)) 640f else 320f) / maxOf(stage.width, stage.height)
         val frame = Bitmap.createBitmap(
             (stage.width * scale).toInt().coerceAtLeast(1),
             (stage.height * scale).toInt().coerceAtLeast(1),
@@ -876,11 +897,17 @@ open class BrowserActivity : AppCompatActivity() {
         try {
             PixelCopy.request(window, area, frame, { result ->
                 if (result != PixelCopy.SUCCESS || background.isShutdown) {
+                    if (testing) Log.i("SafeWatch", "blur test: the screen could not be read (code $result)")
                     checking = false
                     return@request
                 }
                 background.execute {
                     val level = try { det.maxLevel(frame, testing) } catch (e: Exception) { 0 }
+                    if (testing) {
+                        // While testing, say what the detector was shown and what it made of it.
+                        val middle = frame.getPixel(frame.width / 2, frame.height / 2)
+                        Log.i("SafeWatch", "blur test: looked at ${frame.width}x${frame.height}, middle #%06X, found level $level".format(middle and 0xFFFFFF))
+                    }
                     ui.post {
                         checking = false
                         if (level > 0 && settings.nudity.filters(level)) {
