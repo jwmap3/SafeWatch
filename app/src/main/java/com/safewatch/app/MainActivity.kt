@@ -29,7 +29,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var content: FrameLayout
     private lateinit var home: HomeScreen
-    private lateinit var search: SearchScreen
+    private lateinit var search: StremioScreen
     private lateinit var youtube: YouTubeScreen
     private lateinit var filters: FiltersScreen
     private val tabViews = ArrayList<Triple<Int, ImageView, TextView>>()
@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         Ui.fitSystemBars(this, root)
 
         home = HomeScreen(this)
-        search = SearchScreen(this)
+        search = StremioScreen(this)
         youtube = YouTubeScreen(this)
         filters = FiltersScreen(this)
         for (page in listOf(home.view, search.view, youtube.view, filters.view)) content.addView(page, FrameLayout.LayoutParams(-1, -1))
@@ -146,6 +146,7 @@ class MainActivity : AppCompatActivity() {
     override fun onBackPressed() {
         // Back goes to the first tab on the bar; from there it puts the app in the background instead of
         // closing it, so the browser keeps its page.
+        if (tab == TAB_SEARCH && search.back()) return
         if (tab != baseTab()) show(baseTab()) else moveTaskToBack(true)
     }
 
@@ -213,11 +214,6 @@ class MainActivity : AppCompatActivity() {
             BrowserActivity.resume(this)
             return
         }
-        // The Search tab opens Stremio itself, its own web app as it is, inside edenOS.
-        if (which == TAB_SEARCH) {
-            BrowserActivity.open(this, "https://web.stremio.com/")
-            return
-        }
         tab = which
         home.view.visibility = if (which == TAB_HOME) View.VISIBLE else View.GONE
         search.view.visibility = if (which == TAB_SEARCH) View.VISIBLE else View.GONE
@@ -235,6 +231,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         if (::home.isInitialized) home.release()
+        if (::search.isInitialized) search.destroy()
         if (::youtube.isInitialized) youtube.close()
         super.onDestroy()
     }
@@ -288,7 +285,7 @@ class MainActivity : AppCompatActivity() {
         fun tabInfo(id: Int): Pair<String, Int> = when (id) {
             TAB_HOME -> "Home" to R.drawable.ic_home
             TAB_BROWSER -> "Browser" to R.drawable.ic_globe
-            TAB_SEARCH -> "Search" to R.drawable.ic_search
+            TAB_SEARCH -> "Stremio" to R.drawable.ic_search
             TAB_YOUTUBE -> "YouTube" to R.drawable.ic_play
             else -> "Settings" to R.drawable.ic_filters
         }
