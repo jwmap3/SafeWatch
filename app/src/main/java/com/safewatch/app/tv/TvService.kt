@@ -84,6 +84,9 @@ class TvService : Service() {
     private var foreground = false
     private val waiting = ArrayDeque<Pair<CleanSource, String?>>()
     private var server: FileServer? = null
+    /** A website's video passed on to the TV through the phone while it plays in the TV's own player. */
+    private var proxy: com.safewatch.core.tv.StreamProxy? = null
+    @Volatile private var castRound = 0
     private var awake: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var servingSince = 0L
@@ -109,6 +112,10 @@ class TvService : Service() {
             ACTION_PLAY -> play(File(intent.getStringExtra(EXTRA_FILE) ?: return START_NOT_STICKY), intent.getStringExtra(EXTRA_TITLE).orEmpty(),
                 TvDevice(TvDevice.Kind.valueOf(intent.getStringExtra(EXTRA_KIND) ?: "DLNA"), intent.getStringExtra(EXTRA_NAME).orEmpty(),
                     intent.getStringExtra(EXTRA_LOCATION).orEmpty(), intent.getStringExtra(EXTRA_CONTROL).orEmpty()))
+            ACTION_CAST -> cast(CleanSource.fromJson(intent.getStringExtra(EXTRA_SOURCE) ?: return START_NOT_STICKY),
+                TvDevice(TvDevice.Kind.valueOf(intent.getStringExtra(EXTRA_KIND) ?: "DLNA"), intent.getStringExtra(EXTRA_NAME).orEmpty(),
+                    intent.getStringExtra(EXTRA_LOCATION).orEmpty(), intent.getStringExtra(EXTRA_CONTROL).orEmpty(),
+                    intent.getStringExtra(EXTRA_RENDERING).orEmpty()))
             ACTION_PAUSE -> pauseOrResume()
             ACTION_STOP -> stopPlaying(tellTv = true)
             ACTION_YOUTUBE -> startYouTube(intent)
@@ -223,6 +230,133 @@ class TvService : Service() {
         }
     }
 
+    // ---- Casting: the TV plays the video in its own player, and the phone keeps it clean ----
+
+    /**
+     * Has the TV play a video itself, at full quality, while the phone follows along: it mutes the TV for each
+     * curse word and jumps past scenes found earlier. A website's video comes to the TV through the phone, fetched
+     * as the site's player fetched it; a file on the phone is handed out by the phone.
+     */
+    private fun cast(source: CleanSource, device: TvDevice) {
+        stopPlaying(tellTv = false)
+        val address = TvFinder.phoneAddress(this)
+        if (address == null) {
+            val note = Notification.Builder(this, channel(this)).setSmallIcon(R.drawable.ic_cast).setContentTitle("edenOS").build()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTE_ID, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK) else startForeground(NOTE_ID, note)
+            TvState.job = TvState.Job(source.title, "Not sent", -1, error = "The phone is not on Wi-Fi")
+            TvState.changed()
+            finishIfIdle()
+            return
+        }
+        val phone = address.hostAddress ?: ""
+        val round = ++castRound
+        val videoUrl: String
+        if (source.address.startsWith("file:")) {
+            val serving = FileServer(File(android.net.Uri.parse(source.address).path ?: "")).start(address)
+            server = serving
+            servingSince = System.currentTimeMillis()
+            videoUrl = serving.url(phone)
+        } else {
+            val passing = com.safewatch.core.tv.StreamProxy { url ->
+                val headers = LinkedHashMap(source.requestHeaders(script = source.stream.isNotEmpty()))
+                try { android.webkit.CookieManager.getInstance().getCookie(url) } catch (e: Exception) { null }?.let { headers["Cookie"] = it }
+                headers
+            }.start(address)
+            proxy = passing
+            videoUrl = passing.url(phone, source.address)
+        }
+        TvState.playingTitle = source.title
+        TvState.playingOn = device
+        TvState.paused = false
+        TvState.changed()
+        hold()
+        refresh()
+        FilterLog.add("casting to ${device.name}: ${source.title}")
+        control.execute {
+            try {
+                when (device.kind) {
+                    TvDevice.Kind.ROKU -> com.safewatch.core.tv.Roku.play(device, videoUrl, source.title,
+                        when (source.stream) { CleanSource.HLS -> "hls"; CleanSource.DASH -> "dash"; else -> "mp4" })
+                    TvDevice.Kind.DLNA -> com.safewatch.core.tv.Dlna.play(device, videoUrl, source.title,
+                        when (source.stream) { CleanSource.HLS -> "application/vnd.apple.mpegurl"; CleanSource.DASH -> "application/dash+xml"
+                            else -> if (source.address.contains(".webm", true)) "video/webm" else "video/mp4" })
+                }
+                FilterLog.add("${device.name} is playing it")
+            } catch (e: Exception) {
+                FilterLog.add("could not cast to ${device.name}: ${e.message}")
+                ui.post {
+                    if (round != castRound) return@post
+                    stopPlaying(tellTv = false)
+                    TvState.rememberFailure(applicationContext, source.title, "${device.name} did not accept the video: ${e.message}")
+                    TvState.job = TvState.Job(source.title, "Not sent", -1, error = "${device.name} did not accept the video: ${e.message}")
+                    TvState.changed()
+                }
+                return@execute
+            }
+            follow(source, device, round)
+        }
+    }
+
+    /** Keeps the TV clean while it plays: asks where it is about once a second and mutes or jumps as needed. */
+    private fun follow(source: CleanSource, device: TvDevice, round: Int) {
+        val settings = Prefs.settings(this)
+        val tags = ArrayList(com.safewatch.app.data.TagStore.load(this, source.key))
+        val cues = source.captions.flatMap { CleanCopy.readCaptions(it) }
+        if (settings.language != com.safewatch.core.Strictness.OFF) tags += com.safewatch.core.CueTagger.tagsFor(cues, com.safewatch.core.ProfanityMatcher(settings))
+        val active = com.safewatch.core.FilterEngine(tags, settings).activeTags
+        // The TV cannot blur, so scenes that would be blurred are jumped past instead.
+        val follower = com.safewatch.core.tv.CastFollower(
+            active.filter { it.action == com.safewatch.core.Action.MUTE }.map { it.startMs..it.endMs },
+            active.filter { it.action != com.safewatch.core.Action.MUTE }.map { it.startMs..it.endMs })
+        FilterLog.add("keeping the TV clean: ${cues.size} caption lines, ${active.count { it.action == com.safewatch.core.Action.MUTE }} " +
+            "places to mute, ${active.count { it.action != com.safewatch.core.Action.MUTE }} scenes to jump past")
+        var known = -1L
+        var knownAt = 0L
+        var askedAt = 0L
+        var rokuMuted = false
+        var misses = 0
+        while (round == castRound && TvState.playingOn == device) {
+            val now = System.currentTimeMillis()
+            if (now - askedAt >= 1000) {
+                askedAt = now
+                val at = try {
+                    when (device.kind) {
+                        TvDevice.Kind.ROKU -> com.safewatch.core.tv.Roku.position(device)
+                        TvDevice.Kind.DLNA -> com.safewatch.core.tv.Dlna.position(device)
+                    }
+                } catch (e: Exception) { null }
+                if (at != null && at > 0) { known = at; knownAt = System.currentTimeMillis(); misses = 0 } else misses++
+                if (misses > 120) { FilterLog.add("${device.name} stopped answering"); break }
+            }
+            if (known >= 0 && !TvState.paused) {
+                val estimate = known + (System.currentTimeMillis() - knownAt)
+                for (command in follower.at(estimate)) {
+                    try {
+                        when (command) {
+                            is com.safewatch.core.tv.CastFollower.Command.Mute -> when (device.kind) {
+                                TvDevice.Kind.DLNA -> com.safewatch.core.tv.Dlna.mute(device, command.on)
+                                // A Roku's mute button switches the sound off and on, so it is pressed only when needed.
+                                TvDevice.Kind.ROKU -> if (rokuMuted != command.on) { com.safewatch.core.tv.Roku.press(device, "VolumeMute"); rokuMuted = command.on }
+                            }
+                            is com.safewatch.core.tv.CastFollower.Command.Seek -> if (device.kind == TvDevice.Kind.DLNA) {
+                                com.safewatch.core.tv.Dlna.seek(device, command.toMs)
+                                known = command.toMs
+                                knownAt = System.currentTimeMillis()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.i("SafeWatch", "cast control: ${e.message}")
+                    }
+                }
+            }
+            Thread.sleep(200)
+        }
+        if (rokuMuted) try { com.safewatch.core.tv.Roku.press(device, "VolumeMute") } catch (e: Exception) { /* gone */ }
+        if (device.kind == TvDevice.Kind.DLNA && follower.muted) try { com.safewatch.core.tv.Dlna.mute(device, false) } catch (e: Exception) { /* gone */ }
+        // The TV stopped answering (turned off, or the video ended long ago): the phone stops passing the video on.
+        ui.post { if (round == castRound) stopPlaying(tellTv = false) }
+    }
+
     private fun pauseOrResume() {
         val device = TvState.playingOn ?: return
         val pause = !TvState.paused
@@ -236,6 +370,9 @@ class TvService : Service() {
         val device = TvState.playingOn
         if (tellTv && device != null) control.execute { try { Tv.stop(device) } catch (e: Exception) { /* already stopped */ } }
         ui.removeCallbacks(watchdog)
+        castRound++
+        proxy?.stop()
+        proxy = null
         val finished = server
         server?.stop()
         server = null
@@ -369,7 +506,7 @@ class TvService : Service() {
 
     private fun finishIfIdle() {
         ui.post {
-            if (making != null || server != null || remote != null) return@post
+            if (making != null || server != null || proxy != null || remote != null) return@post
             try { awake?.release() } catch (e: Exception) { /* already released */ }
             awake = null
             try { wifiLock?.release() } catch (e: Exception) { /* already released */ }
@@ -381,14 +518,14 @@ class TvService : Service() {
     }
 
     private fun refresh() {
-        if (making == null && server == null && remote == null) return
+        if (making == null && server == null && proxy == null && remote == null) return
         val text = when {
-            server != null -> (if (TvState.paused) "Paused on " else "Playing on ") + (TvState.playingOn?.name ?: "TV")
+            server != null || proxy != null -> (if (TvState.paused) "Paused on " else "Playing on ") + (TvState.playingOn?.name ?: "TV")
             making == null && remote != null -> TvState.youtubeStatus
             else -> TvState.job?.let { it.step + if (it.percent >= 0) " ${it.percent}%" else "" } ?: "Working"
         }
         val title = when {
-            server != null -> TvState.playingTitle ?: "edenOS"
+            server != null || proxy != null -> TvState.playingTitle ?: "edenOS"
             making == null && remote != null -> TvState.youtubeTitle ?: "YouTube on TV"
             else -> "Clean copy: ${TvState.job?.title ?: ""}"
         }
@@ -400,15 +537,15 @@ class TvService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, TvActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
         val percent = TvState.job?.percent ?: -1
-        if (server == null && making != null) builder.setProgress(100, percent.coerceAtLeast(0), percent < 0)
-        if (server != null) {
+        if (server == null && proxy == null && making != null) builder.setProgress(100, percent.coerceAtLeast(0), percent < 0)
+        if (server != null || proxy != null) {
             builder.addAction(Notification.Action.Builder(null, if (TvState.paused) "Play" else "Pause", action(ACTION_PAUSE)).build())
             builder.addAction(Notification.Action.Builder(null, "Stop", action(ACTION_STOP)).build())
         } else if (making != null) {
             builder.addAction(Notification.Action.Builder(null, "Stop", action(ACTION_CANCEL)).build())
         }
         if (remote != null) builder.addAction(Notification.Action.Builder(null, "Stop filtering YouTube", action(ACTION_YOUTUBE_STOP)).build())
-        val playing = if (server != null || remote != null) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+        val playing = if (server != null || proxy != null || remote != null) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
         // Making a copy is media processing to Android 15 and later, and a data sync before; each has its own daily
         // allowance, so if one is refused the other is tried. If Android refuses both, the copy stops with a reason.
         val kinds = if (making == null) listOf(0) else if (Build.VERSION.SDK_INT >= 35) listOf(MEDIA_PROCESSING, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
@@ -466,6 +603,8 @@ class TvService : Service() {
         private const val ACTION_DROP = "drop"
         private const val ACTION_PLAY = "play"
         private const val ACTION_PAUSE = "pause"
+        private const val ACTION_CAST = "cast"
+        private const val EXTRA_RENDERING = "rendering"
         private const val ACTION_STOP = "stop"
         private const val ACTION_YOUTUBE = "youtube"
         private const val ACTION_YOUTUBE_STOP = "youtubeStop"
@@ -515,6 +654,11 @@ class TvService : Service() {
         fun play(ctx: Context, copy: CleanCopyFile, device: TvDevice) = start(ctx, Intent(ctx, TvService::class.java).setAction(ACTION_PLAY)
             .putExtra(EXTRA_FILE, copy.file.absolutePath).putExtra(EXTRA_TITLE, copy.title).putExtra(EXTRA_KIND, device.kind.name)
             .putExtra(EXTRA_NAME, device.name).putExtra(EXTRA_LOCATION, device.location).putExtra(EXTRA_CONTROL, device.controlUrl))
+
+        /** Plays [source] in the TV's own player, at full quality, with the phone keeping it clean. */
+        fun cast(ctx: Context, source: CleanSource, device: TvDevice) = start(ctx, Intent(ctx, TvService::class.java).setAction(ACTION_CAST)
+            .putExtra(EXTRA_SOURCE, source.toJson()).putExtra(EXTRA_KIND, device.kind.name).putExtra(EXTRA_NAME, device.name)
+            .putExtra(EXTRA_LOCATION, device.location).putExtra(EXTRA_CONTROL, device.controlUrl).putExtra(EXTRA_RENDERING, device.renderingUrl))
 
         fun pauseOrResume(ctx: Context) = ctx.startService(Intent(ctx, TvService::class.java).setAction(ACTION_PAUSE))
 

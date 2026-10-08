@@ -939,3 +939,65 @@ class SupercleanTest {
         assertEquals(null, ((((sentBack[2] as Map<*, *>)["content"] as List<*>)[0]) as Map<*, *>)["page_age"])
     }
 }
+
+class CastTest {
+    @Test fun followsTheTvMutingAndJumping() {
+        val f = com.safewatch.core.tv.CastFollower(mute = listOf(10_000L..11_000L), skip = listOf(30_000L..40_000L), leadMs = 500)
+        assertEquals(emptyList(), f.at(5_000))
+        assertEquals(listOf<com.safewatch.core.tv.CastFollower.Command>(com.safewatch.core.tv.CastFollower.Command.Mute(true)), f.at(9_600))
+        assertEquals(emptyList(), f.at(10_500))
+        assertEquals(listOf<com.safewatch.core.tv.CastFollower.Command>(com.safewatch.core.tv.CastFollower.Command.Mute(false)), f.at(11_300))
+        val jump = f.at(30_100)
+        assertEquals(listOf(com.safewatch.core.tv.CastFollower.Command.Mute(true), com.safewatch.core.tv.CastFollower.Command.Seek(40_000)), jump)
+        assertEquals(emptyList(), f.at(30_900)) // the TV has not caught up yet: no second jump
+        assertEquals(listOf<com.safewatch.core.tv.CastFollower.Command>(com.safewatch.core.tv.CastFollower.Command.Mute(false)), f.at(40_200))
+    }
+
+    @Test fun readsSmartTvControlsAndClock() {
+        val xml = """<root><URLBase>http://192.168.1.9:9197/</URLBase><device><friendlyName>Living room</friendlyName><serviceList>
+            <service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType><controlURL>/rc</controlURL></service>
+            <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><controlURL>/av</controlURL></service>
+            </serviceList></device></root>"""
+        val tv = com.safewatch.core.tv.Dlna.fromDescription(xml, "http://192.168.1.9:9197/desc.xml")!!
+        assertEquals("http://192.168.1.9:9197/av", tv.controlUrl)
+        assertEquals("http://192.168.1.9:9197/rc", tv.renderingUrl)
+        assertEquals(3_723_500L, com.safewatch.core.tv.Dlna.clock("1:02:03.5"))
+        assertEquals(null, com.safewatch.core.tv.Dlna.clock("NOT_IMPLEMENTED"))
+        assertEquals("1:02:03", com.safewatch.core.tv.Dlna.clock(3_723_900L))
+    }
+
+    @Test fun passesAStreamThroughThePhone() {
+        // A pretend website that only serves its video with the right header.
+        val site = java.net.ServerSocket(0)
+        Thread {
+            site.use {
+                repeat(3) {
+                    site.accept().use { s ->
+                        val input = s.getInputStream().bufferedReader()
+                        val lines = generateSequence { input.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                        val path = lines[0].split(' ')[1]
+                        val allowed = lines.any { it.equals("X-Token: ok", true) }
+                        val (type, body) = when {
+                            !allowed -> "text/plain" to "no"
+                            path.endsWith(".m3u8") -> "application/vnd.apple.mpegurl" to "#EXTM3U\n#EXT-X-KEY:METHOD=NONE,URI=\"k.bin\"\nseg1.ts\nhttp://other.example/seg2.ts\n"
+                            else -> "video/mp2t" to "PIECE"
+                        }
+                        val code = if (allowed) "200 OK" else "403 Forbidden"
+                        s.getOutputStream().write("HTTP/1.1 $code\r\nContent-Type: $type\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n$body".toByteArray())
+                    }
+                }
+            }
+        }.start()
+        val proxy = com.safewatch.core.tv.StreamProxy { mapOf("X-Token" to "ok") }.start(java.net.InetAddress.getLoopbackAddress())
+        try {
+            val list = java.net.URL(proxy.url("127.0.0.1", "http://127.0.0.1:${site.localPort}/v/index.m3u8")).readText()
+            val lines = list.lines().filter { it.isNotBlank() }
+            assertTrue(lines[2].startsWith("http://127.0.0.1:${proxy.port}/"), list)
+            assertTrue(lines[1].contains("URI=\"http://127.0.0.1:${proxy.port}/"), list)
+            assertEquals("PIECE", java.net.URL(lines[2]).readText())
+            assertTrue(lines[3].startsWith("http://127.0.0.1:${proxy.port}/"), list) // other sites' pieces too
+        } finally {
+            proxy.stop()
+        }
+    }
+}

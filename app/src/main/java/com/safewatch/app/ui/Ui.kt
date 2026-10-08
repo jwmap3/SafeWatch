@@ -551,6 +551,18 @@ object Ui {
                 setOnClickListener { dialog?.dismiss(); onClick() }
             })
         }
+        if (source != null && !source.address.startsWith("content:")) {
+            // The usual way: the TV plays the video itself, at full quality, and the phone keeps it clean.
+            fun cast(device: com.safewatch.core.tv.TvDevice) {
+                com.safewatch.app.tv.TvService.cast(activity, source, device)
+                toast(activity, "Playing on ${device.name}. Your phone keeps it clean; keep it on the Wi-Fi.")
+            }
+            val last = com.safewatch.app.tv.TvActivity.lastTv(activity)
+            if (last != null) option("Play on ${last.name}", "The TV plays it in its own player at full quality, smooth, with no screen " +
+                "mirroring. Your phone mutes the cursing and jumps past scenes as it plays.") { cast(last) }
+            option(if (last == null) "Play on TV" else "Play on another TV", "Your Roku, Samsung or LG TV plays it in its own player at full " +
+                "quality, while your phone keeps it clean.") { com.safewatch.app.tv.TvActivity.findTv(activity) { cast(it) } }
+        }
         if (youtube != null) {
             option("YouTube on TV", "Plays in your TV's own YouTube app, with the cursing muted from your phone. Nothing to download; " +
                 "your phone can be locked.") { youtube() }

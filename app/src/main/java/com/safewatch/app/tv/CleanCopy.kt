@@ -386,23 +386,7 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
         }
     }
 
-    private fun readCaptions(address: String): List<com.safewatch.core.Cue> {
-        val text = try {
-            if (address.startsWith("http")) {
-                val c = URL(address).openConnection() as HttpURLConnection
-                c.connectTimeout = 10_000
-                c.readTimeout = 20_000
-                c.setRequestProperty("User-Agent", AGENT)
-                CookieManager.getInstance().getCookie(address)?.let { c.setRequestProperty("Cookie", it) }
-                try { c.inputStream.bufferedReader().use { it.readText() } } finally { c.disconnect() }
-            } else {
-                File(address.removePrefix("file://")).readText()
-            }
-        } catch (e: Exception) {
-            return emptyList()
-        }
-        return if (CaptionFormats.recognises(text)) try { CaptionFormats.parse(text) } catch (e: Throwable) { emptyList() } else emptyList()
-    }
+    private fun readCaptions(address: String): List<com.safewatch.core.Cue> = Companion.readCaptions(address)
 
     // ---- Finding nudity ----
 
@@ -544,6 +528,25 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
     }
 
     companion object {
+        /** The caption lines in a caption file, from the web (signed in as the browser is) or the phone. */
+        fun readCaptions(address: String): List<com.safewatch.core.Cue> {
+            val text = try {
+                if (address.startsWith("http")) {
+                    val c = URL(address).openConnection() as HttpURLConnection
+                    c.connectTimeout = 10_000
+                    c.readTimeout = 20_000
+                    c.setRequestProperty("User-Agent", AGENT)
+                    CookieManager.getInstance().getCookie(address)?.let { c.setRequestProperty("Cookie", it) }
+                    try { c.inputStream.bufferedReader().use { it.readText() } } finally { c.disconnect() }
+                } else {
+                    File(address.removePrefix("file://")).readText()
+                }
+            } catch (e: Exception) {
+                return emptyList()
+            }
+            return if (CaptionFormats.recognises(text)) try { CaptionFormats.parse(text) } catch (e: Throwable) { emptyList() } else emptyList()
+        }
+
         const val AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
 
         fun folder(context: Context): File = File(context.filesDir, "clean").apply { mkdirs() }

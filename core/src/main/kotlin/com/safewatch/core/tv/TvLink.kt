@@ -21,6 +21,8 @@ data class TvDevice(
     val location: String,
     /** For a smart TV: where its playback controls are addressed. Unused for Roku. */
     val controlUrl: String = "",
+    /** For a smart TV: where its sound controls (mute) are addressed, if it has them. */
+    val renderingUrl: String = "",
 ) {
     enum class Kind { ROKU, DLNA }
 
@@ -109,14 +111,20 @@ object Roku {
      * The request that has the Roku play [videoUrl] in its built-in "Play on Roku" player, the one
      * Roku's own phone app uses to show phone videos.
      */
-    fun playRequest(device: TvDevice, videoUrl: String, title: String): String {
+    fun playRequest(device: TvDevice, videoUrl: String, title: String, format: String = "mp4"): String {
         fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
-        return device.location.trimEnd('/') + "/input/15985?t=v&u=" + enc(videoUrl) + "&k=(null)&videoName=" + enc(title) + "&videoFormat=mp4"
+        return device.location.trimEnd('/') + "/input/15985?t=v&u=" + enc(videoUrl) + "&k=(null)&videoName=" + enc(title) + "&videoFormat=" + format
     }
 
-    fun play(device: TvDevice, videoUrl: String, title: String) {
-        val (code, _) = Net.post(playRequest(device, videoUrl, title), "", emptyMap())
+    fun play(device: TvDevice, videoUrl: String, title: String, format: String = "mp4") {
+        val (code, _) = Net.post(playRequest(device, videoUrl, title, format), "", emptyMap())
         if (code !in 200..299) throw IOException("The Roku answered $code")
+    }
+
+    /** Where the Roku's player is in the video, or null when nothing is playing. */
+    fun position(device: TvDevice): Long? {
+        val info = Net.get(device.location.trimEnd('/') + "/query/media-player", 2500)
+        return Regex("<position>\\s*(\\d+)\\s*ms\\s*</position>").find(info)?.groupValues?.get(1)?.toLongOrNull()
     }
 
     fun press(device: TvDevice, key: String) {
@@ -147,14 +155,18 @@ object Dlna {
         val base = first(root, "URLBase").ifEmpty { location }
         val name = first(root, "friendlyName").ifEmpty { first(root, "modelName") }.ifEmpty { "TV" }
         val services = root.getElementsByTagName("service")
+        var transport = ""
+        var rendering = ""
         for (i in 0 until services.length) {
             val service = services.item(i) as Element
-            if (!first(service, "serviceType").startsWith("urn:schemas-upnp-org:service:AVTransport:")) continue
+            val type = first(service, "serviceType")
             val control = first(service, "controlURL")
             if (control.isEmpty()) continue
-            return TvDevice(TvDevice.Kind.DLNA, name, location, URL(URL(base), control).toString())
+            val url = try { URL(URL(base), control).toString() } catch (e: Exception) { continue }
+            if (type.startsWith("urn:schemas-upnp-org:service:AVTransport:") && transport.isEmpty()) transport = url
+            if (type.startsWith("urn:schemas-upnp-org:service:RenderingControl:") && rendering.isEmpty()) rendering = url
         }
-        return null
+        return if (transport.isEmpty()) null else TvDevice(TvDevice.Kind.DLNA, name, location, transport, rendering)
     }
 
     /** What the TV is told about the file: some TVs (Samsung in particular) refuse a video without it. */
@@ -167,18 +179,21 @@ object Dlna {
             "<res protocolInfo=\"$info\">${Net.escape(videoUrl)}</res></item></DIDL-Lite>"
     }
 
-    fun envelope(action: String, arguments: List<Pair<String, String>>): String =
+    private const val RENDERING = "urn:schemas-upnp-org:service:RenderingControl:1"
+
+    fun envelope(action: String, arguments: List<Pair<String, String>>, service: String = AV_TRANSPORT): String =
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
             "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">" +
-            "<s:Body><u:$action xmlns:u=\"$AV_TRANSPORT\"><InstanceID>0</InstanceID>" +
+            "<s:Body><u:$action xmlns:u=\"$service\"><InstanceID>0</InstanceID>" +
             arguments.joinToString("") { (k, v) -> "<$k>${Net.escape(v)}</$k>" } +
             "</u:$action></s:Body></s:Envelope>"
 
-    fun call(device: TvDevice, action: String, arguments: List<Pair<String, String>> = emptyList()): String {
-        val (code, answer) = Net.post(device.controlUrl, envelope(action, arguments), mapOf(
+    fun call(device: TvDevice, action: String, arguments: List<Pair<String, String>> = emptyList(), service: String = AV_TRANSPORT,
+             url: String = device.controlUrl, timeoutMs: Int = 6000): String {
+        val (code, answer) = Net.post(url, envelope(action, arguments, service), mapOf(
             "Content-Type" to "text/xml; charset=\"utf-8\"",
-            "SOAPAction" to "\"$AV_TRANSPORT#$action\"",
-        ))
+            "SOAPAction" to "\"$service#$action\"",
+        ), timeoutMs)
         if (code !in 200..299) {
             val reason = Regex("<errorDescription>([^<]*)</errorDescription>").find(answer)?.groupValues?.get(1)
             throw IOException("The TV refused $action" + (reason?.let { ": $it" } ?: " ($code)"))
@@ -186,10 +201,42 @@ object Dlna {
         return answer
     }
 
-    fun play(device: TvDevice, videoUrl: String, title: String) {
+    fun play(device: TvDevice, videoUrl: String, title: String, mime: String = "video/mp4") {
         try { call(device, "Stop") } catch (e: Exception) { /* nothing was playing */ }
-        call(device, "SetAVTransportURI", listOf("CurrentURI" to videoUrl, "CurrentURIMetaData" to metadata(videoUrl, title)))
+        call(device, "SetAVTransportURI", listOf("CurrentURI" to videoUrl, "CurrentURIMetaData" to metadata(videoUrl, title, mime)))
         call(device, "Play", listOf("Speed" to "1"))
+    }
+
+    /** Where the TV is in the video, or null when it does not say. */
+    fun position(device: TvDevice): Long? {
+        val answer = call(device, "GetPositionInfo", timeoutMs = 2500)
+        return clock(Regex("<RelTime>([^<]*)</RelTime>").find(answer)?.groupValues?.get(1) ?: return null)
+    }
+
+    fun seek(device: TvDevice, ms: Long) {
+        call(device, "Seek", listOf("Unit" to "REL_TIME", "Target" to clock(ms)))
+    }
+
+    /** Mutes or unmutes the TV; false when it has no sound controls to do it with. */
+    fun mute(device: TvDevice, on: Boolean): Boolean {
+        if (device.renderingUrl.isEmpty()) return false
+        call(device, "SetMute", listOf("Channel" to "Master", "DesiredMute" to if (on) "1" else "0"), RENDERING, device.renderingUrl, 2500)
+        return true
+    }
+
+    /** "1:02:03" (or "1:02:03.500") as milliseconds; null for "NOT_IMPLEMENTED" and the like. */
+    fun clock(text: String): Long? {
+        val parts = text.trim().split(':')
+        if (parts.size != 3) return null
+        val h = parts[0].toLongOrNull() ?: return null
+        val m = parts[1].toLongOrNull() ?: return null
+        val s = parts[2].toDoubleOrNull() ?: return null
+        return h * 3_600_000 + m * 60_000 + (s * 1000).toLong()
+    }
+
+    fun clock(ms: Long): String {
+        val s = ms / 1000
+        return String.format(java.util.Locale.ROOT, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
     }
 
     fun stop(device: TvDevice) {

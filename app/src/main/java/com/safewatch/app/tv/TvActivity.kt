@@ -230,30 +230,7 @@ class TvActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun pickTv(copy: CleanCopyFile) {
-        val wait = AlertDialog.Builder(this).setTitle("Looking for TVs…")
-            .setMessage("Rokus and smart TVs on this Wi-Fi.").setNegativeButton("Cancel", null).show()
-        Thread {
-            val found = try { TvFinder.find(applicationContext) } catch (e: Exception) { emptyList() }
-            runOnUiThread {
-                if (isDestroyed || !wait.isShowing) return@runOnUiThread
-                wait.dismiss()
-                if (found.isEmpty()) {
-                    AlertDialog.Builder(this).setTitle("No TV found")
-                        .setMessage("Make sure the TV is on and on the same Wi-Fi as this phone.\n\n" +
-                            "Roku: Settings > System > Advanced system settings > Control by mobile apps > Network access, set to Default or Permissive.\n\n" +
-                            "Samsung and LG: the TV may show a message asking whether to allow this phone; choose Allow. If it said no " +
-                            "before, look in the TV's settings for connected or mobile devices and allow it there.")
-                        .setPositiveButton("Search again") { _, _ -> pickTv(copy) }
-                        .setNegativeButton("Close", null).show()
-                    return@runOnUiThread
-                }
-                AlertDialog.Builder(this).setTitle("Play on")
-                    .setItems(found.map { it.name + if (it.kind == TvDevice.Kind.ROKU) " (Roku)" else "" }.toTypedArray()) { _, which -> send(copy, found[which]) }
-                    .setNegativeButton("Cancel", null).show()
-            }
-        }.start()
-    }
+    private fun pickTv(copy: CleanCopyFile) = findTv(this) { send(copy, it) }
 
     private fun send(copy: CleanCopyFile, device: TvDevice) {
         rememberTv(this, device)
@@ -291,11 +268,41 @@ class TvActivity : AppCompatActivity() {
         private fun prefs(ctx: Context) = ctx.getSharedPreferences("tv", Context.MODE_PRIVATE)
 
         fun rememberTv(ctx: Context, d: TvDevice) = prefs(ctx).edit().putString("last", JSONObject()
-            .put("kind", d.kind.name).put("name", d.name).put("location", d.location).put("control", d.controlUrl).toString()).apply()
+            .put("kind", d.kind.name).put("name", d.name).put("location", d.location).put("control", d.controlUrl)
+            .put("rendering", d.renderingUrl).toString()).apply()
+
+        /** Looks for Rokus and smart TVs on the Wi-Fi and lets the viewer pick one. */
+        fun findTv(activity: android.app.Activity, then: (TvDevice) -> Unit) {
+            val wait = AlertDialog.Builder(activity).setTitle("Looking for TVs…")
+                .setMessage("Rokus and smart TVs on this Wi-Fi.").setNegativeButton("Cancel", null).show()
+            Thread {
+                val found = try { TvFinder.find(activity.applicationContext) } catch (e: Exception) { emptyList() }
+                activity.runOnUiThread {
+                    if (activity.isDestroyed || !wait.isShowing) return@runOnUiThread
+                    wait.dismiss()
+                    if (found.isEmpty()) {
+                        AlertDialog.Builder(activity).setTitle("No TV found")
+                            .setMessage("Make sure the TV is on and on the same Wi-Fi as this phone.\n\n" +
+                                "Roku: Settings > System > Advanced system settings > Control by mobile apps > Network access, set to Default or Permissive.\n\n" +
+                                "Samsung and LG: the TV may show a message asking whether to allow this phone; choose Allow. If it said no " +
+                                "before, look in the TV's settings for connected or mobile devices and allow it there.")
+                            .setPositiveButton("Search again") { _, _ -> findTv(activity, then) }
+                            .setNegativeButton("Close", null).show()
+                        return@runOnUiThread
+                    }
+                    AlertDialog.Builder(activity).setTitle("Play on")
+                        .setItems(found.map { it.name + if (it.kind == TvDevice.Kind.ROKU) " (Roku)" else "" }.toTypedArray()) { _, which ->
+                            rememberTv(activity, found[which])
+                            then(found[which])
+                        }
+                        .setNegativeButton("Cancel", null).show()
+                }
+            }.start()
+        }
 
         fun lastTv(ctx: Context): TvDevice? = try {
             val o = JSONObject(prefs(ctx).getString("last", null) ?: return null)
-            TvDevice(TvDevice.Kind.valueOf(o.getString("kind")), o.getString("name"), o.getString("location"), o.optString("control"))
+            TvDevice(TvDevice.Kind.valueOf(o.getString("kind")), o.getString("name"), o.getString("location"), o.optString("control"), o.optString("rendering"))
         } catch (e: Exception) { null }
     }
 }
