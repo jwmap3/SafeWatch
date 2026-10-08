@@ -1036,7 +1036,7 @@ open class BrowserActivity : AppCompatActivity() {
                 lastLiveCheckAt = startedAt
                 background.execute {
                     val level = try { det.maxLevel(frame, testing) } catch (e: Exception) { 0 }
-                    val brightness = Scout.brightnessOf(frame)
+                    val sketch = Scout.sketchOf(frame)
                     if (testing) {
                         // While testing, say what the detector was shown and what it made of it. "Detail" is how
                         // much neighbouring dots differ along the middle row: a real picture scores well above a
@@ -1060,7 +1060,7 @@ open class BrowserActivity : AppCompatActivity() {
                             hiddenUntil = SystemClock.elapsedRealtime() + maxOf(HOLD_MS, took * 2 + 500)
                             curtain.show(frame)
                         }
-                        doubtScout(copiedAt, brightness)
+                        doubtScout(copiedAt, sketch, testing)
                     }
                 }
             }, ui)
@@ -1070,21 +1070,20 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     /**
-     * A check on the look-ahead itself. If the viewer's copy shows a picture where the hidden copy
-     * showed only black, several times running, the hidden copy is not seeing the video (some phones
-     * may not draw video on a hidden screen) and nothing it reported can be relied on. It is stopped
-     * and live watching carries on alone.
+     * A check on the look-ahead itself. Each live look at the viewer's picture is compared with what
+     * the hidden copy showed at the same moment. If they are plainly different pictures several times
+     * running, the hidden copy is not seeing the same video (some phones may not draw video on a hidden
+     * screen, and some sites give a second visitor something else), and nothing it reported can be
+     * relied on. It is stopped and live watching carries on alone.
      */
-    private fun doubtScout(positionMs: Long, brightness: Int) {
+    private fun doubtScout(positionMs: Long, sketch: IntArray?, testing: Boolean) {
         val sc = scout ?: return
         if (!sc.running) return
-        when (sc.agreesWith(positionMs, brightness)) {
-            true -> scoutDoubts = 0
-            false -> scoutDoubts++
-            null -> return
-        }
-        if (scoutDoubts >= 3) {
-            Log.i("SafeWatch", "look-ahead: the hidden copy shows black where the video has a picture; stopped, watching live only")
+        val agrees = sc.agreesWith(positionMs, sketch) ?: return
+        if (testing) Log.i("SafeWatch", "look-ahead: at ${positionMs / 100 / 10.0}s the hidden copy and the viewer's picture ${if (agrees) "match" else "differ"}")
+        scoutDoubts = if (agrees) 0 else scoutDoubts + 1
+        if (scoutDoubts >= 4) {
+            Log.i("SafeWatch", "look-ahead: the hidden copy is not showing what the viewer sees; stopped, watching live only")
             scoutGaveUpOn = pageKey
             sc.stop()
             aheadHidden = false

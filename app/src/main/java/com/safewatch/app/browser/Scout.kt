@@ -77,12 +77,12 @@ class Scout(private val activity: Activity, private val pageScript: String) {
     private var sampling = false
     private var lastSampled = -1L
     private var typicalLookMs = 300L
-    private var savedTestPicture = false
     private var startedAt = 0L
     private var saidFollowing = false
 
-    // How bright each checked picture was, to compare with what the viewer's own copy shows.
-    private val light = TreeMap<Long, Int>()
+    // A rough sketch of the hidden copy's picture at each moment, to compare with what the viewer's own copy shows there.
+    private val sketches = TreeMap<Long, IntArray>()
+    private var lastSketchAt = 0L
 
     val running: Boolean get() = web != null
 
@@ -178,12 +178,11 @@ class Scout(private val activity: Activity, private val pageScript: String) {
             pictures = 0
         }
         ahead.clear()
-        light.clear()
+        sketches.clear()
         stateAt = 0
         lastSampled = -1
         pending = ""
         rate = 1.0
-        savedTestPicture = false
         saidFollowing = false
     }
 
@@ -221,6 +220,7 @@ class Scout(private val activity: Activity, private val pageScript: String) {
             saidFollowing = true
             Log.i(TAG, "look-ahead: the hidden copy found the same video and is moving ahead of the viewer")
         }
+        sketch(now)
         val lead = leadMs
         val gap = position - mainPositionMs
         val quick = typicalLookMs < 700
@@ -246,6 +246,32 @@ class Scout(private val activity: Activity, private val pageScript: String) {
         else if (paused && gap < lead + 500) pending = "play"
     }
 
+    /** The newest picture from the hidden screen with the position it shows, or null when none can be trusted right now. */
+    private fun newest(now: Long): Pair<Bitmap, Long>? {
+        if (!usable(now) || !steady || now - lastSeekAt < 900) return null
+        var arrived = 0L
+        val frame: Bitmap = synchronized(pictureLock) {
+            val image = picture ?: return null
+            arrived = pictureAt
+            try { toBitmap(image) } catch (e: Exception) { return null }
+        }
+        // Pictures stop arriving while the video is paused, and the last one still shows what is there.
+        // A playing video with no new pictures means the hidden screen is not being drawn: say nothing.
+        if (!paused && now - arrived > 3000) return null
+        if (arrived < lastSeekAt + 400) return null // drawn before the last jump landed
+        val at = if (paused) position else position + ((arrived - stateAt).coerceIn(-1000, 1000) * rate).toLong()
+        return frame to at
+    }
+
+    /** Notes, a few times a second, roughly what the hidden copy is showing. Cheap: no detection involved. */
+    private fun sketch(now: Long) {
+        if (now - lastSketchAt < 400) return
+        lastSketchAt = now
+        val (frame, at) = newest(now) ?: return
+        sketches[at] = sketchOf(frame) ?: return
+        while (sketches.size > 900) sketches.pollFirstEntry()
+    }
+
     /**
      * Checks the hidden copy's newest picture, unless a check is already going on. [testing] counts
      * faces as something to hide, which is how the blur is tried out without anything explicit.
@@ -253,18 +279,7 @@ class Scout(private val activity: Activity, private val pageScript: String) {
     fun sample(detector: NudityDetector, worker: ExecutorService, testing: Boolean) {
         if (sampling || !running || worker.isShutdown) return
         val now = SystemClock.elapsedRealtime()
-        if (!usable(now) || !steady || now - lastSeekAt < 900) return
-        var arrived = 0L
-        val frame: Bitmap = synchronized(pictureLock) {
-            val image = picture ?: return
-            arrived = pictureAt
-            try { toBitmap(image) } catch (e: Exception) { return }
-        }
-        // Pictures stop arriving while the video is paused, and the last one still shows what is there.
-        // A playing video with no new pictures means the hidden screen is not being drawn: say nothing.
-        if (!paused && now - arrived > 3000) return
-        if (arrived < lastSeekAt + 400) return // drawn before the last jump landed
-        val at = if (paused) position else position + ((arrived - stateAt).coerceIn(-1000, 1000) * rate).toLong()
+        val (frame, at) = newest(now) ?: return
         if (at / 100 == lastSampled / 100) return
         lastSampled = at
         sampling = true
@@ -276,9 +291,8 @@ class Scout(private val activity: Activity, private val pageScript: String) {
             val level = try { detector.maxLevel(shown, testing) } catch (e: Exception) { -1 }
             val took = SystemClock.elapsedRealtime() - began
             val brightness = brightnessOf(frame)
-            if (testing && !savedTestPicture && brightness > 12) {
-                // Kept once per test, in the app's private scratch space, so the test can show what the hidden copy saw.
-                savedTestPicture = true
+            if (testing) {
+                // The latest one is kept, in the app's private scratch space, so the test can show what the hidden copy saw.
                 try {
                     File(activity.cacheDir, "look-ahead-test.png").outputStream().use { frame.compress(Bitmap.CompressFormat.PNG, 90, it) }
                 } catch (e: Exception) { /* only a record for the test */ }
@@ -289,8 +303,6 @@ class Scout(private val activity: Activity, private val pageScript: String) {
                 typicalLookMs = (typicalLookMs * 3 + took) / 4
                 ahead.maxGapMs = maxOf(3000L, (typicalLookMs * 2.5 * rate).toLong())
                 ahead.add(at, level)
-                light[at] = brightness
-                while (light.size > 600) light.pollFirstEntry()
                 if (testing || level > 0) {
                     Log.i(TAG, "look-ahead: checked ${at / 100 / 10.0}s (hidden copy at ${copyAt / 100 / 10.0}s), " +
                         "brightness $brightness, found level $level, took $took ms")
@@ -300,17 +312,17 @@ class Scout(private val activity: Activity, private val pageScript: String) {
     }
 
     /**
-     * Compares what the viewer's copy shows at [positionMs] (its [brightness], 0 to 255) with what the
-     * hidden copy showed there. Answers false when the viewer has a picture and the hidden copy had
-     * only black, which means the hidden copy cannot be believed; null when there is nothing to compare.
+     * Compares what the viewer's copy shows at [positionMs] (a sketch of it, from [sketchOf]) with what
+     * the hidden copy showed there. Answers false when the two are plainly different pictures, which
+     * means the hidden copy is not showing the same video (or is not showing video at all) and cannot
+     * be believed; null when there is nothing to compare.
      */
-    fun agreesWith(positionMs: Long, brightness: Int): Boolean? {
-        val before = light.floorEntry(positionMs)
-        val after = light.ceilingEntry(positionMs)
-        val nearest = listOfNotNull(before, after).minByOrNull { abs(it.key - positionMs) } ?: return null
-        if (abs(nearest.key - positionMs) > 1500) return null
-        if (brightness < 30) return null // a dark scene proves nothing either way
-        return nearest.value >= 6
+    fun agreesWith(positionMs: Long, viewer: IntArray?): Boolean? {
+        viewer ?: return null
+        val nearest = listOfNotNull(sketches.floorEntry(positionMs), sketches.ceilingEntry(positionMs))
+            .minByOrNull { abs(it.key - positionMs) } ?: return null
+        if (abs(nearest.key - positionMs) > 600) return null
+        return alike(viewer, nearest.value)
     }
 
     private fun toBitmap(image: Image): Bitmap {
@@ -367,6 +379,69 @@ class Scout(private val activity: Activity, private val pageScript: String) {
 
         /** True where a second copy of any website can be kept silent from its first moment. */
         val canSilenceAnyPage: Boolean get() = WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO)
+
+        private const val SKETCH_ACROSS = 6
+        private const val SKETCH_DOWN = 4
+
+        /**
+         * A picture reduced to a few numbers: the brightness of each cell of a 6 by 4 grid laid over
+         * the picture itself, with any black bars around it left out. Two copies of the same video
+         * moment give nearly the same numbers whatever the shape of the screen each is shown on.
+         * Null when the picture is too dark to say anything about.
+         */
+        fun sketchOf(frame: Bitmap): IntArray? {
+            val w = frame.width
+            val h = frame.height
+            if (w < 24 || h < 16) return null
+            val dots = IntArray(w * h)
+            frame.getPixels(dots, 0, w, 0, 0, w, h)
+            fun luma(x: Int, y: Int): Int {
+                val p = dots[y * w + x]
+                return (((p shr 16) and 0xFF) * 3 + ((p shr 8) and 0xFF) * 6 + (p and 0xFF)) / 10
+            }
+            fun rowLit(y: Int): Boolean { var sum = 0; var n = 0; var x = 0; while (x < w) { sum += luma(x, y); n++; x += 4 }; return sum / n > 14 }
+            fun columnLit(x: Int): Boolean { var sum = 0; var n = 0; var y = 0; while (y < h) { sum += luma(x, y); n++; y += 4 }; return sum / n > 14 }
+            var top = 0; while (top < h && !rowLit(top)) top++
+            var bottom = h - 1; while (bottom > top && !rowLit(bottom)) bottom--
+            var left = 0; while (left < w && !columnLit(left)) left++
+            var right = w - 1; while (right > left && !columnLit(right)) right--
+            val across = right - left + 1
+            val down = bottom - top + 1
+            if (across < w * 2 / 5 || down < h * 2 / 5) return null
+            val out = IntArray(SKETCH_ACROSS * SKETCH_DOWN)
+            for (cy in 0 until SKETCH_DOWN) for (cx in 0 until SKETCH_ACROSS) {
+                var sum = 0; var n = 0
+                val x1 = left + across * (cx + 1) / SKETCH_ACROSS
+                val y1 = top + down * (cy + 1) / SKETCH_DOWN
+                var y = top + down * cy / SKETCH_DOWN
+                while (y < y1) {
+                    var x = left + across * cx / SKETCH_ACROSS
+                    while (x < x1) { sum += luma(x, y); n++; x += 2 }
+                    y += 2
+                }
+                out[cy * SKETCH_ACROSS + cx] = if (n == 0) 0 else sum / n
+            }
+            return out
+        }
+
+        /** Whether two sketches could be of the same picture: close in brightness cell by cell, and light and dark in the same places. */
+        fun alike(a: IntArray, b: IntArray): Boolean {
+            val n = a.size
+            var gap = 0
+            var meanA = 0.0; var meanB = 0.0
+            for (i in 0 until n) { gap += abs(a[i] - b[i]); meanA += a[i]; meanB += b[i] }
+            meanA /= n; meanB /= n
+            if (gap / n > 34) return false
+            var both = 0.0; var spreadA = 0.0; var spreadB = 0.0
+            for (i in 0 until n) {
+                both += (a[i] - meanA) * (b[i] - meanB)
+                spreadA += (a[i] - meanA) * (a[i] - meanA)
+                spreadB += (b[i] - meanB) * (b[i] - meanB)
+            }
+            // A flat picture (fog, a plain wall) has no pattern to compare; closeness in brightness is all there is.
+            if (spreadA / n < 100 || spreadB / n < 100) return true
+            return both / Math.sqrt(spreadA * spreadB) > 0.3
+        }
 
         /** Average brightness of a picture, 0 (black) to 255, from a scattering of its dots. */
         fun brightnessOf(frame: Bitmap): Int {
