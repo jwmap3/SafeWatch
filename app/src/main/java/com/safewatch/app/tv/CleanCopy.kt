@@ -378,6 +378,26 @@ class CleanCopy(private val context: Context, private val report: (step: String,
     // ---- Writing the clean copy ----
 
     private fun transform(input: File, output: File, plan: CleanPlan) {
+        if (plan.keep.sumOf { it.last - it.first } < 1000) {
+            throw IOException("Everything in this video would be cut out, so there is no copy to make. Try Blur instead of Cut out.")
+        }
+        try {
+            transformPieces(input, output, plan)
+        } catch (e: IOException) {
+            val whole = plan.keep.size == 1 && plan.keep[0].first == 0L && plan.keep[0].last >= plan.durationMs
+            if (e.message == "Stopped" || whole) throw e
+            // Cutting scenes out needs to jump about in the video, and some files have no index to do that with. Writing it
+            // once as an ordinary MP4 gives it one; then the scenes are cut from that.
+            android.util.Log.i("SafeWatch", "cutting failed (${e.message}); writing an ordinary copy to cut from")
+            val plain = File(input.parentFile, "plain.mp4")
+            export(Composition.Builder(EditedMediaItemSequence(listOf(EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(input))).build())))
+                .build(), plain, "Getting the video ready to cut", null)
+            check()
+            transformPieces(plain, output, plan)
+        }
+    }
+
+    private fun transformPieces(input: File, output: File, plan: CleanPlan) {
         report("Making the clean copy", 0)
         val pieces = plan.keep.map { piece ->
             val clipped = piece.first > 0 || piece.last < plan.durationMs
@@ -438,7 +458,9 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         done.await()
         failure.get()?.let {
             output.delete()
-            throw IOException(if (it.message == "Stopped") "Stopped" else "$step failed: ${it.message}")
+            if (it.message != "Stopped") android.util.Log.i("SafeWatch", "$step failed", it)
+            val why = generateSequence(it as Throwable) { e -> e.cause }.drop(1).mapNotNull { e -> e.message }.firstOrNull()
+            throw IOException(if (it.message == "Stopped") "Stopped" else "$step failed: ${it.message}" + (why?.let { w -> " ($w)" } ?: ""))
         }
     }
 
