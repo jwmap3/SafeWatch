@@ -22,6 +22,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
@@ -405,6 +406,11 @@ open class BrowserActivity : AppCompatActivity() {
         controlViews = listOf(middle, bottom)
     }
 
+    /** A page that is nothing but a video goes straight to the player view, with the app's controls showing. */
+    private fun showOwnPlayer() {
+        if (watchMode) ui.post { setPlayerView(true) }
+    }
+
     /** Passes a press on the app's controls to the page, which carries it out on its video. */
     private fun send(command: String) {
         pendingCommand = command
@@ -560,6 +566,7 @@ open class BrowserActivity : AppCompatActivity() {
             pageKey = key
             version.incrementAndGet()
             web.loadDataWithBaseURL(APP_ORIGIN, youtubePage(video), "text/html", "utf-8", null)
+            showOwnPlayer()
             return
         }
         if (watchMode && DIRECT_VIDEO.containsMatchIn(url)) {
@@ -575,6 +582,7 @@ open class BrowserActivity : AppCompatActivity() {
                 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}video{width:100%;height:100%;object-fit:contain;background:#000}</style>
                 </head><body><video src="$source" autoplay playsinline></video></body></html>
             """.trimIndent(), "text/html", "utf-8", null)
+            showOwnPlayer()
             return
         }
         fixedKey = null
@@ -682,6 +690,14 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     private inner class Chrome : WebChromeClient() {
+        // Errors a page reports go to the phone's log under the app's name, so a page that misbehaves can be diagnosed.
+        override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+            if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                Log.i("SafeWatch", "page error: ${message.message().take(300)} (${message.sourceId().take(80)}:${message.lineNumber()})")
+            }
+            return false
+        }
+
         override fun onReceivedTitle(view: WebView, title: String?) {
             pageTitle = title.orEmpty()
         }

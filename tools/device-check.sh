@@ -70,7 +70,7 @@ for u in \
 done
 if [ -n "$VIDEO" ]; then
   adb shell am start -a android.intent.action.VIEW -d "$VIDEO" -n $PKG/.browser.BrowserActivity > /dev/null
-  shot 14-player 12
+  shot 14-player 14
   adb shell input tap 1200 540
   shot 14b-player-controls 1
   shot 14c-player-25s 12

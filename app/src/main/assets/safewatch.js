@@ -37,8 +37,28 @@
       st = { windows: [], seen: {}, cueCounts: new WeakMap(), mutedByUs: false, wasMuted: false,
              blurredByUs: false, oldFilter: '' };
       states.set(video, st);
+      watchForTrouble(video);
     }
     return st;
+  }
+
+  // Notes, once per video, when it starts and if it fails, so a video that will not play can be explained.
+  var watched = new WeakSet();
+  function watchForTrouble(video) {
+    if (watched.has(video) || !B.note) return;
+    watched.add(video);
+    var say = function (text) { try { B.note(text); } catch (e) { /* ignore */ } };
+    video.addEventListener('playing', function () { say('video playing'); }, { once: true });
+    video.addEventListener('error', function () {
+      var err = video.error;
+      say('video failed: ' + (err ? 'code ' + err.code + ' ' + (err.message || '') : 'unknown reason'));
+    });
+    // A video meant to start by itself that has not: try once more and note why it was refused.
+    setTimeout(function () {
+      if (!video.autoplay || !video.paused || video.currentTime > 0) return;
+      var p = video.play();
+      if (p && p.catch) p.catch(function (e) { say('video did not start by itself: ' + e.name + ' ' + e.message); });
+    }, 2500);
   }
 
   function loadConfig() {
