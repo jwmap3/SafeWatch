@@ -213,6 +213,11 @@ class MainActivity : AppCompatActivity() {
             BrowserActivity.resume(this)
             return
         }
+        // The Search tab opens Stremio itself, its own web app as it is, inside edenOS.
+        if (which == TAB_SEARCH) {
+            BrowserActivity.open(this, "https://web.stremio.com/")
+            return
+        }
         tab = which
         home.view.visibility = if (which == TAB_HOME) View.VISIBLE else View.GONE
         search.view.visibility = if (which == TAB_SEARCH) View.VISIBLE else View.GONE
