@@ -161,6 +161,10 @@ open class BrowserActivity : AppCompatActivity() {
     private val titleViews = ArrayList<TextView>()
 
     // Pop-ups and redirects.
+    // The video file the page is playing, if it plays a whole file, and caption files that go with it.
+    @Volatile private var pageVideoSrc = ""
+    @Volatile private var pageVideoTracks: List<String> = emptyList()
+
     private var pageStartedAt = 0L
     private var allowOnce: String? = null
     private var blockedBar: TextView? = null
@@ -341,7 +345,7 @@ open class BrowserActivity : AppCompatActivity() {
             addView(Ui.spacer(context))
             addView(markButton)
             addView(Ui.spacer(context))
-            addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV") { Ui.sendToTv(this@BrowserActivity) })
+            addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV") { sendToTv() })
             addView(Ui.iconButton(context, R.drawable.ic_filters, "Filters") { MainActivity.open(context, MainActivity.TAB_FILTERS) })
         }
 
@@ -390,7 +394,7 @@ open class BrowserActivity : AppCompatActivity() {
         }
         markButtons += mark
         addView(mark)
-        addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV", tint) { Ui.sendToTv(this@BrowserActivity) })
+        addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV", tint) { sendToTv() })
     }
 
     /**
@@ -766,7 +770,7 @@ open class BrowserActivity : AppCompatActivity() {
                         Prefs.setDesktopSite(this@BrowserActivity, !desktop)
                         web.url?.let { load(it) }
                     }
-                    3 -> Ui.sendToTv(this@BrowserActivity)
+                    3 -> sendToTv()
                     4 -> {
                         TagStore.save(this@BrowserActivity, pageKey, pageTitle, emptyList())
                         version.incrementAndGet()
@@ -805,6 +809,8 @@ open class BrowserActivity : AppCompatActivity() {
                 fixedKey = null
                 playingYoutube = null
                 playingFile = null
+                pageVideoSrc = ""
+                pageVideoTracks = emptyList()
             }
             // Moving to a site that needs the other kind of page: ask again the right way.
             if (request.isForMainFrame && agentFor(url) != view.settings.userAgentString) {
@@ -932,6 +938,27 @@ open class BrowserActivity : AppCompatActivity() {
             fullscreenCallback = null
             if (!watchMode) setPlayerView(false)
         }
+    }
+
+    // ---- Send to TV ----
+
+    private fun sendToTv() {
+        val (source, whyNot) = cleanSource()
+        Ui.sendToTv(this, source, whyNot)
+    }
+
+    /** What could be made into a clean copy for the TV here, or why nothing can. */
+    private fun cleanSource(): Pair<com.safewatch.app.tv.CleanSource?, String?> {
+        val title = label.ifEmpty { pageTitle }.ifEmpty { "Video" }
+        if (playingYoutube != null) return null to "YouTube videos cannot be saved."
+        playingFile?.let { return com.safewatch.app.tv.CleanSource(title, pageKey, it, pageVideoTracks) to null }
+        Services.forUrl(web.url)?.takeIf { it.protectedVideo }?.let { return null to "${it.name} locks its videos so they cannot be saved." }
+        val src = pageVideoSrc
+        if (src.isEmpty()) return null to "Start the video first, then tap Send to TV."
+        if (!src.startsWith("http") || !com.safewatch.app.tv.CleanSource.isWholeFile(src)) {
+            return null to "This video streams in pieces rather than as one file, so it cannot be saved."
+        }
+        return com.safewatch.app.tv.CleanSource(title, pageKey, src, pageVideoTracks, web.url.orEmpty()) to null
     }
 
     // ---- Pop-ups and redirects ----
@@ -1120,6 +1147,16 @@ open class BrowserActivity : AppCompatActivity() {
         /** A line for the phone's log each time the filter acts, so its work can be checked afterwards. */
         @JavascriptInterface
         fun note(text: String) = this@BrowserActivity.note(text)
+
+        /** The address of the video being watched, and of English caption files given with it (as a JSON list). */
+        @JavascriptInterface
+        fun source(address: String, captions: String) {
+            pageVideoSrc = address
+            pageVideoTracks = try {
+                val list = JSONArray(captions)
+                (0 until list.length()).map { list.getString(it) }.filter { it.startsWith("http") }
+            } catch (e: Exception) { emptyList() }
+        }
 
         /** True while the player view is up, so the page should let its video fill the screen. */
         @JavascriptInterface

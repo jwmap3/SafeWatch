@@ -18,7 +18,7 @@ concurrency:
 jobs:
   device:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +31,17 @@ jobs:
 
       - name: Build the APK
         run: ./gradlew :core:test :app:assembleDebug
+
+      - name: Serve a short test film with captions to the test phone
+        run: |
+          sudo apt-get install -y -qq ffmpeg > /dev/null || true
+          mkdir -p /tmp/tvsite
+          ffmpeg -nostdin -loglevel error -ss 52 -t 12 -i https://media.xiph.org/tearsofsteel/tears_of_steel_720p.webm \
+            -vf scale=640:-2 -c:v libvpx -b:v 900k -c:a libvorbis /tmp/tvsite/clip.webm || true
+          printf 'WEBVTT\n\n00:00:02.000 --> 00:00:03.500\nOh shit, look at that\n\n00:00:06.000 --> 00:00:07.000\nA clean line\n' > /tmp/tvsite/clip.vtt
+          printf '<!doctype html><title>Test clip</title><meta name="viewport" content="width=device-width"><video src="clip.webm" autoplay playsinline controls style="width:100%%"><track kind="subtitles" srclang="en" src="clip.vtt"></video>' > /tmp/tvsite/page.html
+          cd /tmp/tvsite && nohup python3 -m http.server 8765 > /tmp/tvsite.log 2>&1 &
+          sleep 2; ls -la /tmp/tvsite; curl -s -o /dev/null -w 'page %{http_code}\n' http://127.0.0.1:8765/page.html
 
       - name: Allow the test phone to use hardware acceleration
         run: |

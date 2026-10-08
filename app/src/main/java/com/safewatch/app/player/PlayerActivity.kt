@@ -147,7 +147,10 @@ class PlayerActivity : AppCompatActivity() {
         bar.addView(markButton)
         bar.addView(Ui.spacer(this))
         bar.addView(scanButton)
-        bar.addView(Ui.iconButton(this, R.drawable.ic_cast, "Send to TV", R.color.text) { Ui.sendToTv(this) })
+        bar.addView(Ui.iconButton(this, R.drawable.ic_cast, "Send to TV", R.color.text) {
+            val captions = listOfNotNull(subtitleFile().takeIf { it.exists() }?.absolutePath)
+            Ui.sendToTv(this, com.safewatch.app.tv.CleanSource(title, key, uri.toString(), captions))
+        })
         bar.addView(Ui.barButton(this, "Filters") { MainActivity.open(this, MainActivity.TAB_FILTERS) })
     }
 

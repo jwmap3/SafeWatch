@@ -103,6 +103,33 @@ tap "Settings";           sleep 2
 swipe_up;                 sleep 1
 tap "Filter report";      shot 14r-filter-report 3
 
+# ---- A clean copy for the TV, from a page's video (served by the test computer, with captions) ----
+if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
+  start;                  sleep 5
+  tap "Settings";         sleep 2
+  for i in 1 2 3 4 5 6; do timeout 60 python3 tools/tap.py "Test the blur" > /dev/null && { echo "tap: Test the blur (for the clean copy)" | tee -a "$OUT/summary.txt"; break; }; swipe_up; sleep 1; done
+  adb logcat -c
+  adb shell am start -a android.intent.action.VIEW -d "http://10.0.2.2:8765/page.html" -n $PKG/.browser.BrowserActivity > /dev/null
+  shot 18-clip-page 10
+  tap "Send to TV";       shot 18b-send-to-tv 3
+  tap "Clean copy to TV"; shot 18c-making 8
+  for i in $(seq 1 60); do
+    if adb logcat -d -s SafeWatch:I | grep -q "clean copy made\|clean copy not made"; then break; fi
+    sleep 10
+  done
+  adb logcat -d -s SafeWatch:I | grep -i "clean copy" | tee -a "$OUT/summary.txt"
+  shot 18d-clean-copies 3
+  tap "Test clip";        shot 18e-copy-options 2
+  tap "Play on a TV…";    shot 18f-tv-search 8
+  timeout 60 adb exec-out run-as $PKG sh -c 'cat files/clean/*.mp4' > "$OUT/clean-copy.mp4"
+  ls -la "$OUT/clean-copy.mp4" | tee -a "$OUT/summary.txt"
+  [ -s "$OUT/clean-copy.mp4" ] || rm -f "$OUT/clean-copy.mp4"
+  adb logcat -d -s SafeWatch:I > "$OUT/clean-log.txt"
+  back; back
+else
+  echo "no test site for the clean copy" | tee -a "$OUT/summary.txt"
+fi
+
 start;                    sleep 5
 tap "Settings";           sleep 2
 swipe_up; swipe_up; swipe_up; swipe_up; swipe_up; shot 15-appearance 2

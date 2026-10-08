@@ -506,16 +506,66 @@ object Ui {
      * Opens the phone's own screen-casting panel. Mirroring the screen sends
      * the already filtered picture and sound, so every filter keeps working on the TV.
      */
-    fun sendToTv(activity: Activity) {
-        AlertDialog.Builder(activity)
-            .setTitle("Send to TV")
-            .setMessage("Your phone's screen casting works with Chromecast, Roku, Fire TV and most smart TVs. " +
-                "The TV shows exactly what is on this screen, filters included.\n\n" +
-                "Netflix-style services often show a black picture when cast wirelessly. An HDMI adapter always works. " +
-                "Apple TV cannot be reached from an Android phone this way.")
-            .setPositiveButton("Cast screen") { _, _ -> openCastPanel(activity) }
-            .setNegativeButton("Cancel", null)
-            .show()
+    /**
+     * Send to TV, from any player. Two ways:
+     *
+     * Mirror to TV shows the phone's screen on the TV, so it works for everything, filters included,
+     * but the phone has to stay on and showing the video.
+     *
+     * Clean copy to TV makes a copy of the video with the filtering built in, which the TV plays by
+     * itself while the phone is locked. Only whole video files can be copied: [source] is null for
+     * videos that stream in pieces (the paid services, YouTube), and [whyNot] says why.
+     */
+    fun sendToTv(activity: Activity, source: com.safewatch.app.tv.CleanSource? = null, whyNot: String? = null) {
+        val list = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(activity, 8), 0, dp(activity, 8)) }
+        var dialog: android.app.Dialog? = null
+        fun option(title: String, detail: String, enabled: Boolean = true, onClick: () -> Unit) {
+            list.addView(LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(activity, 24), dp(activity, 12), dp(activity, 24), dp(activity, 12))
+                alpha = if (enabled) 1f else 0.5f
+                addView(TextView(activity).apply {
+                    text = title
+                    textSize = 17f
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    setTextColor(color(activity, R.color.text))
+                })
+                addView(TextView(activity).apply {
+                    text = detail
+                    textSize = 14f
+                    setTextColor(color(activity, R.color.text_secondary))
+                    setPadding(0, dp(activity, 2), 0, 0)
+                })
+                foreground = ripple(activity)
+                setOnClickListener { dialog?.dismiss(); onClick() }
+            })
+        }
+        option("Mirror to TV", "Shows this screen on the TV, filters included. Works with everything; keep the phone on.") {
+            AlertDialog.Builder(activity)
+                .setTitle("Mirror to TV")
+                .setMessage("Your phone's screen casting reaches Chromecast, Roku, Fire TV and most smart TVs, and shows exactly what is " +
+                    "on this screen, filters included.\n\nNetflix-style services often show a black picture when mirrored wirelessly; " +
+                    "an HDMI adapter always works.")
+                .setPositiveButton("Open screen casting") { _, _ -> openCastPanel(activity) }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+        if (source != null) {
+            option("Clean copy to TV", "Makes a copy with the cursing muted and nudity blurred, for your Roku or smart TV to play by itself. " +
+                "Your phone can be locked while it plays.") {
+                com.safewatch.app.tv.TvService.prepare(activity, source)
+                com.safewatch.app.tv.TvActivity.open(activity)
+            }
+        } else {
+            option("Clean copy to TV", whyNot ?: "Not for this video: it streams in pieces rather than as one file, so it cannot be saved.", enabled = false) {
+                AlertDialog.Builder(activity).setTitle("Clean copy to TV")
+                    .setMessage((whyNot ?: "This video streams in pieces rather than as one file, so it cannot be saved.") +
+                        "\n\nClean copies can be made of video files on the phone and of websites' videos that are whole files. Use Mirror to TV for this one.")
+                    .setPositiveButton("OK", null).show()
+            }
+        }
+        option("Your clean copies", "Play one on the TV, or see one being made.") { com.safewatch.app.tv.TvActivity.open(activity) }
+        dialog = AlertDialog.Builder(activity).setTitle("Send to TV").setView(list).setNegativeButton("Cancel", null).show()
     }
 
     private fun openCastPanel(activity: Activity) {

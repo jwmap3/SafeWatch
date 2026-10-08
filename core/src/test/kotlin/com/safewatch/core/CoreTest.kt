@@ -335,3 +335,128 @@ class LookAheadTest {
         assertEquals(1, ahead.size)
     }
 }
+
+class CleanPlanTest {
+    private fun tag(s: Long, e: Long, c: Category, a: Action, level: Int = 3, source: String = Tag.SOURCE_MANUAL) = Tag(s, e, c, a, level, source)
+
+    @Test fun mutesBlursAndCutsWhatTheSettingsFilter() {
+        val tags = listOf(
+            tag(1000, 2000, Category.LANGUAGE, Action.MUTE), tag(1500, 2500, Category.LANGUAGE, Action.MUTE),
+            tag(10_000, 20_000, Category.NUDITY, Action.BLUR, source = Tag.SOURCE_SCAN),
+            tag(30_000, 40_000, Category.NUDITY, Action.SKIP), tag(35_000, 36_000, Category.LANGUAGE, Action.MUTE),
+            tag(50_000, 51_000, Category.LANGUAGE, Action.MUTE, level = 1), // mild: left alone at Medium
+        )
+        val plan = CleanPlanner.plan(60_000, tags, FilterSettings())
+        assertEquals(listOf(1000L..2500L), plan.mute)
+        assertEquals(listOf(10_000L..20_000L), plan.blur)
+        assertEquals(listOf(0L..30_000L, 40_000L..60_000L), plan.keep)
+        assertTrue(plan.mutedAt(2000))
+        assertFalse(plan.mutedAt(2600))
+        assertTrue(plan.blurredAt(15_000))
+        assertFalse(plan.blurredAt(25_000))
+        assertEquals("1 word muted, 1 scene blurred, 1 scene cut (10 s)", plan.summary())
+    }
+
+    @Test fun scannedNudityIsCutWhenTheViewerChoseSkip() {
+        val tags = listOf(tag(0, 5000, Category.NUDITY, Action.BLUR, source = Tag.SOURCE_SCAN))
+        val plan = CleanPlanner.plan(20_000, tags, FilterSettings(nudityAction = Action.SKIP))
+        assertEquals(listOf(5000L..20_000L), plan.keep)
+        assertTrue(plan.blur.isEmpty())
+    }
+
+    @Test fun aCleanVideoIsKeptWhole() {
+        val plan = CleanPlanner.plan(20_000, emptyList(), FilterSettings())
+        assertEquals(listOf(0L..20_000L), plan.keep)
+        assertEquals("Nothing needed filtering", plan.summary())
+    }
+}
+
+class TvLinkTest {
+    @Test fun readsDiscoveryAnswers() {
+        val answer = "HTTP/1.1 200 OK\r\nCache-Control: max-age=3600\r\nST: roku:ecp\r\nLocation: http://192.168.1.40:8060/\r\nUSN: uuid:roku:ecp:X\r\n\r\n"
+        val h = com.safewatch.core.tv.Ssdp.headers(answer)
+        assertEquals("http://192.168.1.40:8060/", h["LOCATION"])
+        assertTrue(com.safewatch.core.tv.Ssdp.isRoku(h))
+        assertFalse(com.safewatch.core.tv.Ssdp.isRoku(mapOf("ST" to "urn:schemas-upnp-org:device:MediaRenderer:1", "SERVER" to "Samsung UPnP")))
+        assertTrue(com.safewatch.core.tv.Ssdp.question("roku:ecp").startsWith("M-SEARCH * HTTP/1.1\r\n"))
+    }
+
+    @Test fun findsASmartTvsPlaybackControls() {
+        val xml = """<?xml version="1.0"?><root xmlns="urn:schemas-upnp-org:device-1-0"><device><friendlyName>[TV] Living Room</friendlyName>
+            <serviceList><service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType><controlURL>/rc</controlURL></service>
+            <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><controlURL>/upnp/control/AVTransport1</controlURL></service></serviceList></device></root>"""
+        val tv = com.safewatch.core.tv.Dlna.fromDescription(xml, "http://192.168.1.50:9197/dmr")!!
+        assertEquals("[TV] Living Room", tv.name)
+        assertEquals("http://192.168.1.50:9197/upnp/control/AVTransport1", tv.controlUrl)
+        assertEquals("192.168.1.50", tv.host)
+        assertEquals(null, com.safewatch.core.tv.Dlna.fromDescription("<root><device><friendlyName>Speaker</friendlyName></device></root>", "http://x/"))
+    }
+
+    @Test fun asksARokuToPlayTheFile() {
+        val roku = com.safewatch.core.tv.TvDevice(com.safewatch.core.tv.TvDevice.Kind.ROKU, "Roku", "http://192.168.1.40:8060/")
+        val request = com.safewatch.core.tv.Roku.playRequest(roku, "http://192.168.1.9:4000/abc/video.mp4", "My film")
+        assertEquals("http://192.168.1.40:8060/input/15985?t=v&u=http%3A%2F%2F192.168.1.9%3A4000%2Fabc%2Fvideo.mp4&k=(null)&videoName=My+film&videoFormat=mp4", request)
+    }
+
+    @Test fun tellsASmartTvWhatToPlayInOrder() {
+        // A stand-in TV that records what it is told.
+        val heard = java.util.Collections.synchronizedList(ArrayList<String>())
+        val server = java.net.ServerSocket(0)
+        Thread {
+            repeat(3) {
+                server.accept().use { s ->
+                    val input = s.getInputStream().bufferedReader()
+                    var length = 0
+                    var action = ""
+                    while (true) {
+                        val line = input.readLine() ?: break
+                        if (line.isEmpty()) break
+                        if (line.startsWith("SOAPAction", ignoreCase = true)) action = line.substringAfter('#').trim('"', ' ')
+                        if (line.startsWith("Content-Length", ignoreCase = true)) length = line.substringAfter(':').trim().toInt()
+                    }
+                    val body = CharArray(length)
+                    var got = 0
+                    while (got < length) { val n = input.read(body, got, length - got); if (n < 0) break; got += n }
+                    heard += action + "|" + String(body)
+                    s.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                }
+            }
+        }.start()
+        val tv = com.safewatch.core.tv.TvDevice(com.safewatch.core.tv.TvDevice.Kind.DLNA, "TV", "http://127.0.0.1:${server.localPort}/d", "http://127.0.0.1:${server.localPort}/ctl")
+        com.safewatch.core.tv.Dlna.play(tv, "http://192.168.1.9:4000/abc/video.mp4", "Film & more")
+        server.close()
+        assertEquals(listOf("Stop", "SetAVTransportURI", "Play"), heard.map { it.substringBefore('|') })
+        val set = heard[1]
+        assertTrue(set.contains("<CurrentURI>http://192.168.1.9:4000/abc/video.mp4</CurrentURI>"))
+        assertTrue(set.contains("&lt;dc:title&gt;Film &amp;amp; more&lt;/dc:title&gt;")) // the metadata travels as escaped text
+        assertTrue(set.contains("http-get:*:video/mp4:DLNA.ORG_OP=01"))
+    }
+
+    @Test fun servesTheFileWholeAndInPieces() {
+        val file = java.io.File.createTempFile("clean", ".mp4").apply { writeBytes(ByteArray(100_000) { (it % 251).toByte() }); deleteOnExit() }
+        val server = com.safewatch.core.tv.FileServer(file).start(java.net.InetAddress.getLoopbackAddress())
+        try {
+            val url = server.url("127.0.0.1")
+            val whole = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            assertEquals(200, whole.responseCode)
+            assertEquals("bytes", whole.getHeaderField("Accept-Ranges"))
+            assertEquals("Streaming", whole.getHeaderField("transferMode.dlna.org"))
+            assertEquals(100_000, whole.inputStream.readBytes().size)
+            val piece = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            piece.setRequestProperty("Range", "bytes=1000-1999")
+            assertEquals(206, piece.responseCode)
+            assertEquals("bytes 1000-1999/100000", piece.getHeaderField("Content-Range"))
+            val bytes = piece.inputStream.readBytes()
+            assertEquals(1000, bytes.size)
+            assertEquals((1000 % 251).toByte(), bytes[0])
+            val end = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            end.setRequestProperty("Range", "bytes=-500")
+            assertEquals(500, end.inputStream.readBytes().size)
+            val other = java.net.URL("http://127.0.0.1:${server.port}/video.mp4").openConnection() as java.net.HttpURLConnection
+            assertEquals(404, other.responseCode) // nothing but the file's own secret address is answered
+            assertTrue(server.requests >= 4)
+        } finally {
+            server.stop()
+        }
+    }
+}

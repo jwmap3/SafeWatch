@@ -2,14 +2,26 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Sending clean copies to a TV on the home Wi-Fi, with the phone locked. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Plain (not https) addresses are allowed: TVs on the home network only speak plain HTTP,
+         and many video files on the web are served that way. -->
     <application
         android:name=".SafeWatchApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.SafeWatch">
+        android:theme="@style/Theme.SafeWatch"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
@@ -73,5 +85,12 @@
                 <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
+        <activity android:name=".tv.TvActivity" />
+
+        <!-- Makes clean copies and hands them to the TV, with the screen off. -->
+        <service
+            android:name=".tv.TvService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|mediaPlayback" />
     </application>
 </manifest>

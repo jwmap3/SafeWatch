@@ -1025,6 +1025,17 @@
     }
     if (!main) S.playingSince = 0;
 
+    // Tells the app which video is being watched, so Send to TV can offer a clean copy of a whole video file.
+    if (B.source) {
+      var src = watching.currentSrc || watching.src || '';
+      if (src !== S.reportedSrc) {
+        S.reportedSrc = src;
+        var tracks = [], els = watching.querySelectorAll('track[src]');
+        for (i = 0; i < els.length; i++) if (!els[i].srclang || english(els[i].srclang)) tracks.push(els[i].src);
+        try { B.source(src, JSON.stringify(tracks)); } catch (e) { /* ignore */ }
+      }
+    }
+
     // Tells the app a video is playing and where it is, for scene marking and live detection.
     // The app's player controls work on the playing video, or the largest one when nothing is playing.
     if (B.state) {
