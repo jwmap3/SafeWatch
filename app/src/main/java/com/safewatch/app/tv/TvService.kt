@@ -79,6 +79,7 @@ class TvService : Service() {
     private val control = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
     private var making: CleanCopy? = null
+    private var foreground = false
     private val waiting = ArrayDeque<Pair<CleanSource, String?>>()
     private var server: FileServer? = null
     private var awake: PowerManager.WakeLock? = null
@@ -351,6 +352,17 @@ class TvService : Service() {
      * Stops the service once nothing is left to do. Looked at a moment later, so that work which ends
      * one thing to start the next (a new video for the TV) does not stop the service in between.
      */
+    /** Android 15 and later: the daily allowance for background work ran out while a copy was being made. */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        val title = TvState.job?.title ?: "Video"
+        making?.cancelled = true
+        TvState.rememberFailure(applicationContext, title, "Android's daily allowance for working in the background ran out " +
+            "before the copy was finished. Try again later, with edenOS open.")
+        Log.i("SafeWatch", "background time ran out")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     private fun finishIfIdle() {
         ui.post {
             if (making != null || server != null || remote != null) return@post
@@ -359,6 +371,7 @@ class TvService : Service() {
             try { wifiLock?.release() } catch (e: Exception) { /* already released */ }
             wifiLock = null
             stopForeground(STOP_FOREGROUND_REMOVE)
+            foreground = false
             stopSelf()
         }
     }
@@ -391,13 +404,30 @@ class TvService : Service() {
             builder.addAction(Notification.Action.Builder(null, "Stop", action(ACTION_CANCEL)).build())
         }
         if (remote != null) builder.addAction(Notification.Action.Builder(null, "Stop filtering YouTube", action(ACTION_YOUTUBE_STOP)).build())
-        var types = 0
-        if (making != null) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        if (server != null || remote != null) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTE_ID, builder.build(), types) else startForeground(NOTE_ID, builder.build())
-        } catch (e: Exception) {
-            Log.i("SafeWatch", "could not show the TV notification", e)
+        val playing = if (server != null || remote != null) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+        // Making a copy is media processing to Android 15 and later, and a data sync before; each has its own daily
+        // allowance, so if one is refused the other is tried. If Android refuses both, the copy stops with a reason.
+        val kinds = if (making == null) listOf(0) else if (Build.VERSION.SDK_INT >= 35) listOf(MEDIA_PROCESSING, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            else listOf(ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        var refused: Exception? = null
+        for (kind in kinds) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTE_ID, builder.build(), kind or playing)
+                else startForeground(NOTE_ID, builder.build())
+                foreground = true
+                return
+            } catch (e: Exception) {
+                Log.i("SafeWatch", "Android refused to let the TV work carry on in the background", e)
+                refused = e
+            }
+        }
+        if (making != null && !foreground) {
+            making?.cancelled = true
+            val why = "Android would not let edenOS keep working in the background (${refused?.message ?: "no reason given"}). " +
+                "Open edenOS and try again; if it keeps happening, restart the phone."
+            TvState.rememberFailure(applicationContext, TvState.job?.title ?: "Video", why)
+            TvState.job = TvState.Job(TvState.job?.title ?: "Video", "Not made", -1, error = why)
+            TvState.changed()
         }
     }
 
@@ -449,6 +479,8 @@ class TvService : Service() {
         private const val EXTRA_AT = "at"
         private const val EXTRA_MUTE = "mute"
         private const val EXTRA_SKIPS = "skips"
+        /** ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING, from Android 15. */
+        private const val MEDIA_PROCESSING = 1 shl 13
         private const val NOTE_ID = 7
         private const val DONE_ID = 8
         private const val ENDED_ID = 9

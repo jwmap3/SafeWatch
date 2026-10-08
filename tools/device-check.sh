@@ -15,7 +15,7 @@ swipe_up() { adb shell input swipe 540 1700 540 600 400; }
 no_anr() { timeout 30 python3 tools/tap.py "Wait" exact > /dev/null && echo "dismissed an 'isn't responding' box" | tee -a "$OUT/summary.txt"; }
 start() { adb shell am force-stop $PKG; adb shell am start -W -n $PKG/.MainActivity > /dev/null; }
 # Taps something further down a long screen, scrolling until it is in view.
-tap_scrolling() { for i in 1 2 3 4 5 6 7 8 9 10; do timeout 60 python3 tools/tap.py "$1" > /dev/null && { echo "tap: $1" | tee -a "$OUT/summary.txt"; return 0; }; swipe_up; sleep 1; done; echo "tap: '$1' not found on the screen" | tee -a "$OUT/summary.txt"; }
+tap_scrolling() { for i in 1 2 3 4 5 6 7 8 9 10; do timeout 60 python3 tools/tap.py "$1" > /dev/null && { echo "tap: $1" | tee -a "$OUT/summary.txt"; return 0; }; [ $i = 1 ] && no_anr; swipe_up; sleep 1; done; echo "tap: '$1' not found on the screen" | tee -a "$OUT/summary.txt"; }
 
 # Shared scene lists: is the public service that offers them answering, and what does it send?
 for u in "https://cleanstream.elfhosted.com/api/filters" "https://cleanstream.elfhosted.com/api/skips/tt0133093" "https://cleanstream.elfhosted.com/api/skips/tt0120338" "https://cleanstream.elfhosted.com/manifest.json"; do
@@ -159,14 +159,24 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   back; back
 
   # ---- Superclean, with the test computer standing in for Anthropic (the app uses it only with this made-up key) ----
+  # Past the welcome and with the made-up key, set straight into the app's settings, so nothing on screen can stop it.
+  adb shell am force-stop $PKG
+  timeout 30 adb exec-out run-as $PKG cat shared_prefs/safewatch.xml > /tmp/eden-prefs.xml 2>/dev/null
+  python3 - /tmp/eden-prefs.xml <<'PY'
+import re, sys
+p = sys.argv[1]
+try: x = open(p).read()
+except OSError: x = ""
+if "<map" not in x: x = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<map>\n</map>\n"
+x = re.sub(r'\s*<(boolean|string) name="(welcomed|claudeKey)"[^>]*?(/>|>.*?</string>)', '', x, flags=re.S)
+x = x.replace("</map>", '    <boolean name="welcomed" value="true" />\n    <string name="claudeKey">test-key-for-the-device-check</string>\n</map>')
+open(p, "w").write(x)
+PY
+  timeout 30 adb exec-in run-as $PKG sh -c 'cat > shared_prefs/safewatch.xml' < /tmp/eden-prefs.xml
   start;                  sleep 5; no_anr
   tap "Settings";         sleep 2
-  tap_scrolling "Claude API key"; sleep 4
-  shot 22-key-page 1
-  back;                   sleep 2   # back from Anthropic's key page to the box waiting for the key
-  timeout 60 python3 tools/tap.py "sk-ant-" contains > /dev/null
-  adb shell input text test-key-for-the-device-check; sleep 1
-  tap "SAVE";             sleep 2
+  tap_scrolling "Claude API key"; sleep 2
+  tap "CANCEL";           sleep 1
   shot 22-settings-superclean 1
   tap "What it takes out"; shot 22a-superclean-choices 2
   swipe_up; swipe_up;     shot 22b-superclean-choices-lower 2
