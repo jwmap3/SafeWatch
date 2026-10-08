@@ -66,11 +66,29 @@ data class CleanSource(
     val superclean: String = "",
     /** The browser's own name for itself (user agent) when the video was found, since some sites only serve that browser. */
     val agent: String = "",
+    /** The request headers the site's player sent for this video, to send the same. */
+    val headers: Map<String, String> = emptyMap(),
 ) {
+    /** What to send with every request for this video: the player's own headers, with the user agent and page. */
+    fun requestHeaders(script: Boolean): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        out["User-Agent"] = userAgent
+        if (referrer.startsWith("http")) {
+            out["Referer"] = referrer
+            if (script) Uri.parse(referrer).let { page -> out["Origin"] = "${page.scheme}://${page.authority}" }
+        }
+        for ((k, v) in headers) {
+            out.keys.firstOrNull { it.equals(k, true) }?.let { out.remove(it) }
+            out[k] = v
+        }
+        return out
+    }
+
     val userAgent: String get() = agent.ifEmpty { CleanCopy.AGENT }
 
     fun toJson(): String = JSONObject().put("title", title).put("key", key).put("address", address)
-        .put("captions", JSONArray(captions)).put("referrer", referrer).put("stream", stream).put("superclean", superclean).put("agent", agent).toString()
+        .put("captions", JSONArray(captions)).put("referrer", referrer).put("stream", stream).put("superclean", superclean).put("agent", agent)
+        .put("headers", JSONObject(headers as Map<*, *>)).toString()
 
     companion object {
         const val HLS = "hls"
@@ -82,7 +100,8 @@ data class CleanSource(
             // Copies made before Superclean had "deep" for what is now a Superclean with the usual choices.
             val superclean = o.optString("superclean").ifEmpty { if (o.optBoolean("deep")) Superclean.Wishes(Superclean.DEFAULT).toJson() else "" }
             return CleanSource(o.getString("title"), o.getString("key"), o.getString("address"),
-                (0 until caps.length()).map { caps.getString(it) }, o.optString("referrer"), o.optString("stream"), superclean, o.optString("agent"))
+                (0 until caps.length()).map { caps.getString(it) }, o.optString("referrer"), o.optString("stream"), superclean, o.optString("agent"),
+                o.optJSONObject("headers")?.let { h -> h.keys().asSequence().associateWith { k -> h.optString(k) } }.orEmpty())
         }
 
         /** Whether an address is a stream's manifest, and which kind. */
@@ -244,9 +263,8 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
             c.instanceFollowRedirects = false
             c.connectTimeout = 15_000
             c.readTimeout = 30_000
-            c.setRequestProperty("User-Agent", source.userAgent)
-            // As a video player asks for a whole file: from its page, without the Origin a script's request carries.
-            if (source.referrer.startsWith("http")) c.setRequestProperty("Referer", source.referrer)
+            // Exactly as the site's player asked for it.
+            for ((k, v) in source.requestHeaders(script = false)) c.setRequestProperty(k, v)
             CookieManager.getInstance().getCookie(url)?.let { c.setRequestProperty("Cookie", it) }
             try {
                 val code = c.responseCode
@@ -298,13 +316,13 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
      */
     private fun fetchStream(source: CleanSource, into: File): File {
         report("Checking the stream", -1)
-        val manifest = httpText(source.address, source.referrer, source.userAgent)
+        val manifest = httpText(source.address, source)
         val kind = StreamInfo.kindOf(manifest) ?: throw IOException("The video's list of pieces could not be read")
         val media = ArrayList<String>()
         if (kind == StreamInfo.Kind.HLS && StreamInfo.hlsIsMaster(manifest)) {
             // The best picture, and the sound if it comes separately: both are checked for locks.
-            StreamInfo.hlsVariants(manifest).firstOrNull()?.let { media += httpText(URL(URL(source.address), it).toString(), source.referrer, source.userAgent) }
-            StreamInfo.hlsRenditions(manifest, "AUDIO").firstOrNull()?.let { media += httpText(URL(URL(source.address), it).toString(), source.referrer, source.userAgent) }
+            StreamInfo.hlsVariants(manifest).firstOrNull()?.let { media += httpText(URL(URL(source.address), it).toString(), source) }
+            StreamInfo.hlsRenditions(manifest, "AUDIO").firstOrNull()?.let { media += httpText(URL(URL(source.address), it).toString(), source) }
         }
         StreamInfo.refusal(manifest, media)?.let { throw IOException(it) }
         check()
@@ -318,14 +336,9 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
         return output
     }
 
-    /** Reads a stream's pieces the way the browser would: its cookies, and the page it came from. */
+    /** Reads a stream's pieces the way the browser would: its cookies, and the headers the site's player sent. */
     private fun loaderFor(source: CleanSource): AssetLoader.Factory {
-        val headers = HashMap<String, String>()
-        if (source.referrer.startsWith("http")) {
-            headers["Referer"] = source.referrer
-            val page = Uri.parse(source.referrer)
-            headers["Origin"] = "${page.scheme}://${page.authority}"
-        }
+        val headers = source.requestHeaders(script = true)
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(source.userAgent)
             .setAllowCrossProtocolRedirects(true)
@@ -340,16 +353,12 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
             DefaultMediaSourceFactory(withCookies))
     }
 
-    private fun httpText(address: String, referrer: String, agent: String): String {
+    private fun httpText(address: String, source: CleanSource): String {
         val c = URL(address).openConnection() as HttpURLConnection
         try {
             c.connectTimeout = 15_000
             c.readTimeout = 30_000
-            c.setRequestProperty("User-Agent", agent)
-            if (referrer.startsWith("http")) {
-                c.setRequestProperty("Referer", referrer)
-                Uri.parse(referrer).let { page -> c.setRequestProperty("Origin", "${page.scheme}://${page.authority}") }
-            }
+            for ((k, v) in source.requestHeaders(script = true)) c.setRequestProperty(k, v)
             CookieManager.getInstance().getCookie(address)?.let { c.setRequestProperty("Cookie", it) }
             if (c.responseCode !in 200..299) throw IOException("The site refused the video (${c.responseCode})")
             return c.inputStream.bufferedReader().use { it.readText() }

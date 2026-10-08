@@ -177,6 +177,11 @@ open class BrowserActivity : AppCompatActivity() {
     @Volatile private var pageVideoSrc = ""
     /** The page the watched video's player is on: often not the page itself but a player embedded in it from another site. */
     @Volatile private var pageVideoFrame = ""
+    /**
+     * The exact request headers the page's players sent for each video address they loaded, embedded players' included,
+     * so a copy can be fetched just as the player fetched it (some players add their own headers, such as a token).
+     */
+    private val mediaHeaders = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
     @Volatile private var pageVideoTracks: List<String> = emptyList()
 
     // Streams' manifests the page has loaded, and every caption line with times the page script has
@@ -1041,6 +1046,16 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     private inner class Client : WebViewClient() {
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
+            // Only watched, never changed: the request goes on to the site as it is.
+            val url = request.url.toString()
+            if (MEDIA_REQUEST.containsMatchIn(url)) {
+                if (mediaHeaders.size > 60) mediaHeaders.clear()
+                mediaHeaders[url] = request.requestHeaders.filterKeys { k -> !k.equals("Range", true) && !k.equals("Accept-Encoding", true) }
+            }
+            return null
+        }
+
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url.toString()
             val scheme = request.url.scheme.orEmpty()
@@ -1293,23 +1308,29 @@ open class BrowserActivity : AppCompatActivity() {
         playingFile?.let { return com.safewatch.app.tv.CleanSource(title, pageKey, it, captions) to null }
         Services.forUrl(web.url)?.takeIf { it.protectedVideo }?.let { return null to "${it.name} locks its videos so they cannot be saved." }
         val src = pageVideoSrc
+        // The headers the player sent: for this very address if it was seen, otherwise for the same site.
+        fun headersFor(address: String): Map<String, String> {
+            mediaHeaders[address]?.let { return it }
+            val host = android.net.Uri.parse(address).host ?: return emptyMap()
+            return mediaHeaders.entries.lastOrNull { android.net.Uri.parse(it.key).host == host }?.value.orEmpty()
+        }
         // Fetched as the site's own player fetched it: from the player's page (an embedded player's, if it is one)
         // and as this browser, since many sites only hand their video to the player that asked for it.
         val agent = web.settings.userAgentString.orEmpty()
         val referrer = pageVideoFrame.takeIf { it.startsWith("http") } ?: web.url.orEmpty()
         // A whole video file.
         if (src.startsWith("http") && com.safewatch.app.tv.CleanSource.streamKind(src).isEmpty() && com.safewatch.app.tv.CleanSource.isWholeFile(src)) {
-            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer, agent = agent) to null
+            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer, agent = agent, headers = headersFor(src)) to null
         }
         // A stream in pieces: the video's own manifest, or the one the page's player loaded.
         com.safewatch.app.tv.CleanSource.streamKind(src).takeIf { it.isNotEmpty() }?.let { kind ->
-            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer, kind, agent = agent) to null
+            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer, kind, agent = agent, headers = headersFor(src)) to null
         }
         val manifest = synchronized(pageManifests) { pageManifests.lastOrNull { it.master } ?: pageManifests.lastOrNull() }
         if (manifest != null) {
             manifest.refusal?.let { return null to it }
             return com.safewatch.app.tv.CleanSource(title, pageKey, manifest.address, captions,
-                manifest.frame.takeIf { it.startsWith("http") } ?: referrer, manifest.kind, agent = agent) to null
+                manifest.frame.takeIf { it.startsWith("http") } ?: referrer, manifest.kind, agent = agent, headers = headersFor(manifest.address)) to null
         }
         if (src.isEmpty()) return null to "Start the video first, then tap Send to TV."
         return null to "The video's source could not be found on this page. Start it playing, then try again."
@@ -1765,6 +1786,8 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** Addresses that are video, or a stream's list of pieces, or one of its pieces. */
+        private val MEDIA_REQUEST = Regex("\\.(m3u8|mpd|mp4|m4v|webm|mov|mkv|ts|m4s|m4a|aac)(\\?|#|$)|/manifest|/playlist|videoplayback", RegexOption.IGNORE_CASE)
         /** Stops the browser telling every site the app's package name, as WebView otherwise may. */
         fun hideAppName(view: WebView) {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
