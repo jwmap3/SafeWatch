@@ -112,7 +112,8 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   adb shell am start -a android.intent.action.VIEW -d "http://10.0.2.2:8765/page.html" -n $PKG/.browser.BrowserActivity > /dev/null
   shot 18-clip-page 10
   tap "Send to TV";       shot 18b-send-to-tv 3
-  tap "Clean copy to TV"; shot 18c-making 8
+  tap "Clean copy to TV"; sleep 3
+  tap "Allow";            shot 18c-making 5
   for i in $(seq 1 60); do
     if adb logcat -d -s SafeWatch:I | grep -q "clean copy made\|clean copy not made"; then break; fi
     sleep 10
@@ -129,6 +130,7 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
 else
   echo "no test site for the clean copy" | tee -a "$OUT/summary.txt"
 fi
+cp /tmp/tvsite/setup.log "$OUT/test-site-setup.txt" 2>/dev/null; ls -la /tmp/tvsite >> "$OUT/test-site-setup.txt" 2>&1
 
 start;                    sleep 5
 tap "Settings";           sleep 2
