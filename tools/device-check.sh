@@ -164,11 +164,11 @@ start;                    sleep 5
 tap "Settings";           sleep 2
 tap_scrolling "Arrange tabs"; shot 20-arrange-tabs 2
 tap "Move down";          shot 20b-arrange-moved 1
-tap "Done";               shot 20c-tabs-moved 2
+tap "DONE";               shot 20c-tabs-moved 2
 tap "Icons only";         shot 20d-icons-only 2
 tap "Icons and names";    sleep 1
 tap "Arrange tabs";       sleep 1
-tap "Reset";              shot 20e-tabs-reset 2
+tap "RESET";              shot 20e-tabs-reset 2
 
 start;                    sleep 5
 tap "Settings";           sleep 2
