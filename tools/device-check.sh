@@ -161,7 +161,9 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   # ---- Superclean, with the test computer standing in for Anthropic (the app uses it only with this made-up key) ----
   start;                  sleep 5; no_anr
   tap "Settings";         sleep 2
-  tap_scrolling "Claude API key"; sleep 2
+  tap_scrolling "Claude API key"; sleep 4
+  shot 22-key-page 1
+  back;                   sleep 2   # back from Anthropic's key page to the box waiting for the key
   timeout 60 python3 tools/tap.py "sk-ant-" contains > /dev/null
   adb shell input text test-key-for-the-device-check; sleep 1
   tap "SAVE";             sleep 2

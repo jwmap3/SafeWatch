@@ -405,9 +405,22 @@ class FiltersScreen(private val activity: MainActivity) {
             .show()
     }
 
-    private fun editClaudeKey() = textDialog("Claude API key", Prefs.claudeKey(activity), "sk-ant-…", 1) {
-        Prefs.setClaudeKey(activity, it)
-        rebuild()
+    private fun editClaudeKey() {
+        val first = Prefs.claudeKey(activity).isEmpty()
+        textDialog("Claude API key", Prefs.claudeKey(activity), "sk-ant-…", 1) {
+            Prefs.setClaudeKey(activity, it)
+            rebuild()
+        }
+        if (first) {
+            // No key yet: open Anthropic's page for making one; this box is waiting to paste it into on the way back.
+            try {
+                activity.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://platform.claude.com/settings/keys")))
+                Ui.toast(activity, "Create a key, copy it, then come back and paste it here")
+            } catch (e: Exception) {
+                Ui.toast(activity, "Make a key at platform.claude.com/settings/keys")
+            }
+        }
     }
 
     private fun editCatalogKey() = textDialog("TMDB catalog key", Prefs.catalogKey(activity), "Paste your key", 1) {
