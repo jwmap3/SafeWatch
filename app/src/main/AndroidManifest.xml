@@ -25,6 +25,12 @@
 
         <activity android:name=".WordsActivity" />
 
+        <activity android:name=".VideoActivity" />
+
+        <activity android:name=".ServiceActivity" />
+
+        <activity android:name=".WelcomeActivity" />
+
         <!--
           The built-in browser. It is also offered by the phone as a browser, so a
           link in any other app can be opened in SafeWatch, and a page in another

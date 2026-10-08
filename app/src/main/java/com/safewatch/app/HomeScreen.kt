@@ -8,13 +8,13 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.safewatch.app.browser.WatchActivity
 import com.safewatch.app.data.Catalog
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Services
 import com.safewatch.app.data.Shelf
 import com.safewatch.app.data.Title
 import com.safewatch.app.ui.Images
+import com.safewatch.app.ui.Sounds
 import com.safewatch.app.ui.Ui
 import java.time.LocalDate
 
@@ -80,6 +80,7 @@ class HomeScreen(private val activity: MainActivity) {
         setPadding(Ui.dp(context, 20), Ui.dp(context, 10), Ui.dp(context, 8), Ui.dp(context, 6))
         addView(TextView(context).apply {
             text = "SafeWatch"
+            setOnClickListener { onNameTapped() }
             textSize = 24f
             typeface = Typeface.create("sans-serif", Typeface.BOLD)
             letterSpacing = -0.02f
@@ -88,12 +89,22 @@ class HomeScreen(private val activity: MainActivity) {
         addView(Ui.iconButton(context, R.drawable.ic_tv, "Send to TV") { Ui.sendToTv(activity) })
     }
 
+    private var nameTaps = 0
+
+    private fun onNameTapped() {
+        if (Prefs.starshipUnlocked(activity) || ++nameTaps < 7) return
+        Prefs.unlockStarship(activity)
+        Prefs.setSoundPack(activity, "starship")
+        Sounds.play(activity, Sounds.PLAY)
+        Ui.toast(activity, "Starship sounds unlocked. Change them in Settings.")
+    }
+
     private fun services(): View {
         val strip = LinearLayout(activity).apply {
             setPadding(Ui.dp(context, 20), Ui.dp(context, 14), Ui.dp(context, 12), 0)
         }
         for (service in Services.connected(activity)) {
-            strip.addView(Ui.chip(activity, service.name, strong = true) { WatchActivity.open(activity, service.homeUrl, service.name) })
+            strip.addView(Ui.chip(activity, service.name, strong = true) { ServiceActivity.open(activity, service) })
         }
         strip.addView(Ui.chip(activity, "Edit") { activity.editServices { refresh() } })
         return HorizontalScrollView(activity).apply {
@@ -145,7 +156,7 @@ class HomeScreen(private val activity: MainActivity) {
             column.addView(Ui.shelfTitle(activity, shelf.name))
             val strip = LinearLayout(activity).apply { setPadding(Ui.dp(context, 20), 0, Ui.dp(context, 10), 0) }
             for (title in shelf.titles) {
-                strip.addView(Ui.poster(activity, title.name, title.poster, 118) { TitleActivity.open(activity, title) }.apply {
+                strip.addView(Ui.poster(activity, title.name, title.thumbnail, 118) { TitleActivity.open(activity, title) }.apply {
                     (layoutParams as LinearLayout.LayoutParams).marginEnd = Ui.dp(context, 10)
                 })
             }

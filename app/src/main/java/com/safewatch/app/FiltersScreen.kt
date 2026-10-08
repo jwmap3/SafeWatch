@@ -11,6 +11,8 @@ import com.safewatch.app.data.Accounts
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Services
 import com.safewatch.app.detect.ModelSetup
+import com.safewatch.app.ui.Palette
+import com.safewatch.app.ui.Sounds
 import com.safewatch.app.ui.Ui
 import com.safewatch.core.Action
 import com.safewatch.core.FilterSettings
@@ -145,10 +147,45 @@ class FiltersScreen(private val activity: MainActivity) {
         column.addView(Ui.sectionHeader(ctx, "Appearance"))
         column.addView(Ui.card(ctx).apply {
             addView(Ui.inset(ctx, Ui.segmented(ctx, listOf("Automatic", "Light", "Dark"), Prefs.themeMode(ctx)) {
+                // Choosing a mode goes back to that mode's own background and cards.
+                Prefs.setCustomColor(ctx, Prefs.COLOR_BACKGROUND, 0)
+                Prefs.setCustomColor(ctx, Prefs.COLOR_CARD, 0)
                 Prefs.setThemeMode(ctx, it)
+                activity.recreate()
+            }))
+            addView(Ui.divider(ctx))
+            addView(Ui.fieldLabel(ctx, "Primary colour"))
+            addView(Ui.swatches(ctx, Palette.primaries, Prefs.customColor(ctx, Prefs.COLOR_PRIMARY)) { pickColor(Prefs.COLOR_PRIMARY, it) })
+            addView(Ui.divider(ctx))
+            addView(Ui.fieldLabel(ctx, "Background colour"))
+            addView(Ui.swatches(ctx, Palette.backgrounds, Prefs.customColor(ctx, Prefs.COLOR_BACKGROUND)) { pickColor(Prefs.COLOR_BACKGROUND, it) })
+            addView(Ui.divider(ctx))
+            addView(Ui.fieldLabel(ctx, "Card colour"))
+            addView(Ui.swatches(ctx, Palette.cardChoices(ctx), Prefs.customColor(ctx, Prefs.COLOR_CARD)) { pickColor(Prefs.COLOR_CARD, it) })
+        })
+        column.addView(Ui.caption(ctx, "Primary is used for buttons and highlights. Text adjusts by itself to stay readable on the background you pick."))
+
+        // Sounds
+        column.addView(Ui.sectionHeader(ctx, "Sounds"))
+        val packs = Sounds.available(ctx)
+        column.addView(Ui.card(ctx).apply {
+            addView(Ui.inset(ctx, Ui.segmented(ctx, packs.map { it.name }, packs.indexOfFirst { it.id == Prefs.soundPack(ctx) }.coerceAtLeast(0)) {
+                Prefs.setSoundPack(ctx, packs[it].id)
+                Sounds.play(ctx, Sounds.OPEN)
             }))
         })
-        column.addView(Ui.caption(ctx, "Automatic follows your phone's day and night setting."))
+        column.addView(Ui.caption(ctx, "Played when you tap, open a title and start watching."))
+    }
+
+    private fun pickColor(which: String, color: Int) {
+        Prefs.setCustomColor(activity, which, color)
+        if (which == Prefs.COLOR_BACKGROUND) {
+            // Cards are chosen to suit the background, so a new background starts them afresh.
+            Prefs.setCustomColor(activity, Prefs.COLOR_CARD, 0)
+            // Pop-ups and system bars follow the phone's dark or light mode, so keep that in step.
+            if (color != 0) Prefs.setThemeMode(activity, if (Palette.isDark(activity)) Prefs.THEME_DARK else Prefs.THEME_LIGHT)
+        }
+        activity.recreate()
     }
 
     /** Offers to download the detection file again, or to pick one already on the phone. */

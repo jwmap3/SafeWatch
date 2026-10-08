@@ -17,6 +17,9 @@ class WatchActivity : BrowserActivity() {
     override val watchMode: Boolean get() = true
 
     companion object {
+        /** The address that plays a YouTube video in the app's player. */
+        fun youtube(videoId: String): String = "safewatch://youtube/$videoId"
+
         /** Plays a title, or opens a service to browse, without any browser controls. */
         fun open(ctx: Context, url: String, label: String) = ctx.startActivity(
             Intent(ctx, WatchActivity::class.java).putExtra(EXTRA_URL, url).putExtra(EXTRA_LABEL, label)

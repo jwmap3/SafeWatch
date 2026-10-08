@@ -111,7 +111,7 @@ class SearchScreen(private val activity: MainActivity) {
             rowTitles.forEachIndexed { i, title ->
                 row.addView(LinearLayout(activity).apply {
                     orientation = LinearLayout.VERTICAL
-                    addView(Ui.poster(context, title.name, title.poster, width) { TitleActivity.open(activity, title) })
+                    addView(Ui.poster(context, title.name, title.thumbnail, width) { TitleActivity.open(activity, title) })
                     addView(TextView(context).apply {
                         text = title.name
                         textSize = 13f
@@ -136,6 +136,8 @@ class SearchScreen(private val activity: MainActivity) {
         orientation = LinearLayout.VERTICAL
         addView(Ui.sectionHeader(context, "Search for “$query” on"))
         val card = Ui.card(context)
+        card.addView(Ui.row(context, "YouTube", leading = Ui.monogram(context, "YouTube")) { activity.searchYouTube(query) })
+        card.addView(Ui.divider(context, 60))
         Services.connected(context).forEach { service ->
             card.addView(Ui.row(context, service.name, leading = Ui.monogram(context, service.name)) {
                 WatchActivity.open(activity, service.searchFor(query), service.name)

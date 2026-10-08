@@ -1,0 +1,37 @@
+# Rebuilds the list of popular shows on each streaming service once a day and
+# publishes it as catalog.json, which the app downloads.
+name: Build catalog
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main, dev]
+    paths:
+      - tools/build-catalog.py
+      - .github/workflows/catalog.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the show index
+        run: python3 tools/build-catalog.py catalog.json
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view catalog >/dev/null 2>&1 || gh release create catalog --prerelease --title "Title catalog" --notes "The list of popular shows the app downloads. Rebuilt daily from TVmaze (CC BY-SA)."
+          gh release upload catalog catalog.json --clobber

@@ -46,7 +46,8 @@ object Prefs {
     private fun strictness(name: String?, fallback: Strictness): Strictness =
         Strictness.entries.firstOrNull { it.name == name } ?: fallback
 
-    fun themeMode(ctx: Context): Int = prefs(ctx).getInt("theme", THEME_SYSTEM)
+    /** Dark unless the viewer chooses otherwise. */
+    fun themeMode(ctx: Context): Int = prefs(ctx).getInt("theme", THEME_DARK)
 
     fun setThemeMode(ctx: Context, mode: Int) {
         prefs(ctx).edit().putInt("theme", mode).apply()
@@ -95,4 +96,61 @@ object Prefs {
 
     fun startBlurTest(ctx: Context) =
         prefs(ctx).edit().putLong("testBlurUntil", System.currentTimeMillis() + 2 * 60 * 1000).apply()
+
+    // ---- Colours the viewer picked. 0 means "use the built-in colour". ----
+
+    const val COLOR_PRIMARY = "colorPrimary"
+    const val COLOR_BACKGROUND = "colorBackground"
+    const val COLOR_CARD = "colorCard"
+
+    // Read on every colour lookup, so the three values are kept in memory.
+    @Volatile private var colors: Map<String, Int>? = null
+
+    fun customColor(ctx: Context, which: String): Int {
+        val known = colors ?: prefs(ctx).let { p ->
+            listOf(COLOR_PRIMARY, COLOR_BACKGROUND, COLOR_CARD).associateWith { p.getInt(it, 0) }
+        }.also { colors = it }
+        return known[which] ?: 0
+    }
+
+    fun setCustomColor(ctx: Context, which: String, color: Int) {
+        prefs(ctx).edit().putInt(which, color).apply()
+        colors = null
+    }
+
+    // ---- Sounds ----
+
+    fun soundPack(ctx: Context): String = prefs(ctx).getString("soundPack", "soft")!!
+
+    fun setSoundPack(ctx: Context, id: String) = prefs(ctx).edit().putString("soundPack", id).apply()
+
+    fun starshipUnlocked(ctx: Context): Boolean = prefs(ctx).getBoolean("starship", false)
+
+    fun unlockStarship(ctx: Context) = prefs(ctx).edit().putBoolean("starship", true).apply()
+
+    // ---- First launch ----
+
+    fun welcomed(ctx: Context): Boolean = prefs(ctx).getBoolean("welcomed", false)
+
+    fun setWelcomed(ctx: Context) = prefs(ctx).edit().putBoolean("welcomed", true).apply()
+
+    // ---- YouTube ----
+
+    /** Channels the viewer follows inside SafeWatch, as channel id to name. Kept on the phone only. */
+    fun followedChannels(ctx: Context): Map<String, String> =
+        prefs(ctx).getStringSet("ytFollowing", emptySet())!!.associate { it.substringBefore('|') to it.substringAfter('|') }
+
+    fun setFollowing(ctx: Context, channelId: String, name: String, follow: Boolean) {
+        val all = followedChannels(ctx).toMutableMap()
+        if (follow) all[channelId] = name else all.remove(channelId)
+        prefs(ctx).edit().putStringSet("ytFollowing", all.map { "${it.key}|${it.value}" }.toSet()).apply()
+    }
+
+    /** Subjects whose videos fill the YouTube tab's shelves. */
+    fun youtubeTopics(ctx: Context): List<String> =
+        prefs(ctx).getString("ytTopics", null)?.split('\n')?.filter { it.isNotBlank() }
+            ?: listOf("New movie trailers", "Documentaries", "Music videos", "Science explained")
+
+    fun setYoutubeTopics(ctx: Context, topics: List<String>) =
+        prefs(ctx).edit().putString("ytTopics", topics.joinToString("\n")).apply()
 }

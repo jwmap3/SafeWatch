@@ -22,6 +22,7 @@ import com.safewatch.app.data.Service
 import com.safewatch.app.data.Services
 import com.safewatch.app.data.Title
 import com.safewatch.app.ui.Images
+import com.safewatch.app.ui.Sounds
 import com.safewatch.app.ui.Ui
 import com.safewatch.core.Strictness
 import com.safewatch.core.WordList
@@ -235,6 +236,7 @@ class TitleActivity : AppCompatActivity() {
                 // Catalogs do not give addresses for single episodes, so the last step is done on the service's page.
                 Ui.toast(ctx, "Choose season ${episode.season}, episode ${episode.number} on the page")
             }
+            Sounds.play(ctx, Sounds.PLAY)
             val label = if (episode == null) title.name else "${title.name}  \u00B7  S${episode.season} E${episode.number}"
             WatchActivity.open(ctx, url, label)
         }

@@ -112,6 +112,7 @@ open class BrowserActivity : AppCompatActivity() {
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private var pageScript = ""
     private var mobileAgent = ""
+    private var fixedKey: String? = null
     private var signingInTo: Service? = null
     private var sawSignInPage = false
     private var scriptAtDocumentStart = false
@@ -394,9 +395,34 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     private fun load(url: String) {
+        val video = YOUTUBE_PLAYER.find(url)?.groupValues?.get(1)
+        if (video != null) {
+            // A YouTube video picked in the app plays in YouTube's embedded player, filling the screen.
+            // YouTube only plays embedded when it is told which app is asking, hence the app's own address.
+            web.settings.userAgentString = mobileAgent
+            val key = MediaKey.forUrl("https://www.youtube.com/watch?v=$video")
+            fixedKey = key
+            pageKey = key
+            version.incrementAndGet()
+            web.loadDataWithBaseURL(APP_ORIGIN, youtubePage(video), "text/html", "utf-8", null)
+            return
+        }
+        fixedKey = null
         web.settings.userAgentString = agentFor(url)
         web.loadUrl(url)
     }
+
+    private fun youtubePage(videoId: String): String = """
+        <!doctype html><html><head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="referrer" content="strict-origin-when-cross-origin">
+        <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style>
+        </head><body>
+        <iframe src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&cc_load_policy=1&rel=0&origin=$APP_ORIGIN"
+          referrerpolicy="strict-origin-when-cross-origin"
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+        </body></html>
+    """.trimIndent()
 
     private fun showMenu(anchor: View) {
         val desktop = Prefs.desktopSite(this)
@@ -443,6 +469,7 @@ open class BrowserActivity : AppCompatActivity() {
                 }
                 return true
             }
+            if (request.isForMainFrame) fixedKey = null
             // Moving to a site that needs the other kind of page: ask again the right way.
             if (request.isForMainFrame && agentFor(url) != view.settings.userAgentString) {
                 load(url)
@@ -452,10 +479,10 @@ open class BrowserActivity : AppCompatActivity() {
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
-            pageKey = MediaKey.forUrl(url)
+            pageKey = fixedKey ?: MediaKey.forUrl(url)
             version.incrementAndGet()
             noteSignIn(url)
-            if (!address.hasFocus()) address.setText(if (url == START_PAGE) "" else url)
+            if (!address.hasFocus()) address.setText(if (url == START_PAGE || fixedKey != null) "" else url)
             if (markStartMs != null) {
                 markStartMs = null
                 setMarkLabel(MARK_START)
@@ -662,6 +689,8 @@ open class BrowserActivity : AppCompatActivity() {
         const val EXTRA_SIGN_IN = "signIn"
         const val EXTRA_LABEL = "label"
         private const val PLAYER_BAR_MS = 3500L
+        private const val APP_ORIGIN = "https://com.safewatch.app"
+        private val YOUTUBE_PLAYER = Regex("^safewatch://youtube/([A-Za-z0-9_-]{6,20})$")
         const val START_PAGE = "file:///android_asset/start.html"
         const val WEB_SEARCH = "https://duckduckgo.com/?q="
         private const val MARK_START = "Mark scene"

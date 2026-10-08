@@ -73,7 +73,10 @@ object Services {
             "pluto.tv", listOf("pluto tv"), listOf(300)),
     )
 
-    val defaults = setOf("netflix", "hbomax", "prime", "disney", "hulu", "youtube")
+    val defaults = setOf("netflix", "hbomax", "prime", "disney", "hulu")
+
+    /** The services offered to choose from. YouTube is left out because it has a tab of its own. */
+    val choices: List<Service> get() = all.filter { it.id != "youtube" }
 
     fun byId(id: String?): Service? = all.firstOrNull { it.id == id }
 
@@ -84,6 +87,6 @@ object Services {
 
     fun connected(ctx: Context): List<Service> {
         val ids = Prefs.connectedServices(ctx)
-        return all.filter { it.id in ids }
+        return choices.filter { it.id in ids }
     }
 }

@@ -3,8 +3,8 @@ package com.safewatch.app.ui
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -29,6 +30,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.safewatch.app.R
+import com.safewatch.app.data.Video
 
 /**
  * The app's small design kit: grouped cards on a quiet background, large
@@ -38,7 +40,8 @@ import com.safewatch.app.R
 object Ui {
     fun dp(ctx: Context, value: Int): Int = (value * ctx.resources.displayMetrics.density + 0.5f).toInt()
 
-    fun color(ctx: Context, id: Int): Int = ctx.getColor(id)
+    /** A colour by name, with the viewer's own colour choices applied. */
+    fun color(ctx: Context, id: Int): Int = Palette.color(ctx, id)
 
     fun rounded(color: Int, radius: Float): GradientDrawable =
         GradientDrawable().apply { setColor(color); cornerRadius = radius }
@@ -49,8 +52,7 @@ object Ui {
         return ctx.getDrawable(value.resourceId)
     }
 
-    fun isNight(ctx: Context): Boolean =
-        ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+    fun isNight(ctx: Context): Boolean = Palette.isDark(ctx)
 
     /** Draws behind the system bars and keeps [root]'s content clear of them and of the keyboard. */
     fun fitSystemBars(activity: Activity, root: View, lightBars: Boolean = !isNight(activity)) {
@@ -186,12 +188,16 @@ object Ui {
         })
         if (onClick != null) {
             foreground = ripple(ctx)
-            setOnClickListener { onClick() }
+            setOnClickListener { Sounds.play(ctx, Sounds.TAP); onClick() }
         }
     }
 
     fun switchRow(ctx: Context, title: String, checked: Boolean, onChange: (Boolean) -> Unit): LinearLayout {
+        val accent = color(ctx, R.color.accent)
+        val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
         val toggle = SwitchCompat(ctx).apply {
+            thumbTintList = ColorStateList(states, intArrayOf(accent, color(ctx, R.color.text_secondary)))
+            trackTintList = ColorStateList(states, intArrayOf((accent and 0x00FFFFFF) or (0x66 shl 24), color(ctx, R.color.fill)))
             isChecked = checked
             setOnCheckedChangeListener { _, on -> onChange(on) }
         }
@@ -226,7 +232,7 @@ object Ui {
                 gravity = Gravity.CENTER
                 setTextColor(color(ctx, R.color.text))
                 setPadding(0, dp(ctx, 8), 0, dp(ctx, 8))
-                setOnClickListener { paint(i); onSelect(i) }
+                setOnClickListener { Sounds.play(ctx, Sounds.TAP); paint(i); onSelect(i) }
             }
             cells += cell
             track.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -281,7 +287,7 @@ object Ui {
             addView(icon(ctx, drawable, colorRes), FrameLayout.LayoutParams(dp(ctx, 24), dp(ctx, 24), Gravity.CENTER))
             layoutParams = LinearLayout.LayoutParams(dp(ctx, 46), dp(ctx, 46))
             foreground = ripple(ctx)
-            setOnClickListener { onClick(it) }
+            setOnClickListener { Sounds.play(ctx, Sounds.TAP); onClick(it) }
         }
 
     /** The main action on a screen: a wide, filled button with an optional icon. */
@@ -317,7 +323,7 @@ object Ui {
         background = rounded(color(ctx, if (strong) R.color.card else R.color.fill), dp(ctx, 18).toFloat())
         setPadding(dp(ctx, 16), dp(ctx, 9), dp(ctx, 16), dp(ctx, 9))
         layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(ctx, 8) }
-        setOnClickListener { onClick() }
+        setOnClickListener { Sounds.play(ctx, Sounds.TAP); onClick() }
     }
 
     /** Artwork for one title. Shows the name until the picture arrives, and stays that way if there is none. */
@@ -341,9 +347,71 @@ object Ui {
             layoutParams = LinearLayout.LayoutParams(dp(ctx, widthDp), dp(ctx, widthDp * 3 / 2))
             if (onClick != null) {
                 foreground = ripple(ctx)
-                setOnClickListener { onClick() }
+                setOnClickListener { Sounds.play(ctx, Sounds.OPEN); onClick() }
             }
         }
+
+    /** A 16:9 video picture with its length in the corner. With no video it is an empty placeholder. */
+    private fun videoPicture(ctx: Context, video: Video?, widthDp: Int): FrameLayout = FrameLayout(ctx).apply {
+        background = rounded(color(ctx, R.color.fill), dp(ctx, 10).toFloat())
+        clipToOutline = true
+        layoutParams = LinearLayout.LayoutParams(dp(ctx, widthDp), dp(ctx, widthDp * 9 / 16))
+        if (video == null) return@apply
+        addView(ImageView(ctx).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            Images.load(video.thumbnail, this, minWidth = 320)
+        }, FrameLayout.LayoutParams(-1, -1))
+        if (video.duration.isNotEmpty()) addView(TextView(ctx).apply {
+            text = video.duration
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            background = rounded(Color.argb(190, 0, 0, 0), dp(ctx, 5).toFloat())
+            setPadding(dp(ctx, 5), dp(ctx, 1), dp(ctx, 5), dp(ctx, 2))
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
+            rightMargin = dp(ctx, 6)
+            bottomMargin = dp(ctx, 6)
+        })
+    }
+
+    private fun videoText(ctx: Context, video: Video, titleSize: Float): LinearLayout = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(TextView(ctx).apply {
+            text = video.title
+            textSize = titleSize
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(color(ctx, R.color.text))
+        })
+        addView(TextView(ctx).apply {
+            text = listOf(video.channel, video.meta).filter { it.isNotEmpty() }.joinToString(" \u00B7 ")
+            textSize = 12f
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(color(ctx, R.color.text_secondary))
+            setPadding(0, dp(ctx, 3), 0, 0)
+        })
+    }
+
+    /** A video for a sideways shelf: the picture with its title underneath. */
+    fun videoCard(ctx: Context, video: Video?, onClick: () -> Unit): LinearLayout = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        layoutParams = LinearLayout.LayoutParams(dp(ctx, 224), -2).apply { marginEnd = dp(ctx, 12) }
+        addView(videoPicture(ctx, video, 224))
+        if (video == null) return@apply
+        addView(videoText(ctx, video, 14f).apply { setPadding(0, dp(ctx, 8), 0, 0) })
+        contentDescription = video.title
+        setOnClickListener { Sounds.play(ctx, Sounds.OPEN); onClick() }
+    }
+
+    /** A video for an up-and-down list: the picture on the left, its title beside it. */
+    fun videoRow(ctx: Context, video: Video, onClick: () -> Unit): LinearLayout = LinearLayout(ctx).apply {
+        setPadding(dp(ctx, 20), dp(ctx, 14), dp(ctx, 20), 0)
+        addView(videoPicture(ctx, video, 150))
+        addView(videoText(ctx, video, 14f), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(ctx, 12) })
+        contentDescription = video.title
+        foreground = ripple(ctx)
+        setOnClickListener { Sounds.play(ctx, Sounds.OPEN); onClick() }
+    }
 
     /** A shelf heading. */
     fun shelfTitle(ctx: Context, text: String): TextView = TextView(ctx).apply {
@@ -366,6 +434,54 @@ object Ui {
                 floatArrayOf(0f, 0.38f, 0.60f, 0.72f, 0.82f, 1f),
             )
         }
+    }
+
+    /**
+     * A row of colour dots to choose from. The first dot stands for the built-in colour
+     * and is picked as 0; [selected] is 0 when nothing has been chosen.
+     */
+    fun swatches(ctx: Context, colors: List<Int>, selected: Int, onPick: (Int) -> Unit): HorizontalScrollView {
+        val strip = LinearLayout(ctx).apply { setPadding(dp(ctx, 14), dp(ctx, 4), dp(ctx, 6), dp(ctx, 14)) }
+        val ring = color(ctx, R.color.text)
+        for (c in listOf(0) + colors) {
+            val on = c == selected
+            strip.addView(FrameLayout(ctx).apply {
+                contentDescription = if (c == 0) "Built-in colour" else "Colour %06X".format(c and 0xFFFFFF)
+                // The chosen dot gets a ring around it.
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.TRANSPARENT)
+                    if (on) setStroke(dp(ctx, 2), ring)
+                }
+                addView(TextView(ctx).apply {
+                    gravity = Gravity.CENTER
+                    textSize = 11f
+                    if (c == 0) {
+                        text = "Auto"
+                        setTextColor(color(ctx, R.color.text_secondary))
+                    }
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(if (c == 0) color(ctx, R.color.fill) else c)
+                        setStroke(maxOf(1, dp(ctx, 1) / 2), color(ctx, R.color.separator))
+                    }
+                }, FrameLayout.LayoutParams(dp(ctx, 34), dp(ctx, 34), Gravity.CENTER))
+                layoutParams = LinearLayout.LayoutParams(dp(ctx, 44), dp(ctx, 44)).apply { marginEnd = dp(ctx, 6) }
+                setOnClickListener { onPick(c) }
+            })
+        }
+        return HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(strip)
+        }
+    }
+
+    /** A label above a control inside a card. */
+    fun fieldLabel(ctx: Context, text: String): TextView = TextView(ctx).apply {
+        this.text = text
+        textSize = 15f
+        setTextColor(color(ctx, R.color.text))
+        setPadding(dp(ctx, 16), dp(ctx, 14), dp(ctx, 16), dp(ctx, 6))
     }
 
     fun spacer(ctx: Context): View = View(ctx).apply {

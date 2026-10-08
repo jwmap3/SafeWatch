@@ -25,17 +25,24 @@ data class Title(
     val serviceId: String?,
     /** The title's own page on that service, when the catalog gives one. */
     val link: String?,
+    val genres: List<String> = emptyList(),
 ) {
+    /** A small version of the artwork, for shelves and lists. The full one is for a title's own page. */
+    val thumbnail: String?
+        get() = poster?.replace("/original_untouched/", "/medium_portrait/")?.replace("/t/p/w500/", "/t/p/w342/")
+
     fun toJson(): JSONObject = JSONObject()
         .put("id", id).put("name", name).put("year", year).put("kind", kind)
         .put("poster", poster ?: JSONObject.NULL).put("overview", overview)
         .put("serviceId", serviceId ?: JSONObject.NULL).put("link", link ?: JSONObject.NULL)
+        .put("genres", JSONArray(genres))
 
     companion object {
         fun fromJson(o: JSONObject) = Title(
             o.getString("id"), o.getString("name"), o.optString("year"), o.optString("kind", "Series"),
             o.optStringOrNull("poster"), o.optString("overview"),
             o.optStringOrNull("serviceId"), o.optStringOrNull("link"),
+            o.optJSONArray("genres")?.let { g -> (0 until g.length()).map { g.optString(it) } } ?: emptyList(),
         )
     }
 }
@@ -60,6 +67,8 @@ private fun JSONObject.optStringOrNull(key: String): String? =
 object Catalog {
     private const val TVMAZE = "https://api.tvmaze.com"
     private const val TMDB = "https://api.themoviedb.org/3"
+    private const val LIBRARY = "https://github.com/jwmap3/SafeWatch/releases/download/catalog/catalog.json"
+    private const val LIBRARY_MAX_AGE_MS = 20L * 3600 * 1000
     private const val DAYS = 14
     private val SKIPPED_TYPES = setOf("News", "Talk Show", "Sports", "Award Show", "Panel Show", "Game Show", "Variety")
 
@@ -87,7 +96,7 @@ object Catalog {
     fun loadHome(ctx: Context): List<Shelf> {
         val key = Prefs.catalogKey(ctx)
         val services = Services.connected(ctx)
-        val shelves = if (key.isNotEmpty()) tmdbHome(key, services) else tvmazeHome(ctx, services)
+        val shelves = if (key.isNotEmpty()) tmdbHome(key, services) else withPopular(ctx, tvmazeHome(ctx, services), services)
         if (shelves.isNotEmpty()) {
             memory = shelves
             val arr = JSONArray()
@@ -101,6 +110,19 @@ object Catalog {
         return shelves
     }
 
+    /** Puts each service's popular shows ahead of its new ones, when the library is available. */
+    private fun withPopular(ctx: Context, shelves: List<Shelf>, services: List<Service>): List<Shelf> {
+        val library = library(ctx)
+        if (library.isEmpty()) return shelves
+        val out = ArrayList<Shelf>()
+        shelves.firstOrNull { it.name == "New this week" }?.let { out += it }
+        for (service in services) {
+            library[service.id]?.takeIf { it.size >= 3 }?.let { out += Shelf("Popular on ${service.name}", it.take(20)) }
+            shelves.firstOrNull { it.name == "New on ${service.name}" }?.let { out += it }
+        }
+        return out
+    }
+
     /** Forgets saved shelves, for when the services or the catalog key change. */
     fun reset(ctx: Context) {
         memory = null
@@ -108,6 +130,58 @@ object Catalog {
     }
 
     private fun homeFile(ctx: Context) = File(ctx.cacheDir, "home.json")
+
+    // ---- The library: the most popular shows on each service, rebuilt daily by tools/build-catalog.py ----
+
+    @Volatile private var libraryMemory: Map<String, List<Title>>? = null
+
+    /**
+     * Popular shows by service id. Uses the copy on the phone, fetching a new one first
+     * when there is none or it is older than a day. Empty when it has never been fetched
+     * and cannot be now.
+     */
+    fun library(ctx: Context): Map<String, List<Title>> {
+        val file = File(ctx.filesDir, "catalog.json")
+        val stale = !file.exists() || System.currentTimeMillis() - file.lastModified() > LIBRARY_MAX_AGE_MS
+        if (!stale) libraryMemory?.let { return it }
+        if (stale) {
+            try {
+                val text = get(LIBRARY)
+                JSONObject(text).getJSONObject("services") // only kept if it reads properly
+                file.writeText(text)
+                libraryMemory = null
+            } catch (e: Exception) {
+                // Keep whatever copy is already here.
+            }
+        }
+        libraryMemory?.let { return it }
+        if (!file.exists()) return emptyMap()
+        return try {
+            val services = JSONObject(file.readText()).getJSONObject("services")
+            val out = HashMap<String, List<Title>>()
+            for (id in services.keys()) {
+                val arr = services.getJSONArray(id)
+                out[id] = (0 until arr.length()).map {
+                    Title.fromJson(arr.getJSONObject(it).put("kind", "Series").put("serviceId", id))
+                }
+            }
+            out.also { libraryMemory = it }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    /** The shelves for one service's own page: what is popular, what is new, then its biggest genres. */
+    fun servicePage(ctx: Context, service: Service): List<Shelf> {
+        val popular = library(ctx)[service.id].orEmpty()
+        val shelves = ArrayList<Shelf>()
+        if (popular.isNotEmpty()) shelves += Shelf("Popular on ${service.name}", popular.take(24))
+        (savedHome(ctx) ?: emptyList()).firstOrNull { it.name == "New on ${service.name}" }?.let { shelves += it }
+        val genres = popular.flatMap { it.genres }.groupingBy { it }.eachCount().filter { it.value >= 6 }
+            .entries.sortedByDescending { it.value }.take(7).map { it.key }
+        for (genre in genres) shelves += Shelf(genre, popular.filter { genre in it.genres }.take(24))
+        return shelves
+    }
 
     // ---- TVmaze ----
 

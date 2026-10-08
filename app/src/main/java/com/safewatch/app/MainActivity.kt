@@ -18,6 +18,7 @@ import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.Services
 import com.safewatch.app.detect.NudityDetector
 import com.safewatch.app.player.PlayerActivity
+import com.safewatch.app.ui.Sounds
 import com.safewatch.app.ui.Ui
 
 /**
@@ -29,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var content: FrameLayout
     private lateinit var home: HomeScreen
     private lateinit var search: SearchScreen
+    private lateinit var youtube: YouTubeScreen
     private lateinit var filters: FiltersScreen
     private val tabViews = ArrayList<Pair<ImageView, TextView>>()
     private var tab = TAB_HOME
@@ -70,10 +72,12 @@ class MainActivity : AppCompatActivity() {
 
         home = HomeScreen(this)
         search = SearchScreen(this)
+        youtube = YouTubeScreen(this)
         filters = FiltersScreen(this)
-        for (page in listOf(home.view, search.view, filters.view)) content.addView(page, FrameLayout.LayoutParams(-1, -1))
+        for (page in listOf(home.view, search.view, youtube.view, filters.view)) content.addView(page, FrameLayout.LayoutParams(-1, -1))
 
         show(savedInstanceState?.getInt(STATE_TAB) ?: intent.getIntExtra(EXTRA_TAB, TAB_HOME))
+        if (savedInstanceState == null && !Prefs.welcomed(this)) startActivity(Intent(this, WelcomeActivity::class.java))
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -95,7 +99,7 @@ class MainActivity : AppCompatActivity() {
     /** Lets the viewer tick which streaming services they use. */
     fun editServices(onDone: () -> Unit) {
         val chosen = Prefs.connectedServices(this).toMutableSet()
-        val all = Services.all
+        val all = Services.choices
         AlertDialog.Builder(this)
             .setTitle("Your services")
             .setMultiChoiceItems(all.map { it.name }.toTypedArray(), all.map { it.id in chosen }.toBooleanArray()) { _, i, on ->
@@ -124,6 +128,7 @@ class MainActivity : AppCompatActivity() {
         val tabs = listOf(
             Triple(TAB_HOME, "Home", R.drawable.ic_home),
             Triple(TAB_SEARCH, "Search", R.drawable.ic_search),
+            Triple(TAB_YOUTUBE, "YouTube", R.drawable.ic_play),
             Triple(TAB_BROWSER, "Browser", R.drawable.ic_globe),
             Triple(TAB_FILTERS, "Settings", R.drawable.ic_filters),
         )
@@ -143,10 +148,16 @@ class MainActivity : AppCompatActivity() {
                 addView(icon)
                 addView(text)
                 setPadding(0, Ui.dp(context, 4), 0, Ui.dp(context, 2))
-                setOnClickListener { show(id) }
+                setOnClickListener { Sounds.play(context, Sounds.TAP); show(id) }
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
         return bar
+    }
+
+    /** Shows YouTube's results for a search, in the YouTube tab. */
+    fun searchYouTube(query: String) {
+        show(TAB_YOUTUBE)
+        youtube.search(query)
     }
 
     /** Switches tab. The Browser tab is its own screen, so it opens on top and the tab shown here stays put. */
@@ -158,10 +169,12 @@ class MainActivity : AppCompatActivity() {
         tab = which
         home.view.visibility = if (which == TAB_HOME) View.VISIBLE else View.GONE
         search.view.visibility = if (which == TAB_SEARCH) View.VISIBLE else View.GONE
+        youtube.view.visibility = if (which == TAB_YOUTUBE) View.VISIBLE else View.GONE
         filters.view.visibility = if (which == TAB_FILTERS) View.VISIBLE else View.GONE
+        if (which == TAB_YOUTUBE) youtube.onShown() else youtube.onHidden()
         if (which == TAB_SEARCH) search.onShown() else search.onHidden()
         if (which == TAB_FILTERS) filters.onShown()
-        val order = listOf(TAB_HOME, TAB_SEARCH, TAB_BROWSER, TAB_FILTERS)
+        val order = listOf(TAB_HOME, TAB_SEARCH, TAB_YOUTUBE, TAB_BROWSER, TAB_FILTERS)
         tabViews.forEachIndexed { i, (icon, text) ->
             val color = Ui.color(this, if (order[i] == which) R.color.accent else R.color.text_secondary)
             icon.imageTintList = android.content.res.ColorStateList.valueOf(color)
@@ -174,6 +187,7 @@ class MainActivity : AppCompatActivity() {
         const val TAB_SEARCH = 1
         const val TAB_BROWSER = 2
         const val TAB_FILTERS = 3
+        const val TAB_YOUTUBE = 4
         private const val EXTRA_TAB = "tab"
         private const val STATE_TAB = "tab"
 
