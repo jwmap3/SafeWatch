@@ -905,6 +905,8 @@ open class BrowserActivity : AppCompatActivity() {
         )
         checking = true
         val testing = Prefs.testingBlur(this)
+        val startedAt = SystemClock.elapsedRealtime()
+        val curtainWasUp = hidden
         try {
             PixelCopy.request(window, area, frame, { result ->
                 if (result != PixelCopy.SUCCESS || background.isShutdown) {
@@ -915,9 +917,16 @@ open class BrowserActivity : AppCompatActivity() {
                 background.execute {
                     val level = try { det.maxLevel(frame, testing) } catch (e: Exception) { 0 }
                     if (testing) {
-                        // While testing, say what the detector was shown and what it made of it.
-                        val middle = frame.getPixel(frame.width / 2, frame.height / 2)
-                        Log.i("SafeWatch", "blur test: looked at ${frame.width}x${frame.height}, middle #%06X, found level $level".format(middle and 0xFFFFFF))
+                        // While testing, say what the detector was shown and what it made of it. "Detail" is how
+                        // much neighbouring dots differ along the middle row: a real picture scores well above a
+                        // blurred one, which shows whether the detector saw through the curtain.
+                        val y = frame.height / 2
+                        var detail = 0
+                        for (x in 1 until frame.width) {
+                            detail += kotlin.math.abs(((frame.getPixel(x, y) shr 8) and 0xFF) - ((frame.getPixel(x - 1, y) shr 8) and 0xFF))
+                        }
+                        Log.i("SafeWatch", "blur test: looked at ${frame.width}x${frame.height}, curtain ${if (curtainWasUp) "up" else "down"}, " +
+                            "detail ${detail * 10 / frame.width / 10.0}, found level $level, took ${SystemClock.elapsedRealtime() - startedAt} ms")
                     }
                     ui.post {
                         checking = false
@@ -925,7 +934,9 @@ open class BrowserActivity : AppCompatActivity() {
                         if (level > 0 && settings.nudity.filters(level)) {
                             if (!hidden) Log.i("SafeWatch", "filter: picture hidden (level $level) on $pageKey")
                             hidden = true
-                            hiddenUntil = SystemClock.elapsedRealtime() + HOLD_MS
+                            // Held until well after the next look can report, however long a look takes on this phone.
+                            val took = SystemClock.elapsedRealtime() - startedAt
+                            hiddenUntil = SystemClock.elapsedRealtime() + maxOf(HOLD_MS, took * 2 + 500)
                         }
                         // While hidden, each new copy refreshes the curtain, so the blur moves with the video.
                         if (hidden) curtain.show(frame)
