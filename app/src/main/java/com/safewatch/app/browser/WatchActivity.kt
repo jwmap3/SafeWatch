@@ -25,6 +25,11 @@ class WatchActivity : BrowserActivity() {
             Intent(ctx, WatchActivity::class.java).putExtra(EXTRA_URL, url).putExtra(EXTRA_LABEL, label)
         )
 
+        /** Starts a YouTube video here silently, reads its captions, then plays it in the TV's own YouTube app. */
+        fun playOnTv(ctx: Context, videoId: String, label: String) = ctx.startActivity(
+            Intent(ctx, WatchActivity::class.java).putExtra(EXTRA_URL, youtube(videoId)).putExtra(EXTRA_LABEL, label).putExtra(EXTRA_TO_TV, true)
+        )
+
         /** Opens a service's sign-in page. The sign-in is remembered by the browser from then on. */
         fun signIn(ctx: Context, service: Service) = ctx.startActivity(
             Intent(ctx, WatchActivity::class.java)

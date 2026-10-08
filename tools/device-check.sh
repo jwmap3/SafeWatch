@@ -53,6 +53,10 @@ adb shell input text "ted%screativity"; adb shell input keyevent 66
 shot 08-youtube-search 10
 adb shell input tap 300 760
 shot 09-video 10
+# Play on TV: the video starts here silently to read its captions, then goes to the TV's YouTube app.
+# YouTube will not play for this test phone (below), so it ends at the question about captions.
+tap "Play on TV";         shot 09c-play-on-tv 22
+back; back;               sleep 2
 swipe_up; swipe_up;       sleep 1
 tap "Show comments";      shot 09b-comments 8
 # Playing a YouTube video is not tried here: YouTube asks visitors from data centres, such as
@@ -137,6 +141,8 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   tap "Test clip";        shot 18e-copy-options 2
   tap "Play on a TV…";    shot 18f-tv-search 8
   back; back
+  tap_scrolling "Link with TV code"; shot 18g-link-youtube 2
+  back
   make_copy 18-stream-copy stream.html
   back; back
 else

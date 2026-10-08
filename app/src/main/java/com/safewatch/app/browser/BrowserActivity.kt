@@ -254,12 +254,14 @@ open class BrowserActivity : AppCompatActivity() {
             // Opened on its own, the Browser tab starts at the quick links.
             load(requestedUrl(intent) ?: if (watchMode) Prefs.lastPage(this) ?: START_PAGE else START_PAGE)
         }
+        if (savedInstanceState == null) handToTvWhenReady(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (handOffToPlayer(intent)) return
         requestedUrl(intent)?.let { load(it) }
+        handToTvWhenReady(intent)
     }
 
     /**
@@ -1067,7 +1069,82 @@ open class BrowserActivity : AppCompatActivity() {
 
     private fun sendToTv() {
         val (source, whyNot) = cleanSource()
-        Ui.sendToTv(this, source, whyNot)
+        val youtube = youtubeVideoId()
+        Ui.sendToTv(this, source, whyNot, youtube = youtube?.let { id -> { youtubeToTv(id) } })
+    }
+
+    /** The YouTube video on this page, if there is one. */
+    private fun youtubeVideoId(): String? = playingYoutube ?: YOUTUBE_VIDEO.find(web.url.orEmpty())?.groupValues?.get(1)
+
+    /**
+     * Sends this YouTube video to the TV's own YouTube app. The stretches to mute come from the captions
+     * the page script has read here, so the video has to have played for a moment first.
+     */
+    private fun youtubeToTv(id: String) {
+        val cues = synchronized(pageCues) { pageCues.values.sortedBy { it.first } }.map { (start, end, text) -> com.safewatch.core.Cue(start, end, text) }
+        val mute = CueTagger.tagsFor(cues, matcher).map { it.startMs..it.endMs }.toMutableList()
+        val marked = FilterEngine(TagStore.load(applicationContext, pageKey), settings).activeTags
+        marked.filter { it.action == Action.MUTE }.forEach { mute += it.startMs..it.endMs }
+        // The TV cannot blur, so scenes marked to blur are jumped past there.
+        val skips = marked.filter { it.action == Action.SKIP || it.action == Action.BLUR }.map { it.startMs..it.endMs }
+        val title = label.ifEmpty { pageTitle }.ifEmpty { "YouTube video" }
+        fun go(muteAll: Boolean) {
+            send("pause")
+            val stretches = if (muteAll) listOf(0L..(24 * 3_600_000L)) else mute
+            com.safewatch.app.tv.YouTubeTv.send(this, com.safewatch.app.tv.YouTubeTv.Video(id, title, videoPositionMs, stretches, skips))
+            note("YouTube on TV: ${if (muteAll) "sound off throughout (no captions)" else "${mute.size} stretches to mute"}, ${skips.size} scenes to skip")
+        }
+        if (settings.language == Strictness.OFF || cues.isNotEmpty()) {
+            go(muteAll = false)
+            return
+        }
+        val strict = Prefs.silentWithoutCaptions(this)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("No captions read yet")
+            .setMessage("EdenOS mutes cursing on the TV using the video's captions, and it has not read any for this video. " +
+                "Let it play here for a few seconds, then send it again." +
+                if (strict) "\n\nOr send it now with the TV's sound off throughout, as your \"No captions, no sound\" setting asks." else
+                    "\n\nIf the video has no captions at all, nothing can be muted on the TV.")
+            .setPositiveButton("OK", null)
+            .setNeutralButton(if (strict) "Send without sound" else "Send unfiltered") { _, _ -> go(muteAll = strict) }
+            .show()
+    }
+
+    /** True while a video opened with Play on TV is being read here before it goes to the TV. */
+    private var tvHandOffSince = 0L
+
+    /**
+     * For Play on TV on a video's page: the video starts here, silently, until its captions have been read,
+     * then goes to the TV's YouTube app. Gives up waiting after a while and asks.
+     */
+    private fun handToTvWhenReady(intent: Intent) {
+        if (!intent.getBooleanExtra(EXTRA_TO_TV, false)) return
+        intent.removeExtra(EXTRA_TO_TV)
+        tvHandOffSince = System.currentTimeMillis()
+        Ui.toast(this, "Reading the captions, then sending it to your TV…")
+        ui.removeCallbacks(tvHandOff)
+        ui.postDelayed(tvHandOff, 1500)
+    }
+
+    private var tvCuesSeen = -1
+
+    private val tvHandOff = object : Runnable {
+        override fun run() {
+            if (tvHandOffSince == 0L || isDestroyed) return
+            pendingCommand = "quiet"
+            val id = youtubeVideoId() ?: run { tvHandOffSince = 0; return }
+            val count = synchronized(pageCues) { pageCues.size }
+            val waited = System.currentTimeMillis() - tvHandOffSince
+            // Sent once the captions have arrived and stopped growing, or after 15 seconds either way.
+            if ((count > 0 && count == tvCuesSeen) || waited > 15_000) {
+                tvHandOffSince = 0
+                tvCuesSeen = -1
+                youtubeToTv(id)
+                return
+            }
+            tvCuesSeen = count
+            ui.postDelayed(this, 1000)
+        }
     }
 
     /** What could be made into a clean copy for the TV here, or why nothing can. */
@@ -1573,9 +1650,12 @@ open class BrowserActivity : AppCompatActivity() {
         const val EXTRA_URL = "url"
         const val EXTRA_SIGN_IN = "signIn"
         const val EXTRA_LABEL = "label"
+        /** Set to send the YouTube video straight to the TV's YouTube app once its captions are read. */
+        const val EXTRA_TO_TV = "toTv"
         private const val PLAYER_BAR_MS = 3500L
         private const val APP_ORIGIN = "https://com.safewatch.app"
         private val YOUTUBE_PLAYER = Regex("^safewatch://youtube/([A-Za-z0-9_-]{6,20})$")
+        private val YOUTUBE_VIDEO = Regex("(?:youtube(?:-nocookie)?\\.com/(?:watch\\?(?:[^#]*&)?v=|shorts/|embed/|live/)|youtu\\.be/)([A-Za-z0-9_-]{11})")
         private val DIRECT_VIDEO = Regex("^https?://[^?#]+\\.(mp4|m4v|webm|mov|ogv)([?#].*)?$", RegexOption.IGNORE_CASE)
         const val START_PAGE = "file:///android_asset/start.html"
         /** Where typed words are searched; set from Settings. */

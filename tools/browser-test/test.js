@@ -124,6 +124,13 @@ const server = http.createServer((req, res) => {
   check('the back-10 control moves the video', Math.abs(await page.evaluate(() => document.getElementById('v').currentTime) - 2) < 0.5);
   await page.evaluate(() => { window.__command = 'play'; }); await page.waitForTimeout(500);
   check('the play control resumes the video', await page.evaluate(() => !document.getElementById('v').paused));
+  // While a video is handed to the TV it plays here without sound, whatever the filter would do; play brings the sound back.
+  await page.evaluate(() => { document.getElementById('v').muted = false; window.__command = 'quiet'; }); await page.waitForTimeout(700);
+  check('quiet keeps the video silent while it goes to the TV', await page.evaluate(() => document.getElementById('v').muted));
+  await page.evaluate(() => { document.getElementById('v').currentTime = 2; }); await page.waitForTimeout(700);
+  check('quiet holds through the filter\'s own mutes', await page.evaluate(() => document.getElementById('v').muted));
+  await page.evaluate(() => { document.getElementById('v').muted = false; window.__command = 'play'; }); await page.waitForTimeout(500);
+  check('play after quiet lets the filter decide again', await page.evaluate(() => window.__safewatch.quiet === false));
   check('each mute is noted for the app', await page.evaluate(() => (window.__notes || []).length > 0));
   const beats = await page.evaluate(() => window.__beats.length); check('reports playback position to the app', beats > 20, `beats=${beats}`);
 

@@ -830,6 +830,8 @@
   }
 
   function setMuted(video, st, mute, why) {
+    // While the video is being handed to the TV, the phone plays it silently.
+    if (S.quiet) { if (!video.muted) video.muted = true; return; }
     if (mute) {
       if (!st.mutedByUs) {
         st.wasMuted = video.muted; st.mutedByUs = true; st.mutedAt = Date.now();
@@ -896,11 +898,16 @@
 
   // Carries out a press on the app's own player controls.
   function obey(video, command) {
-    if (command === 'play') { var p = video.play(); if (p && p.catch) p.catch(function () {}); }
+    if (command === 'play') {
+      // Watching here again after handing the video to the TV: the sound is as it was before.
+      if (S.quiet) { S.quiet = false; video.muted = !!S.quietWas; }
+      var p = video.play(); if (p && p.catch) p.catch(function () {});
+    }
     else if (command === 'pause') video.pause();
     else if (command.indexOf('seek:') === 0) seekTo(video, parseFloat(command.slice(5)));
     else if (command.indexOf('skip:') === 0) seekTo(video, Math.max(0, video.currentTime + parseFloat(command.slice(5))));
     else if (command.indexOf('rate:') === 0) S.rate = parseFloat(command.slice(5)) || 1;
+    else if (command === 'quiet') { if (!S.quiet) S.quietWas = video.muted; S.quiet = true; video.muted = true; }
   }
 
   // ---- The hidden copy that looks ahead ----

@@ -18,9 +18,15 @@ import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import com.safewatch.app.R
 import com.safewatch.app.data.FilterLog
+import com.safewatch.app.data.Prefs
 import com.safewatch.core.tv.FileServer
+import com.safewatch.core.tv.LoungeClient
+import com.safewatch.core.tv.LoungeScreen
 import com.safewatch.core.tv.Tv
 import com.safewatch.core.tv.TvDevice
+import com.safewatch.core.tv.TvYouTubeFollower
+import com.safewatch.core.tv.TvYouTubeListener
+import com.safewatch.core.tv.TvYouTubeRemote
 import java.io.File
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
@@ -34,6 +40,13 @@ object TvState {
     @Volatile var playingOn: TvDevice? = null
     @Volatile var paused = false
 
+    /** A YouTube video playing in the TV's own YouTube app, filtered from the phone. */
+    @Volatile var youtubeTitle: String? = null
+    @Volatile var youtubeOn: String? = null
+    @Volatile var youtubeStatus: String = ""
+    /** Why the last YouTube filtering ended, to show once. */
+    @Volatile var youtubeEnded: String? = null
+
     private val main = Handler(Looper.getMainLooper())
     val listeners = CopyOnWriteArraySet<() -> Unit>()
 
@@ -41,9 +54,10 @@ object TvState {
 }
 
 /**
- * Keeps the TV work going with the phone's screen off: making a clean copy, and handing a
- * clean copy to the TV while it plays. The TV fetches the video from the phone as it goes, so
- * the phone has to stay on the Wi-Fi, but it can be locked and in a pocket.
+ * Keeps the TV work going with the phone's screen off: making a clean copy, handing a clean copy
+ * to the TV while it plays, and filtering a YouTube video playing in the TV's own YouTube app. The
+ * TV fetches a clean copy from the phone as it goes, so the phone has to stay on the Wi-Fi, but it
+ * can be locked and in a pocket.
  */
 @UnstableApi
 class TvService : Service() {
@@ -56,6 +70,8 @@ class TvService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
     private var servingSince = 0L
     private var servingFile: File? = null
+    private var remote: TvYouTubeRemote? = null
+    private var remoteRound = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -69,6 +85,8 @@ class TvService : Service() {
                     intent.getStringExtra(EXTRA_LOCATION).orEmpty(), intent.getStringExtra(EXTRA_CONTROL).orEmpty()))
             ACTION_PAUSE -> pauseOrResume()
             ACTION_STOP -> stopPlaying(tellTv = true)
+            ACTION_YOUTUBE -> startYouTube(intent)
+            ACTION_YOUTUBE_STOP -> stopYouTube(null)
         }
         return START_NOT_STICKY
     }
@@ -198,6 +216,90 @@ class TvService : Service() {
         finishIfIdle()
     }
 
+    // ---- YouTube in the TV's own app ----
+
+    private fun startYouTube(intent: Intent) {
+        // A video already being filtered on the TV gives way to the new one.
+        remote?.let { old -> remoteRound++; old.stop(); remote = null }
+        val screen = LoungeScreen(intent.getStringExtra(EXTRA_SCREEN) ?: return, intent.getStringExtra(EXTRA_TOKEN).orEmpty(),
+            intent.getStringExtra(EXTRA_NAME).orEmpty().ifEmpty { "TV" })
+        val videoId = intent.getStringExtra(EXTRA_VIDEO) ?: return
+        val title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifEmpty { "YouTube video" }
+        val follower = TvYouTubeFollower(videoId, YouTubeTv.rangesFromJson(intent.getStringExtra(EXTRA_MUTE)),
+            YouTubeTv.rangesFromJson(intent.getStringExtra(EXTRA_SKIPS)))
+        val round = ++remoteRound
+        TvState.youtubeTitle = title
+        TvState.youtubeOn = screen.name
+        TvState.youtubeStatus = "Connecting to ${screen.name}…"
+        TvState.youtubeEnded = null
+        TvState.changed()
+        val r = TvYouTubeRemote(LoungeClient(), screen, follower, intent.getLongExtra(EXTRA_AT, 0),
+            hideCaptions = !Prefs.showCaptions(this),
+            listener = object : TvYouTubeListener {
+                override fun status(text: String) {
+                    ui.post {
+                        if (round != remoteRound) return@post
+                        TvState.youtubeStatus = text
+                        TvState.changed()
+                        refresh()
+                    }
+                }
+
+                override fun finished(reason: String) {
+                    ui.post {
+                        if (round != remoteRound) return@post
+                        FilterLog.add("YouTube on TV ended: $reason")
+                        endYouTube(reason)
+                    }
+                }
+            },
+            onNewToken = { YouTubeTv.save(applicationContext, it) })
+        remote = r
+        hold()
+        refresh()
+        FilterLog.add("YouTube on TV: $title on ${screen.name}, ${follower.timeline.count} stretches to mute")
+        Thread({
+            try {
+                r.run()
+            } catch (e: Exception) {
+                Log.i("SafeWatch", "YouTube on TV stopped", e)
+                ui.post { if (round == remoteRound) endYouTube("Stopped: ${e.message}") }
+            }
+        }, "EdenOS YouTube on TV").start()
+    }
+
+    private fun stopYouTube(reason: String?) {
+        val r = remote ?: return
+        remoteRound++
+        r.stop()
+        endYouTube(reason)
+    }
+
+    private fun endYouTube(reason: String?) {
+        remote?.stop()
+        remote = null
+        TvState.youtubeTitle = null
+        TvState.youtubeOn = null
+        TvState.youtubeStatus = ""
+        TvState.youtubeEnded = reason
+        TvState.changed()
+        if (reason != null) notifyEnded(reason)
+        refresh()
+        finishIfIdle()
+    }
+
+    private fun notifyEnded(reason: String) {
+        val note = Notification.Builder(this, channel(this))
+            .setSmallIcon(R.drawable.ic_cast)
+            .setContentTitle("YouTube on TV")
+            .setContentText(reason)
+            .setStyle(Notification.BigTextStyle().bigText(reason))
+            .setAutoCancel(true)
+            .setContentIntent(PendingIntent.getActivity(this, 2, Intent(this, TvActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
+            .build()
+        try { getSystemService(NotificationManager::class.java).notify(ENDED_ID, note) } catch (e: SecurityException) { /* notifications not allowed */ }
+    }
+
     // ---- Staying awake, and the notification that says so ----
 
     private fun hold() {
@@ -212,23 +314,34 @@ class TvService : Service() {
         }
     }
 
+    /**
+     * Stops the service once nothing is left to do. Looked at a moment later, so that work which ends
+     * one thing to start the next (a new video for the TV) does not stop the service in between.
+     */
     private fun finishIfIdle() {
-        if (making != null || server != null) return
-        try { awake?.release() } catch (e: Exception) { /* already released */ }
-        awake = null
-        try { wifiLock?.release() } catch (e: Exception) { /* already released */ }
-        wifiLock = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        ui.post {
+            if (making != null || server != null || remote != null) return@post
+            try { awake?.release() } catch (e: Exception) { /* already released */ }
+            awake = null
+            try { wifiLock?.release() } catch (e: Exception) { /* already released */ }
+            wifiLock = null
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     private fun refresh() {
-        if (making == null && server == null) return
+        if (making == null && server == null && remote == null) return
         val text = when {
             server != null -> (if (TvState.paused) "Paused on " else "Playing on ") + (TvState.playingOn?.name ?: "TV")
+            making == null && remote != null -> TvState.youtubeStatus
             else -> TvState.job?.let { it.step + if (it.percent >= 0) " ${it.percent}%" else "" } ?: "Working"
         }
-        val title = if (server != null) TvState.playingTitle ?: "EdenOS" else "Clean copy: ${TvState.job?.title ?: ""}"
+        val title = when {
+            server != null -> TvState.playingTitle ?: "EdenOS"
+            making == null && remote != null -> TvState.youtubeTitle ?: "YouTube on TV"
+            else -> "Clean copy: ${TvState.job?.title ?: ""}"
+        }
         val builder = Notification.Builder(this, channel(this))
             .setSmallIcon(R.drawable.ic_cast)
             .setContentTitle(title)
@@ -237,16 +350,17 @@ class TvService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, TvActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
         val percent = TvState.job?.percent ?: -1
-        if (server == null) builder.setProgress(100, percent.coerceAtLeast(0), percent < 0)
+        if (server == null && making != null) builder.setProgress(100, percent.coerceAtLeast(0), percent < 0)
         if (server != null) {
             builder.addAction(Notification.Action.Builder(null, if (TvState.paused) "Play" else "Pause", action(ACTION_PAUSE)).build())
             builder.addAction(Notification.Action.Builder(null, "Stop", action(ACTION_STOP)).build())
-        } else {
+        } else if (making != null) {
             builder.addAction(Notification.Action.Builder(null, "Stop", action(ACTION_CANCEL)).build())
         }
+        if (remote != null) builder.addAction(Notification.Action.Builder(null, "Stop filtering YouTube", action(ACTION_YOUTUBE_STOP)).build())
         var types = 0
         if (making != null) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        if (server != null) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        if (server != null || remote != null) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTE_ID, builder.build(), types) else startForeground(NOTE_ID, builder.build())
         } catch (e: Exception) {
@@ -271,6 +385,8 @@ class TvService : Service() {
     override fun onDestroy() {
         server?.stop()
         server = null
+        remote?.stop()
+        remote = null
         making?.cancelled = true
         worker.shutdown()
         control.shutdown()
@@ -283,6 +399,8 @@ class TvService : Service() {
         private const val ACTION_PLAY = "play"
         private const val ACTION_PAUSE = "pause"
         private const val ACTION_STOP = "stop"
+        private const val ACTION_YOUTUBE = "youtube"
+        private const val ACTION_YOUTUBE_STOP = "youtubeStop"
         private const val EXTRA_SOURCE = "source"
         private const val EXTRA_FILE = "file"
         private const val EXTRA_TITLE = "title"
@@ -290,8 +408,15 @@ class TvService : Service() {
         private const val EXTRA_NAME = "name"
         private const val EXTRA_LOCATION = "location"
         private const val EXTRA_CONTROL = "control"
+        private const val EXTRA_SCREEN = "screen"
+        private const val EXTRA_TOKEN = "token"
+        private const val EXTRA_VIDEO = "video"
+        private const val EXTRA_AT = "at"
+        private const val EXTRA_MUTE = "mute"
+        private const val EXTRA_SKIPS = "skips"
         private const val NOTE_ID = 7
         private const val DONE_ID = 8
+        private const val ENDED_ID = 9
         private const val IDLE_MS = 30 * 60_000L
 
         private fun channel(ctx: Context): String {
@@ -319,5 +444,14 @@ class TvService : Service() {
         fun pauseOrResume(ctx: Context) = ctx.startService(Intent(ctx, TvService::class.java).setAction(ACTION_PAUSE))
 
         fun stop(ctx: Context) = ctx.startService(Intent(ctx, TvService::class.java).setAction(ACTION_STOP))
+
+        /** Plays a YouTube video in the TV's own YouTube app and filters it from the phone. */
+        fun youtube(ctx: Context, video: YouTubeTv.Video, screen: LoungeScreen) = start(ctx, Intent(ctx, TvService::class.java)
+            .setAction(ACTION_YOUTUBE).putExtra(EXTRA_SCREEN, screen.screenId).putExtra(EXTRA_TOKEN, screen.token)
+            .putExtra(EXTRA_NAME, screen.name).putExtra(EXTRA_VIDEO, video.id).putExtra(EXTRA_TITLE, video.title)
+            .putExtra(EXTRA_AT, video.atMs).putExtra(EXTRA_MUTE, YouTubeTv.rangesToJson(video.mute))
+            .putExtra(EXTRA_SKIPS, YouTubeTv.rangesToJson(video.skips)))
+
+        fun stopYouTube(ctx: Context) = ctx.startService(Intent(ctx, TvService::class.java).setAction(ACTION_YOUTUBE_STOP))
     }
 }

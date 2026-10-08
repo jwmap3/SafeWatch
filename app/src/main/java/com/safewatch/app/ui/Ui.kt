@@ -542,7 +542,7 @@ object Ui {
      * itself while the phone is locked. Only whole video files can be copied: [source] is null for
      * videos that stream in pieces (the paid services, YouTube), and [whyNot] says why.
      */
-    fun sendToTv(activity: Activity, source: com.safewatch.app.tv.CleanSource? = null, whyNot: String? = null) {
+    fun sendToTv(activity: Activity, source: com.safewatch.app.tv.CleanSource? = null, whyNot: String? = null, youtube: (() -> Unit)? = null) {
         val list = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(activity, 8), 0, dp(activity, 8)) }
         var dialog: android.app.Dialog? = null
         fun option(title: String, detail: String, enabled: Boolean = true, onClick: () -> Unit) {
@@ -566,6 +566,10 @@ object Ui {
                 setOnClickListener { dialog?.dismiss(); onClick() }
             })
         }
+        if (youtube != null) {
+            option("YouTube on TV", "Plays in your TV's own YouTube app, with the cursing muted from your phone. Nothing to download; " +
+                "your phone can be locked.") { youtube() }
+        }
         option("Mirror to TV", "Shows this screen on the TV, filters included. Works with everything; keep the phone on.") {
             AlertDialog.Builder(activity)
                 .setTitle("Mirror to TV")
@@ -576,7 +580,9 @@ object Ui {
                 .setNegativeButton("Cancel", null)
                 .show()
         }
-        if (source != null) {
+        if (youtube != null) {
+            // YouTube videos cannot be saved, and YouTube on TV does the job without saving anything.
+        } else if (source != null) {
             option("Clean copy to TV", "Makes a copy with the cursing muted and nudity blurred, for your Roku or smart TV to play by itself. " +
                 "Your phone can be locked while it plays.") {
                 com.safewatch.app.tv.TvService.prepare(activity, source)

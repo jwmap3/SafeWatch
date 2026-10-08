@@ -40,9 +40,8 @@ class TvActivity : AppCompatActivity() {
         })
         column.addView(Ui.largeTitle(this, "TV"))
         column.addView(Ui.subtitle(this,
-            "A clean copy is the video with the filtering built in. Your Roku or smart TV plays it by itself, so your phone " +
-                "can be locked while it plays. Keep the phone on the Wi-Fi: the TV fetches the video from it. Each copy is for " +
-                "one viewing: it deletes itself once it has played through, or after a day."))
+            "Two ways to watch on the TV with your phone locked: YouTube plays in the TV's own YouTube app with EdenOS muting " +
+                "it from the phone, and other videos go as a clean copy, the video with the filtering built in."))
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(body)
         setContentView(page)
@@ -65,6 +64,7 @@ class TvActivity : AppCompatActivity() {
 
     private fun show() {
         body.removeAllViews()
+        showYouTube()
         val playing = TvState.playingOn
         if (playing != null) {
             body.addView(Ui.sectionHeader(this, "On the TV"))
@@ -116,6 +116,9 @@ class TvActivity : AppCompatActivity() {
 
         val copies = CleanCopy.all(this)
         body.addView(Ui.sectionHeader(this, "Clean copies"))
+        body.addView(Ui.caption(this,
+            "Your Roku or smart TV plays a clean copy by itself. Keep the phone on the Wi-Fi: the TV fetches the video from it. " +
+                "Each copy is for one viewing: it deletes itself once it has played through, or after a day."))
         if (copies.isEmpty()) {
             body.addView(Ui.caption(this,
                 "None yet. While watching a video file or a website's video, tap Send to TV, then Clean copy to TV. " +
@@ -150,6 +153,61 @@ class TvActivity : AppCompatActivity() {
                 })
             }
         })
+    }
+
+    /** YouTube in the TV's own app: what is playing, and the TV it is linked to. */
+    private fun showYouTube() {
+        val title = TvState.youtubeTitle
+        if (title != null) {
+            body.addView(Ui.sectionHeader(this, "YouTube on ${TvState.youtubeOn ?: "the TV"}"))
+            body.addView(Ui.card(this).apply {
+                addView(Ui.row(this@TvActivity, title, chevron = false))
+                addView(Ui.divider(this@TvActivity))
+                addView(TextView(context).apply {
+                    text = TvState.youtubeStatus
+                    textSize = 15f
+                    setTextColor(Ui.color(context, R.color.text_secondary))
+                    setPadding(Ui.dp(context, 16), Ui.dp(context, 12), Ui.dp(context, 16), Ui.dp(context, 12))
+                })
+                addView(Ui.divider(this@TvActivity))
+                addView(Ui.row(this@TvActivity, "Stop filtering", chevron = false) { TvService.stopYouTube(this@TvActivity) })
+            })
+            body.addView(Ui.caption(this,
+                "Use the TV's own remote to pause, rewind or change the volume. If a different video is started on the TV, " +
+                    "EdenOS stops filtering, since it has not read that video's captions."))
+        } else TvState.youtubeEnded?.let { reason ->
+            body.addView(Ui.sectionHeader(this, "YouTube on the TV"))
+            body.addView(Ui.card(this).apply {
+                addView(TextView(context).apply {
+                    text = reason
+                    textSize = 15f
+                    setTextColor(Ui.color(context, R.color.text))
+                    setPadding(Ui.dp(context, 16), Ui.dp(context, 12), Ui.dp(context, 16), Ui.dp(context, 12))
+                })
+                addView(Ui.divider(this@TvActivity))
+                addView(Ui.row(this@TvActivity, "Dismiss", chevron = false) { TvState.youtubeEnded = null; show() })
+            })
+        }
+        val linked = YouTubeTv.linked(this)
+        body.addView(Ui.sectionHeader(this, "Your TV's YouTube"))
+        body.addView(Ui.card(this).apply {
+            if (linked == null) {
+                addView(Ui.row(this@TvActivity, "Link with TV code", "Not linked") { YouTubeTv.link(this@TvActivity) { show() } })
+            } else {
+                addView(Ui.row(this@TvActivity, linked.name, "Linked", chevron = false))
+                addView(Ui.divider(this@TvActivity))
+                addView(Ui.row(this@TvActivity, "Link a different TV") { YouTubeTv.link(this@TvActivity) { show() } })
+                addView(Ui.divider(this@TvActivity))
+                addView(Ui.row(this@TvActivity, "Unlink", chevron = false) {
+                    AlertDialog.Builder(this@TvActivity).setMessage("Unlink ${linked.name}?")
+                        .setPositiveButton("Unlink") { _, _ -> YouTubeTv.unlink(this@TvActivity); show() }
+                        .setNegativeButton("Cancel", null).show()
+                })
+            }
+        })
+        body.addView(Ui.caption(this,
+            "On the TV, open YouTube, then Settings > Link with TV code. Then, while a YouTube video plays in EdenOS, tap " +
+                "Send to TV > YouTube on TV, or tap Play on TV on a video's page."))
     }
 
     private fun choose(copy: CleanCopyFile) {

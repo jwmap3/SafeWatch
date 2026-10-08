@@ -96,9 +96,14 @@ class VideoActivity : AppCompatActivity() {
             setTextColor(Ui.color(context, R.color.text_secondary))
             setPadding(side, Ui.dp(context, 4), side, 0)
         })
-        column.addView(FrameLayout(this).apply {
+        column.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             setPadding(side, Ui.dp(context, 16), side, 0)
-            addView(Ui.actionButton(context, "Play", iconRes = R.drawable.ic_play) { play() })
+            addView(Ui.actionButton(context, "Play", iconRes = R.drawable.ic_play) { play() }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(Ui.actionButton(context, "Play on TV", filled = false, iconRes = R.drawable.ic_cast) {
+                Sounds.play(this@VideoActivity, Sounds.PLAY)
+                WatchActivity.playOnTv(this@VideoActivity, video.id, video.title)
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = Ui.dp(context, 10) })
         })
 
         details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }

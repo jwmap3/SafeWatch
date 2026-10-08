@@ -596,3 +596,202 @@ high/index.m3u8
         assertEquals(null, StreamInfo.kindOf("<html>not a manifest</html>"))
     }
 }
+
+class YouTubeLoungeTest {
+    @Test fun readsTheTvsMessages() {
+        val json = com.safewatch.core.tv.MiniJson.parse("""{"a":[1,2.5,-3e2],"b":"x\"yé\n","c":true,"d":null,"e":{}}""") as Map<*, *>
+        assertEquals(listOf(1.0, 2.5, -300.0), json["a"])
+        assertEquals("x\"yé\n", json["b"])
+        assertEquals(true, json["c"])
+        assertTrue(json.containsKey("d") && json["d"] == null)
+        // Chunks: a length line, then the JSON, which may run over several lines.
+        val chunk1 = """[[0,["c","SID1","",8]
+],[1,["S","GS1"]]]"""
+        val chunk2 = """[[2,["onStateChange",{"currentTime":"12.5","state":"1"}]]]"""
+        val text = "${chunk1.length}\n$chunk1\n${chunk2.length}\n$chunk2\n"
+        val got = ArrayList<com.safewatch.core.tv.LoungeMessages.Event>()
+        com.safewatch.core.tv.LoungeMessages.read(java.io.BufferedReader(java.io.StringReader(text))) { got += it }
+        assertEquals(listOf("c", "S", "onStateChange"), got.map { it.name })
+        assertEquals("SID1", got[0].args[0])
+        assertEquals("12.5", got[2].data["currentTime"])
+        assertEquals(2L, got[2].id)
+    }
+
+    @Test fun muteTimesMergeAndComeEarly() {
+        val t = com.safewatch.core.tv.TvMuteTimeline(listOf(1000L..2000L, 1800L..2600L, 5000L..5500L), leadMs = 400)
+        assertEquals(2, t.count)
+        assertFalse(t.mutedAt(500))
+        assertTrue(t.mutedAt(650))   // 400 ms early
+        assertTrue(t.mutedAt(2500))
+        assertFalse(t.mutedAt(2700))
+        assertEquals(1000, t.untilChange(3000, 1000))
+        assertTrue(t.untilChange(4500, 1000) in 100..150)
+    }
+
+    @Test fun followsTheTvBetweenItsReports() {
+        var now = 10_000L
+        val f = com.safewatch.core.tv.TvYouTubeFollower("abc", listOf(5000L..6000L), listOf(9000L..12000L)) { now }
+        fun event(name: String, vararg data: Pair<String, String>) = f.take(com.safewatch.core.tv.LoungeMessages.Event(1, name, listOf(mapOf(*data))))
+        event("nowPlaying", "videoId" to "abc", "currentTime" to "4", "state" to "1")
+        assertEquals(4000, f.positionMs())
+        now += 500
+        assertEquals(4500, f.positionMs())
+        assertTrue(f.shouldMute()) // the stretch at 5 s is within the lead
+        event("onStateChange", "currentTime" to "4.6", "state" to "2")
+        now += 10_000
+        assertEquals(4600, f.positionMs()) // paused: the clock does not move it
+        event("onStateChange", "currentTime" to "8.5", "state" to "1")
+        assertFalse(f.shouldMute())
+        assertEquals(12000L, f.skipTo())
+        event("nowPlaying", "videoId" to "zzz", "currentTime" to "1", "state" to "1")
+        assertEquals("zzz", f.otherVideo)
+        assertFalse(f.shouldMute())
+    }
+
+    @Test fun linksATvAndKeepsItsVideoClean() {
+        val tv = FakeLounge().apply { start() }
+        try {
+            val client = com.safewatch.core.tv.LoungeClient(tv.base)
+            val wrong = runCatching { client.pair("999 999 999 999") }.exceptionOrNull() as com.safewatch.core.tv.LoungeException
+            assertEquals(404, wrong.status)
+            val screen = client.pair("123 456 789 012")
+            assertEquals("Living Room TV", screen.name)
+            assertEquals("tok1", screen.token)
+
+            tv.token = "tok2" // the link has run out since: the remote must renew it by itself
+            var renewed: com.safewatch.core.tv.LoungeScreen? = null
+            val follower = com.safewatch.core.tv.TvYouTubeFollower("abc123", listOf(1500L..2500L), listOf(4000L..6000L))
+            val said = java.util.Collections.synchronizedList(ArrayList<String>())
+            val remote = com.safewatch.core.tv.TvYouTubeRemote(client, screen, follower, startAtMs = 0, hideCaptions = true,
+                listener = object : com.safewatch.core.tv.TvYouTubeListener {
+                    override fun status(text: String) { said += text }
+                    override fun finished(reason: String) { said += "finished: $reason" }
+                }, onNewToken = { renewed = it })
+            val runner = Thread { remote.run() }.apply { start() }
+            Thread.sleep(5200)
+            remote.stop()
+            runner.join(3000)
+            assertEquals("tok2", renewed?.token)
+            val names = tv.commands.map { it.second["req0__sc"] }
+            assertEquals("setAutoplayMode", names[0])
+            assertEquals("setPlaylist", names[1])
+            assertEquals("abc123", tv.commands[1].second["req0_videoId"])
+            assertTrue("setSubtitlesTrack" in names)
+            fun at(name: String, muted: String? = null) = tv.commands.first { it.second["req0__sc"] == name && (muted == null || it.second["req0_muted"] == muted) }.first - tv.startedAt
+            // The mute goes out ahead of 1.5 s, the sound comes back near 2.5 s, and the jump past 4 s goes out ahead of it.
+            assertTrue(at("setVolume", "true") in 600..1200, "mute at ${at("setVolume", "true")}")
+            assertTrue(at("setVolume", "false") in 2100..2600, "unmute at ${at("setVolume", "false")}")
+            assertEquals("40", tv.commands.first { it.second["req0__sc"] == "setVolume" }.second["req0_volume"])
+            assertTrue(at("seekTo") in 3200..3800, "jump at ${at("seekTo")}")
+            assertEquals("6.0", tv.commands.first { it.second["req0__sc"] == "seekTo" }.second["req0_newTime"])
+            assertTrue(said.any { it.startsWith("Filtering on Living Room TV") }, said.toString())
+            assertTrue(tv.terminated)
+        } finally {
+            tv.stop()
+        }
+    }
+}
+
+/** A stand-in for YouTube's TV remote service and a TV on it, enough to test against. */
+class FakeLounge {
+    private val server = java.net.ServerSocket(0)
+    val base get() = "http://127.0.0.1:${server.localPort}/api/lounge"
+    val commands = java.util.Collections.synchronizedList(ArrayList<Pair<Long, Map<String, String>>>())
+    @Volatile var token = "tok1"
+    @Volatile var playingAt = 0L
+    /** When the video first started playing, in the stand-in's own milliseconds. */
+    @Volatile var startedAt = 0L
+    @Volatile var terminated = false
+    private val queue = java.util.concurrent.LinkedBlockingQueue<String>()
+    private var nextId = 10
+    private val start = System.nanoTime()
+    private fun now() = (System.nanoTime() - start) / 1_000_000
+
+    fun start() {
+        Thread {
+            while (!server.isClosed) {
+                val s = try { server.accept() } catch (e: Exception) { break }
+                Thread { try { handle(s) } catch (e: Exception) { /* the client went away */ } }.start()
+            }
+        }.start()
+    }
+
+    fun stop() = server.close()
+
+    private fun str(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    private fun obj(vararg kv: Pair<String, String>) = kv.joinToString(",", "{", "}") { str(it.first) + ":" + str(it.second) }
+
+    @Synchronized private fun chunk(vararg events: String): String {
+        val json = events.joinToString(",", "[", "]") { "[${nextId++},$it]" }
+        return "${json.length}\n$json\n"
+    }
+
+    private fun event(name: String, vararg kv: Pair<String, String>) = queue.put(chunk("[${str(name)},${obj(*kv)}]"))
+
+    private fun parse(text: String): Map<String, String> = text.split('&').filter { it.contains('=') }.associate {
+        java.net.URLDecoder.decode(it.substringBefore('='), "UTF-8") to java.net.URLDecoder.decode(it.substringAfter('='), "UTF-8")
+    }
+
+    private fun position(): String = String.format(java.util.Locale.US, "%.3f", (now() - playingAt) / 1000.0)
+
+    private fun handle(s: java.net.Socket) = s.use {
+        val input = java.io.BufferedInputStream(s.getInputStream())
+        val head = StringBuilder()
+        while (!head.endsWith("\r\n\r\n")) { val b = input.read(); if (b < 0) return; head.append(b.toChar()) }
+        val (method, target) = head.lines().first().split(" ").let { it[0] to it[1] }
+        val length = Regex("(?i)content-length: *(\\d+)").find(head)?.groupValues?.get(1)?.toInt() ?: 0
+        val form = parse(String(input.readNBytes(length)))
+        val path = target.substringBefore('?')
+        val query = parse(target.substringAfter('?', ""))
+        val out = s.getOutputStream()
+        fun reply(status: String, text: String) =
+            out.write("HTTP/1.1 $status\r\nContent-Type: text/plain\r\nContent-Length: ${text.toByteArray().size}\r\nConnection: close\r\n\r\n$text".toByteArray())
+        when {
+            path.endsWith("/pairing/get_screen") ->
+                if (form["pairing_code"] == "123456789012") reply("200 OK", """{"screen":{"screenId":"scr1","loungeToken":"tok1","name":"Living Room TV"}}""")
+                else reply("404 Not Found", "")
+            path.endsWith("/pairing/get_lounge_token_batch") -> reply("200 OK", """{"screens":[{"screenId":"scr1","loungeToken":"$token"}]}""")
+            path.endsWith("/pairing/get_screen_availability") -> reply("200 OK", """{"screens":[{"status":"online"}]}""")
+            method == "POST" && query["RID"] == "1" -> {
+                if (form["loungeIdToken"] != token) { reply("401 Unauthorized", "Expired"); return }
+                val devices = """[{"type":"LOUNGE_SCREEN","name":"Living Room TV","deviceInfo":"{\"clientName\":\"TVHTML5\"}"}]"""
+                reply("200 OK", chunk("""["c","SID1","",8]""", """["S","GS1"]""", "[\"loungeStatus\",${obj("devices" to devices)}]",
+                    "[\"onVolumeChanged\",${obj("volume" to "40", "muted" to "false")}]"))
+            }
+            method == "GET" -> {
+                if (query["SID"] != "SID1" || query["gsessionid"] != "GS1") { reply("400 Unknown SID", "Unknown SID"); return }
+                out.write("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n".toByteArray())
+                out.flush()
+                val until = now() + 2500 // ends the wait now and then, as YouTube does
+                while (now() < until) {
+                    val next = queue.poll(50, java.util.concurrent.TimeUnit.MILLISECONDS) ?: continue
+                    out.write(next.toByteArray())
+                    out.flush()
+                }
+            }
+            method == "POST" && form["TYPE"] == "terminate" -> { terminated = true; reply("200 OK", "") }
+            method == "POST" -> {
+                commands += now() to form
+                when (form["req0__sc"]) {
+                    "setPlaylist" -> {
+                        playingAt = now() + 100
+                        startedAt = playingAt
+                        Thread {
+                            Thread.sleep(100)
+                            event("nowPlaying", "videoId" to form["req0_videoId"].orEmpty(), "currentTime" to "0", "state" to "1")
+                        }.start()
+                    }
+                    "setVolume" -> event("onVolumeChanged", "volume" to form["req0_volume"].orEmpty(), "muted" to form["req0_muted"].orEmpty())
+                    "seekTo" -> {
+                        val to = form["req0_newTime"]!!.toDouble()
+                        playingAt = now() - (to * 1000).toLong()
+                        event("onStateChange", "currentTime" to form["req0_newTime"]!!, "state" to "1")
+                    }
+                    "getNowPlaying" -> event("nowPlaying", "videoId" to "abc123", "currentTime" to position(), "state" to "1")
+                }
+                reply("200 OK", "ok")
+            }
+            else -> reply("404 Not Found", "")
+        }
+    }
+}
