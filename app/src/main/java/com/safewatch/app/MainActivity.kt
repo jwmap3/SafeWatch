@@ -110,6 +110,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        SafeWatchApp.showLastCrash(this)
         home.refresh()
         if (tab == TAB_FILTERS) filters.onShown()
     }

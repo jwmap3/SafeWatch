@@ -67,103 +67,91 @@ class HomeScreen(private val activity: MainActivity) {
         showScrubbed()
     }
 
+    /** Your Scrubbed Movies, as a shelf like the others: one tile for each being scrubbed, waiting, ready or not made. */
     private fun showScrubbed() {
         val ctx = activity
         scrubbed.removeAllViews()
         val tv = com.safewatch.app.tv.TvState
         val job = tv.job
         val making = job?.takeIf { it.made == null && it.error == null }
-        val failed = job?.takeIf { it.error != null }
-        val queued = tv.queued
-        val ready = com.safewatch.app.tv.CleanCopy.all(ctx).take(8)
+        val failed = job?.takeIf { it.error != null }?.let { it.title to it.error.orEmpty() } ?: tv.lastFailure(ctx)
+        val ready = com.safewatch.app.tv.CleanCopy.all(ctx).take(12)
         scrubbed.addView(Ui.shelfTitle(ctx, "Your Scrubbed Movies"))
-        val card = Ui.card(ctx)
-        val lastFailure = if (failed == null) com.safewatch.app.tv.TvState.lastFailure(ctx) else null
-        if (making == null && failed == null && queued.isEmpty() && ready.isEmpty() && lastFailure == null) {
-            card.addView(TextView(ctx).apply {
-                text = "Nothing yet. While a movie plays, tap Superclean at the top of the player: it is downloaded and scrubbed " +
-                    "here in the background, and shows up here as it goes."
-                textSize = 14f
-                setTextColor(Ui.color(ctx, R.color.text_secondary))
-                setPadding(Ui.dp(ctx, 16), Ui.dp(ctx, 14), Ui.dp(ctx, 16), Ui.dp(ctx, 14))
-            })
+        val strip = LinearLayout(ctx).apply { setPadding(Ui.dp(ctx, 20), 0, Ui.dp(ctx, 10), 0) }
+
+        fun badge(text: String, colour: Int) = TextView(ctx).apply {
+            this.text = text
+            textSize = 11f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(android.graphics.Color.WHITE)
+            background = Ui.rounded(colour, Ui.dp(ctx, 6).toFloat())
+            setPadding(Ui.dp(ctx, 6), Ui.dp(ctx, 2), Ui.dp(ctx, 6), Ui.dp(ctx, 2))
         }
-        lastFailure?.let { (title, error) ->
-            card.addView(Ui.row(ctx, title, "Not made") {
-                android.app.AlertDialog.Builder(ctx).setTitle(title).setMessage(error)
-                    .setPositiveButton("Dismiss") { _, _ -> com.safewatch.app.tv.TvState.clearFailure(ctx); showScrubbed() }
-                    .setNegativeButton("Close", null).show()
+        fun tile(title: String, status: String, colour: Int, under: String?, progress: Int? = null, onClick: () -> Unit) {
+            val poster = Ui.poster(ctx, title, null, 118, onClick)
+            poster.addView(badge(status, colour), FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
+                leftMargin = Ui.dp(ctx, 6); topMargin = Ui.dp(ctx, 6)
             })
-        }
-        fun gap() { if (card.childCount > 0) card.addView(Ui.divider(ctx)) }
-        if (making != null) {
-            card.addView(LinearLayout(ctx).apply {
+            if (progress != null) poster.addView(android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+                isIndeterminate = progress < 0
+                max = 100
+                this.progress = progress.coerceAtLeast(0)
+                progressTintList = android.content.res.ColorStateList.valueOf(Ui.color(ctx, R.color.accent))
+                indeterminateTintList = progressTintList
+            }, FrameLayout.LayoutParams(-1, Ui.dp(ctx, 10), Gravity.BOTTOM).apply {
+                leftMargin = Ui.dp(ctx, 6); rightMargin = Ui.dp(ctx, 6); bottomMargin = Ui.dp(ctx, 4)
+            })
+            strip.addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(Ui.dp(ctx, 16), Ui.dp(ctx, 14), Ui.dp(ctx, 16), Ui.dp(ctx, 12))
-                addView(LinearLayout(ctx).apply {
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(TextView(ctx).apply {
-                        text = making.title
-                        textSize = 17f
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                        setTextColor(Ui.color(ctx, R.color.text))
-                    }, LinearLayout.LayoutParams(0, -2, 1f))
-                    addView(TextView(ctx).apply {
-                        text = if (making.percent >= 0) "${making.percent}%" else ""
-                        textSize = 17f
-                        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                        setTextColor(Ui.color(ctx, R.color.accent))
-                    })
-                })
-                addView(android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
-                    isIndeterminate = making.percent < 0
-                    max = 100
-                    progress = making.percent.coerceAtLeast(0)
-                    progressTintList = android.content.res.ColorStateList.valueOf(Ui.color(ctx, R.color.accent))
-                    indeterminateTintList = progressTintList
-                }, LinearLayout.LayoutParams(-1, Ui.dp(ctx, 14)).apply { topMargin = Ui.dp(ctx, 6) })
-                addView(TextView(ctx).apply {
-                    text = making.step
-                    textSize = 13f
+                addView(poster)
+                if (under != null) addView(TextView(ctx).apply {
+                    text = under
+                    textSize = 11f
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
                     setTextColor(Ui.color(ctx, R.color.text_secondary))
-                })
-            })
-            card.addView(Ui.divider(ctx))
-            card.addView(Ui.row(ctx, "Stop", chevron = false) {
-                android.app.AlertDialog.Builder(ctx).setMessage("Stop scrubbing ${making.title}?")
-                    .setPositiveButton("Stop") { _, _ -> com.safewatch.app.tv.TvService.cancel(ctx) }
-                    .setNegativeButton("Keep going", null).show()
-            })
+                    setPadding(0, Ui.dp(ctx, 4), 0, 0)
+                }, LinearLayout.LayoutParams(Ui.dp(ctx, 118), -2))
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = Ui.dp(ctx, 10) })
         }
-        for (title in queued) {
-            gap()
-            card.addView(Ui.row(ctx, title, "Waiting") {
+
+        val accent = Ui.color(ctx, R.color.accent)
+        if (making != null) {
+            tile(making.title, if (making.percent >= 0) "${making.percent}%" else "Starting", accent, making.step, making.percent) {
+                android.app.AlertDialog.Builder(ctx).setTitle(making.title).setMessage(making.step + if (making.percent >= 0) "  ${making.percent}%" else "")
+                    .setPositiveButton("Keep going", null)
+                    .setNegativeButton("Stop") { _, _ -> com.safewatch.app.tv.TvService.cancel(ctx) }.show()
+            }
+        }
+        for (title in tv.queued) {
+            tile(title, "Waiting", android.graphics.Color.rgb(110, 110, 118), "Next in line") {
                 android.app.AlertDialog.Builder(ctx).setMessage("Take $title off the list?")
                     .setPositiveButton("Take off") { _, _ -> com.safewatch.app.tv.TvService.drop(ctx, title) }
                     .setNegativeButton("Keep", null).show()
-            })
+            }
         }
         if (failed != null) {
-            gap()
-            card.addView(Ui.row(ctx, failed.title, "Not made") {
-                android.app.AlertDialog.Builder(ctx).setTitle(failed.title).setMessage(failed.error)
-                    .setPositiveButton("Dismiss") { _, _ -> tv.job = null; com.safewatch.app.tv.TvState.clearFailure(ctx); showScrubbed() }
+            tile(failed.first, "Not made", android.graphics.Color.rgb(214, 69, 65), "Tap to see why") {
+                android.app.AlertDialog.Builder(ctx).setTitle(failed.first).setMessage(failed.second)
+                    .setPositiveButton("Dismiss") { _, _ -> if (tv.job?.error != null) tv.job = null; tv.clearFailure(ctx); showScrubbed() }
                     .setNegativeButton("Close", null).show()
-            })
+            }
         }
         for (copy in ready) {
-            gap()
-            card.addView(Ui.row(ctx, copy.title, "Ready") { com.safewatch.app.tv.TvActivity.open(ctx) })
+            tile(copy.title, "Ready", accent, "Tap to play on the TV") { com.safewatch.app.tv.TvActivity.open(ctx) }
         }
-        scrubbed.addView(FrameLayout(ctx).apply {
-            setPadding(Ui.dp(ctx, 20), 0, Ui.dp(ctx, 20), 0)
-            addView(card)
+        if (strip.childCount == 0) {
+            tile("Tap Superclean while a movie plays", "Empty", android.graphics.Color.rgb(110, 110, 118), null) {
+                Ui.toast(ctx, "While a movie plays, tap Superclean at the top of the player")
+            }
+        }
+        scrubbed.addView(HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(strip)
         })
     }
 
-    /** Puts Your Scrubbed Movies near the top of Home, wherever the page is drawn from. */
+    /** Puts Your Scrubbed Movies among the shelves, just after the services, wherever the page is drawn from. */
     private fun addScrubbed() {
         (scrubbed.parent as? android.view.ViewGroup)?.removeView(scrubbed)
         column.addView(scrubbed)
@@ -242,8 +230,8 @@ class HomeScreen(private val activity: MainActivity) {
     private fun renderMessage(text: String, retry: Boolean) {
         column.removeAllViews()
         column.addView(header())
-        addScrubbed()
         column.addView(services())
+        addScrubbed()
         column.addView(TextView(activity).apply {
             this.text = text
             textSize = 15f
@@ -267,9 +255,9 @@ class HomeScreen(private val activity: MainActivity) {
         column.addView(header())
         // A different featured title each day, taken from the first shelf.
         val candidates = shelves.first().titles.filter { it.poster != null }.take(7)
-        addScrubbed()
         if (candidates.isNotEmpty()) column.addView(hero(candidates[(LocalDate.now().toEpochDay() % candidates.size).toInt()]))
         column.addView(services())
+        addScrubbed()
         for (shelf in shelves) {
             column.addView(Ui.shelfTitle(activity, shelf.name))
             val strip = LinearLayout(activity).apply { setPadding(Ui.dp(context, 20), 0, Ui.dp(context, 10), 0) }
