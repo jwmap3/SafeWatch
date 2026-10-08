@@ -58,24 +58,28 @@ tap "Test the blur";      sleep 1
 
 # A film with people in it, opened as a link the way another app would hand one over. It should
 # play in the app's player, turned sideways, and the blur test should hide the picture when faces show.
+# The emulator's browser engine has no decoder for the usual MP4 video, so the film has to be WebM.
 VIDEO=""
 for u in \
-  "https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" \
-  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" \
-  "https://media.w3.org/2010/05/sintel/trailer.mp4" \
-  "https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov"; do
+  "https://media.xiph.org/tearsofsteel/tears_of_steel_1080p.webm" \
+  "https://media.xiph.org/tearsofsteel/tears_of_steel_720p.webm" \
+  "https://media.xiph.org/mango/tears_of_steel_1080p.webm" \
+  "https://media.w3.org/2010/05/sintel/trailer.webm"; do
   code=$(curl -s -o /dev/null -r 0-2000 -m 20 -w '%{http_code}' "$u")
   echo "test film $u answered $code" | tee -a "$OUT/summary.txt"
-  if [ -z "$VIDEO" ] && { [ "$code" = "200" ] || [ "$code" = "206" ]; }; then VIDEO="$u"; fi
+  if [ -z "$VIDEO" ] && { [ "$code" = "200" ] || [ "$code" = "206" ]; }; then VIDEO="$u#t=40"; fi
 done
 if [ -n "$VIDEO" ]; then
   adb shell am start -a android.intent.action.VIEW -d "$VIDEO" -n $PKG/.browser.BrowserActivity > /dev/null
-  shot 14-player 14
+  sleep 4; tap "Got it"
+  shot 14-player 12
   adb shell input tap 1200 540
   shot 14b-player-controls 1
-  shot 14c-player-25s 12
-  shot 14d-player-40s 15
-  shot 14e-player-55s 15
+  shot 14c-player-later 10
+  shot 14d-player-later 12
+  shot 14e-player-later 12
+  adb shell input tap 1200 540; sleep 1
+  tap "Play or pause";    shot 14f-player-paused 2
 fi
 adb logcat -d -s SafeWatch:I > "$OUT/filter-log.txt"; echo "(end of filter log)" >> "$OUT/filter-log.txt"
 

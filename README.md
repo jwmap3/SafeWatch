@@ -1,8 +1,8 @@
 # SafeWatch
 
-A personal Android app for watching your streaming services with the parts you
-don't want removed. It mutes cursing and blurs or skips nudity, using filter
-levels you set once.
+A personal Android app for watching your streaming services and YouTube with
+the parts you don't want removed. It mutes cursing and blurs or skips nudity,
+using filters you set once, and it keeps everything in one layout of its own.
 
 ## Download
 
@@ -14,129 +14,152 @@ installs over the one already on the phone.
 
 ## How it works
 
-**Home** shows a featured title and shelves of what is new on each of your
-services. It refreshes every time the app is opened. Pick your services with
-the Edit button in the row of service names.
+**Welcome.** The first launch asks which services you use and lets you sign in
+to each. You sign in on the service's own page; the sign-in is kept on the
+phone the way a browser keeps it. SafeWatch has no account or server of its
+own and never sees a password.
 
-**Search** finds shows by name and says which service each one is on. Titles on
+**Home** shows a featured title, your services, and shelves of what is popular
+and new on each one. It refreshes every time the app is opened.
+
+**A service's page** (tap its name on Home) shows that service's popular
+shows, new shows and biggest genres as shelves.
+
+**Search** finds shows by name and says which service each is on. Titles on
 your own services come first.
 
 **A title's page** shows its description, a Watch button for the service that
 has it, and every season and episode.
 
-**Watching** happens inside the app. Watch opens the service's own page for
-that title in SafeWatch's built-in browser, which uses the same engine as
-Chrome. For Netflix it opens the player itself. Anything that plays in that
-browser goes through your filters.
+**YouTube** has a tab of its own in the app's layout: shelves for subjects you
+choose, search, and a page per video with the description, what to watch next,
+and comments. Follow a channel from any video's page and its newest videos
+appear on the tab.
 
-**Accounts** are under Settings. Each service has a Sign in row that opens its
-own sign-in page. You sign in once; the sign-in is kept on the phone the way a
-browser keeps it, and the app never sees your password. The row shows "Signed
-in" afterwards.
+**The player.** Watch opens a full-screen player with a title bar instead of
+an address bar. When the video plays the screen turns sideways and only the
+picture is left, with controls that fade out. For YouTube and for links
+straight to a video file, the controls are the app's own: play, back and
+forward ten seconds, and a bar to scrub along. For the streaming services the
+picture is the service's own web player, because the video can only come from
+the service.
 
-**Words** are under Settings > Choose words. Every built-in word is listed
-part-hidden ("Sh*t", "F*ck") with its own switch. The Low, Medium and High
-levels decide which start switched on; anything you change stays as you set
-it. Extra words to mute and Words to allow are still there for anything not
-listed.
+**Browser** is a tab for any other website, filtered the same way. It also
+appears in the phone's "Open with" list, and other browsers can send a page to
+it with their Share button.
 
-**Browser** is a tab of its own for any other website. It also appears in the
-phone's "Open with" list, and other browsers can send a page to it with their
-Share button.
+**Send to TV** opens the phone's screen casting, which reaches Chromecast,
+Roku, Fire TV and most smart TVs, and shows the already filtered picture.
 
-**Send to TV** opens the phone's screen-casting panel. Casting the screen sends
-the already filtered picture and sound.
+**Settings** holds your accounts, the filters, colours and sounds.
 
-**Video files** on the phone can be opened from the bottom of Home.
+- **Language:** Off, Low, Medium or High, a separate blasphemy switch, and
+  "Choose words", which lists every built-in word part-hidden ("Sh*t",
+  "F*ck") with its own switch. Extra words to mute and Words to allow cover
+  anything not listed.
+- **Nudity:** Off, Low, Medium or High, and whether to blur or skip. "Test the
+  blur" blurs faces for two minutes, to see the blur working on any video with
+  people in it.
+- **Appearance:** dark by default, with light and automatic modes, and three
+  colours to choose: primary, background and cards.
+- **Sounds:** a few sets of tap and play sounds, all made for this app. A
+  fourth set unlocks when the logo on Home is tapped seven times.
 
 ## What is filtered automatically
 
 | | Cursing | Nudity |
 |---|---|---|
-| YouTube and ordinary websites | Yes, from captions | Yes, detected live |
+| YouTube | Yes, from captions (the player switches them on) | Yes, detected live |
+| Ordinary websites and video links | Yes, where the video has captions | Yes, detected live |
 | Video files on the phone | Yes, with the film's subtitle file | Yes, live or by scanning the whole film first |
 | Netflix, HBO Max, Prime Video, Disney+, Hulu and similar | Yes, from captions (switch captions on in the player) | Only scenes that have been marked |
 
 The last row is a hard limit, not a missing feature. Those services scramble
 their picture so that only the screen can show it. No app or browser on the
 phone can look at the frames, so nothing can detect what is in them. For those
-services "Mark scene" in the browser lets you mark a scene's start and end
+services "Mark scene" in the player lets you mark a scene's start and end
 once, and the app remembers it for that title.
 
 ## Other limits
 
-- **Playing inside the app.** Services want phone users in their own apps.
-  SafeWatch asks them for their computer website instead, which does play in a
-  browser. Whether each service then plays after you sign in has not been
+- **Playing a service inside the app.** Services want phone users in their own
+  apps. SafeWatch asks them for their computer website instead, which does play
+  in a browser. Whether each service then plays after you sign in has not been
   tested, because that needs a subscription.
+- **Personal rows.** Continue Watching, My List and recommendations made for
+  you are kept private by each service, so the app's own pages cannot show
+  them. They are on the service's site, one tap away with "Open Netflix".
+- **YouTube sign-in.** Google does not allow signing in from inside another
+  app, so the YouTube tab is not your personal feed. Following channels inside
+  SafeWatch stands in for subscriptions.
+- **YouTube's lists** (search, up next, comments) are read from the same
+  requests YouTube's website makes. YouTube does not publish that format and
+  can change it, which would break those lists until the app is updated.
+- **YouTube on some networks** asks visitors to sign in to prove they are not
+  a bot before it plays. That happens on VPNs and data-centre connections.
 - **Episodes.** Catalogs do not give web addresses for single episodes, so
   choosing an episode opens the show's page and you pick the episode there.
-- **Straight to the player** is only set up for Netflix, whose addresses allow
-  it. Other services open on the title's page, where you press play.
+  Straight-to-the-player links are only set up for Netflix.
 - **"Signed in"** is worked out from the service's sign-in cookie where its
-  name is known (Netflix, Prime Video, Hulu, Paramount+, YouTube), and
-  otherwise from having watched a sign-in from Settings go through. It can be
-  wrong after signing out on the service's site.
-- **Google sign-in.** Google often refuses sign-in inside in-app browsers.
-  YouTube plays without signing in.
-- **Live blur in the browser** is checked from the screen, so a blurred picture
-  cannot be re-checked. The blur holds for a few seconds, lifts, and is
-  re-applied if the scene is still going, which can let a brief glimpse through.
+  name is known, and otherwise from having watched a sign-in go through. It can
+  be wrong after signing out on the service's site.
+- **Live blur** is checked from the screen, so a blurred picture cannot be
+  re-checked. The blur holds for a few seconds, lifts, and is re-applied if the
+  scene is still going, which can let a brief glimpse through.
 - **Detection makes mistakes.** Expect some misses and some false alarms.
-- **Wireless casting** of the protected services usually shows a black
-  picture. An HDMI adapter avoids that.
+- **Casting.** Apple TV cannot be reached from an Android phone's screen
+  casting. The protected services usually show a black picture when cast
+  wirelessly; an HDMI adapter avoids that.
+- **Movies.** The built-in catalog covers series. Adding a free key from
+  [The Movie Database](https://www.themoviedb.org/) under Settings > Titles
+  adds movies; that path has not been run against the live service yet.
 
-## Where the titles come from
+## Where the information comes from
 
-Out of the box the app uses [TVmaze](https://www.tvmaze.com/api), which needs
-no account. It lists what each service released in the last two weeks, with
-artwork, episodes, and often a direct link to the show's page on the service.
-It covers series, not movies.
-
-Adding a free key from [The Movie Database](https://www.themoviedb.org/) under
-Settings > Titles switches the app to TMDB, which adds movies and "most popular
-on each service" shelves. That path has not been run against the live service
-yet.
-
-## Nudity detection
-
-Detection uses the NudeNet model, which the app downloads by itself the first
-time it runs (about 11 MB, from NudeNet's published package). Frames are
-checked on the phone and never leave it.
+- **Shows:** [TVmaze](https://www.tvmaze.com/api) (CC BY-SA). What is new comes
+  straight from TVmaze. What is popular on each service is collected once a
+  day by `tools/build-catalog.py`, run by GitHub, and published as
+  `catalog.json`, which the app downloads.
+- **Nudity detection:** the NudeNet model, which the app downloads by itself
+  the first time it runs (about 11 MB, from NudeNet's published package).
+  Frames are checked on the phone and never leave it.
 
 ## Status
 
 Checked on an automatic test phone (an Android 14 emulator that GitHub runs
 after every change, see `.github/workflows/device-check.yml`): the app opens
-without crashing; Home loads live titles; search, title pages, episodes,
-Settings, the word list, the Browser tab and day and night modes display correctly; a title's
-Watch button opens the service's page for it; the detection model downloads
+without crashing; the welcome screen, Home, service pages, search, title
+pages, the YouTube tab with live search results, video pages, Settings, the
+word list, colour changes and the Browser tab display correctly; Watch opens
+the service's page for a title in the player; the detection model downloads
 and loads.
 
 Checked on a computer: the filter logic passes its 24 tests; the script that
-controls a page's video player passes its test in desktop Chromium; the
-detection model was run on sample pictures to confirm the app reads its output
-correctly.
+controls a page's video passes its test in desktop Chromium, including muting
+from captions, skipping, blurring and the player controls; the detection model
+was run on sample pictures to confirm the app reads its output correctly.
 
-Not yet checked anywhere: playing a signed-in title on a paid service; muting
-and blurring on a real phone during playback; casting to a TV.
+Not yet checked anywhere: a video actually playing on a phone, and so muting,
+blurring and the player's controls during real playback (the test phone could
+not be made to play video); playing a signed-in title on a paid service;
+casting to a TV; how the sound sets sound.
 
 ## Layout
 
 | Path | What is in it |
 |---|---|
-| `core/` | Filter logic with no Android in it: word matching, subtitle parsing, mute/skip/blur decisions, reading the detector's output. Has the tests. |
+| `core/` | Filter logic with no Android in it: the word list, word matching, subtitle parsing, mute/skip/blur decisions, reading the detector's output. Has the tests. |
 | `app/` | The Android app. |
-| `app/.../HomeScreen.kt`, `SearchScreen.kt`, `FiltersScreen.kt` | The Home, Search and Settings tabs. `MainActivity.kt` holds them. |
-| `app/.../WordsActivity.kt` | The list of words with a switch each. The words themselves are in `core/.../WordList.kt`. |
-| `app/.../TitleActivity.kt` | A title's page. |
-| `app/.../browser/` | The built-in browser and its live detection. |
-| `app/src/main/assets/safewatch.js` | The script the browser adds to every page to control its video player. |
-| `app/.../player/` | The video file player and the ahead-of-time scan. |
-| `app/.../data/` | Saved settings, marked scenes, the list of services, the title catalog. |
+| `app/.../HomeScreen.kt`, `SearchScreen.kt`, `YouTubeScreen.kt`, `FiltersScreen.kt` | The Home, Search, YouTube and Settings tabs. `MainActivity.kt` holds them. |
+| `app/.../TitleActivity.kt`, `ServiceActivity.kt`, `VideoActivity.kt` | The pages for a title, a service and a YouTube video. |
+| `app/.../WelcomeActivity.kt`, `WordsActivity.kt` | The first-launch screen and the word list. |
+| `app/.../browser/` | The built-in browser (`BrowserActivity`), the player built on it (`WatchActivity`), and live detection. |
+| `app/src/main/assets/safewatch.js` | The script added to every page to control its video. |
+| `app/.../player/` | The player for video files on the phone and the ahead-of-time scan. |
+| `app/.../data/` | Saved settings, marked scenes, the services, and the readers for TVmaze, TMDB and YouTube. |
 | `app/.../detect/` | The nudity detector and its first-run download. |
-| `app/.../ui/` | The design kit: colours, cards, rows, posters, controls. Colours are in `res/values` (day) and `res/values-night`. |
-| `tools/` | The test-phone script and the browser script test. |
+| `app/.../ui/` | The design kit: colours and the viewer's colour choices (`Palette`), cards, rows, posters, controls, sounds. |
+| `tools/` | The test-phone script, the catalog builder and the page script's test. |
 
 ## Building
 
@@ -149,7 +172,7 @@ terminal:
 Work happens on the `dev` branch, where every push runs the test phone. Pushes
 to `main` rebuild the download.
 
-To run the browser script test (needs Node, Playwright and ffmpeg):
+To run the page script's test (needs Node, Playwright and ffmpeg):
 
     cd tools/browser-test
     ffmpeg -f lavfi -i testsrc=size=320x180:rate=15 -f lavfi -i sine=frequency=440 -t 30 -g 15 -c:v libvpx -b:v 200k -c:a libvorbis v.webm
