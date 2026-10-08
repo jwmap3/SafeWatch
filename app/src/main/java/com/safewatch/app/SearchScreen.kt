@@ -145,7 +145,7 @@ class SearchScreen(private val activity: MainActivity) {
             card.addView(Ui.divider(context, 60))
         }
         card.addView(Ui.row(context, "The web", leading = Ui.monogram(context, "W")) {
-            BrowserActivity.open(activity, BrowserActivity.WEB_SEARCH + Uri.encode(query))
+            BrowserActivity.open(activity, Prefs.searchPrefix(activity) + Uri.encode(query))
         })
         addView(card)
     }

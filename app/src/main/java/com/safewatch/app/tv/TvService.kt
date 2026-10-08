@@ -55,10 +55,12 @@ class TvService : Service() {
     private var awake: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var servingSince = 0L
+    private var servingFile: File? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        CleanCopy.deleteOld(this)
         when (intent?.action) {
             ACTION_PREPARE -> prepare(CleanSource.fromJson(intent.getStringExtra(EXTRA_SOURCE) ?: return START_NOT_STICKY))
             ACTION_CANCEL -> making?.cancelled = true
@@ -125,6 +127,7 @@ class TvService : Service() {
         }
         val serving = FileServer(file).start(address)
         server = serving
+        servingFile = file
         servingSince = System.currentTimeMillis()
         TvState.playingTitle = title
         TvState.playingOn = device
@@ -177,8 +180,16 @@ class TvService : Service() {
         val device = TvState.playingOn
         if (tellTv && device != null) control.execute { try { Tv.stop(device) } catch (e: Exception) { /* already stopped */ } }
         ui.removeCallbacks(watchdog)
+        val finished = server
         server?.stop()
         server = null
+        // A clean copy is for one viewing: once the TV has played it through, it is deleted.
+        val file = servingFile
+        servingFile = null
+        if (finished != null && file != null && finished.readShare > 0.9) {
+            CleanCopy.delete(file)
+            FilterLog.add("clean copy played through and deleted")
+        }
         TvState.playingTitle = null
         TvState.playingOn = null
         TvState.paused = false

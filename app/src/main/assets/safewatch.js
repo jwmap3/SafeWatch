@@ -105,7 +105,18 @@
     }
     var found = windowsFor(fresh);
     for (i = 0; i < found.length; i++) source.windows.push(found[i]);
+    shareCues(fresh, source.offset);
     return fresh.length;
+  }
+
+  // Caption lines with times are also passed to the app, for a clean copy made for the TV.
+  function shareCues(cues, offset) {
+    if (!B.copyCues || !cues.length) return;
+    var out = [];
+    for (var i = 0; i < cues.length; i++) out.push([cues[i][0] + offset, cues[i][1] + offset, cues[i][2]]);
+    for (var j = 0; j < out.length; j += 500) {
+      try { B.copyCues(JSON.stringify(out.slice(j, j + 500))); } catch (e) { /* ignore */ }
+    }
   }
 
   // Whether a source belongs to the video as it is now. A source read for a film does not apply
@@ -473,6 +484,10 @@
   }
 
   function take(kind, text, address) {
+    // A stream's manifest is also passed to the app, so Send to TV can make a clean copy of the stream.
+    if ((kind === 'dash' || kind === 'hls') && B.manifest && /^https?:/.test(address)) {
+      try { B.manifest(kind, address, text.length > 300000 ? text.slice(0, 300000) : text); } catch (e) { /* ignore */ }
+    }
     try {
       if (kind === 'dash') readDash(text, address);
       else if (kind === 'hls') readHls(text, address);
@@ -670,6 +685,7 @@
       }
       var found = windowsFor(fresh);
       for (var n = 0; n < found.length; n++) st.windows.push(found[n]);
+      shareCues(fresh, 0);
       if (fresh.length && !st.saidTrack) { st.saidTrack = true; say('reading the video\'s own caption track'); }
     }
   }

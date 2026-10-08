@@ -12,6 +12,8 @@ tap() { timeout 60 python3 tools/tap.py "$@" | tee -a "$OUT/summary.txt"; }
 back() { adb shell input keyevent 4; sleep 1; }
 swipe_up() { adb shell input swipe 540 1700 540 600 400; }
 start() { adb shell am force-stop $PKG; adb shell am start -W -n $PKG/.MainActivity > /dev/null; }
+# Taps something further down a long screen, scrolling until it is in view.
+tap_scrolling() { for i in 1 2 3 4 5 6 7 8 9 10; do timeout 60 python3 tools/tap.py "$1" > /dev/null && { echo "tap: $1" | tee -a "$OUT/summary.txt"; return 0; }; swipe_up; sleep 1; done; echo "tap: '$1' not found on the screen" | tee -a "$OUT/summary.txt"; }
 
 # Shared scene lists: is the public service that offers them answering, and what does it send?
 for u in "https://cleanstream.elfhosted.com/api/filters" "https://cleanstream.elfhosted.com/api/skips/tt0133093" "https://cleanstream.elfhosted.com/api/skips/tt0120338" "https://cleanstream.elfhosted.com/manifest.json"; do
@@ -59,7 +61,7 @@ tap "Show comments";      shot 09b-comments 8
 start;                    sleep 5
 tap "Settings";           shot 11-settings 3
 swipe_up;                 shot 11b-settings-language 2
-tap "Choose words";       shot 12-words 3
+tap_scrolling "Choose words"; shot 12-words 3
 start;                    sleep 5
 tap "Settings";           sleep 2
 swipe_up; swipe_up;       shot 13-settings-nudity 2
@@ -101,41 +103,59 @@ adb logcat -d -s SafeWatch:I > "$OUT/filter-log.txt"; echo "(end of filter log)"
 start;                    sleep 5
 tap "Settings";           sleep 2
 swipe_up;                 sleep 1
-tap "Filter report";      shot 14r-filter-report 3
+tap_scrolling "Filter report"; shot 14r-filter-report 3
+back
+tap_scrolling "Skip buttons"; shot 15-settings-player 2
+swipe_up;                 shot 15b-settings-app 2
 
-# ---- A clean copy for the TV, from a page's video (served by the test computer, with captions) ----
-if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
-  start;                  sleep 5
-  tap "Settings";         sleep 2
-  for i in 1 2 3 4 5 6; do timeout 60 python3 tools/tap.py "Test the blur" > /dev/null && { echo "tap: Test the blur (for the clean copy)" | tee -a "$OUT/summary.txt"; break; }; swipe_up; sleep 1; done
+# ---- Clean copies for the TV, from pages served by the test computer (with captions) ----
+make_copy() {  # $1: a name for the files, $2: the page
   adb logcat -c
-  adb shell am start -a android.intent.action.VIEW -d "http://10.0.2.2:8765/page.html" -n $PKG/.browser.BrowserActivity > /dev/null
-  shot 18-clip-page 10
-  tap "Send to TV";       shot 18b-send-to-tv 3
-  tap "Clean copy to TV"; sleep 3
-  tap "Allow";            shot 18c-making 5
+  adb shell am start -a android.intent.action.VIEW -d "http://10.0.2.2:8765/$2" -n $PKG/.browser.BrowserActivity > /dev/null
+  shot "$1-page" 10
+  tap "More";               sleep 1
+  tap "Send to TV";         shot "$1-send" 3
+  tap "Clean copy to TV";   sleep 3
+  timeout 60 python3 tools/tap.py "Allow" > /dev/null
+  shot "$1-making" 5
   for i in $(seq 1 60); do
     if adb logcat -d -s SafeWatch:I | grep -q "clean copy made\|clean copy not made"; then break; fi
     sleep 10
   done
   adb logcat -d -s SafeWatch:I | grep -i "clean copy" | tee -a "$OUT/summary.txt"
-  shot 18d-clean-copies 3
+  shot "$1-copies" 3
+  timeout 60 adb exec-out run-as $PKG sh -c 'cat "$(ls -t files/clean/*.mp4 | head -1)"' > "$OUT/$1.mp4"
+  ls -la "$OUT/$1.mp4" | tee -a "$OUT/summary.txt"
+  [ -s "$OUT/$1.mp4" ] || rm -f "$OUT/$1.mp4"
+  adb logcat -d -s SafeWatch:I > "$OUT/$1-log.txt"
+}
+if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
+  start;                  sleep 5
+  tap "Settings";         sleep 2
+  for i in 1 2 3 4 5 6; do timeout 60 python3 tools/tap.py "Test the blur" > /dev/null && { echo "tap: Test the blur (for the clean copy)" | tee -a "$OUT/summary.txt"; break; }; swipe_up; sleep 1; done
+  make_copy 18-file-copy page.html
   tap "Test clip";        shot 18e-copy-options 2
   tap "Play on a TV…";    shot 18f-tv-search 8
-  timeout 60 adb exec-out run-as $PKG sh -c 'cat files/clean/*.mp4' > "$OUT/clean-copy.mp4"
-  ls -la "$OUT/clean-copy.mp4" | tee -a "$OUT/summary.txt"
-  [ -s "$OUT/clean-copy.mp4" ] || rm -f "$OUT/clean-copy.mp4"
-  adb logcat -d -s SafeWatch:I > "$OUT/clean-log.txt"
+  back; back
+  make_copy 18-stream-copy stream.html
   back; back
 else
   echo "no test site for the clean copy" | tee -a "$OUT/summary.txt"
 fi
+
+# ---- The Browser tab: quick links, the bar at the bottom, hiding it, its menu ----
+start;                    sleep 5
+tap "Browser";            shot 19-browser-links 4
+tap "Wikipedia";          shot 19b-browser-page 10
+swipe_up;                 shot 19c-bar-hidden 2
+adb shell input swipe 540 900 540 1500 300; shot 19d-bar-back 2
+tap "More";               shot 19e-browser-menu 2
+back
 cp /tmp/tvsite/setup.log "$OUT/test-site-setup.txt" 2>/dev/null; ls -la /tmp/tvsite >> "$OUT/test-site-setup.txt" 2>&1
 
 start;                    sleep 5
 tap "Settings";           sleep 2
-swipe_up; swipe_up; swipe_up; swipe_up; swipe_up; shot 15-appearance 2
-tap "Light";              shot 17-light 5
+tap_scrolling "Light";    shot 17-light 5
 start;                    shot 17b-light-home 8
 echo "phone state at the end: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"
 

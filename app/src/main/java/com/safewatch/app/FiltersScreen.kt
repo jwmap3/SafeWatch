@@ -159,11 +159,56 @@ class FiltersScreen(private val activity: MainActivity) {
         // Browser
         column.addView(Ui.sectionHeader(ctx, "Browser"))
         column.addView(Ui.card(ctx).apply {
+            addView(Ui.row(ctx, "Search with", chevron = false).apply {
+                val engines = listOf("google" to "Google", "duckduckgo" to "DuckDuckGo", "bing" to "Bing")
+                addView(Ui.segmented(ctx, engines.map { it.second }, engines.indexOfFirst { it.first == Prefs.searchEngine(ctx) }.coerceAtLeast(0)) {
+                    Prefs.setSearchEngine(ctx, engines[it].first)
+                    com.safewatch.app.browser.BrowserActivity.searchPrefix = Prefs.searchPrefix(ctx)
+                }, LinearLayout.LayoutParams(Ui.dp(ctx, 230), -2))
+            })
+            addView(Ui.divider(ctx))
+            addView(Ui.switchRow(ctx, "Hide the bar while scrolling", Prefs.hideBarWhileScrolling(ctx)) { Prefs.setHideBarWhileScrolling(ctx, it) })
+            addView(Ui.divider(ctx))
             addView(Ui.switchRow(ctx, "Block pop-ups and redirects", Prefs.blockPopups(ctx)) { Prefs.setBlockPopups(ctx, it) })
         })
         column.addView(Ui.caption(ctx,
-            "Stops pages opening new windows or sending you to another site by themselves. While a video is playing, " +
-                "nothing can take you off its page."))
+            "Pop-up blocking stops pages opening new windows or sending you to another site by themselves. While a video is " +
+                "playing, nothing can take you off its page. The browser's quick links are changed by pressing and holding one."))
+
+        // Player
+        column.addView(Ui.sectionHeader(ctx, "Player"))
+        column.addView(Ui.card(ctx).apply {
+            addView(Ui.row(ctx, "Skip buttons", chevron = false).apply {
+                val jumps = listOf(10, 15, 30)
+                addView(Ui.segmented(ctx, jumps.map { "$it s" }, jumps.indexOf(Prefs.skipSeconds(ctx)).coerceAtLeast(0)) {
+                    Prefs.setSkipSeconds(ctx, jumps[it])
+                }, LinearLayout.LayoutParams(Ui.dp(ctx, 190), -2))
+            })
+            addView(Ui.divider(ctx))
+            addView(Ui.row(ctx, "Hidden pictures", chevron = false).apply {
+                val styles = listOf("blur" to "Blurred", "black" to "Black")
+                addView(Ui.segmented(ctx, styles.map { it.second }, styles.indexOfFirst { it.first == Prefs.hideStyle(ctx) }.coerceAtLeast(0)) {
+                    Prefs.setHideStyle(ctx, styles[it].first)
+                }, LinearLayout.LayoutParams(Ui.dp(ctx, 170), -2))
+            })
+        })
+        column.addView(Ui.caption(ctx, "Blurred shows moving colour so you can follow along; Black shows nothing at all."))
+
+        // The app
+        column.addView(Ui.sectionHeader(ctx, "App"))
+        column.addView(Ui.card(ctx).apply {
+            addView(Ui.row(ctx, "Open on", chevron = false).apply {
+                val tabs = listOf(MainActivity.TAB_HOME to "Home", MainActivity.TAB_BROWSER to "Browser", MainActivity.TAB_YOUTUBE to "YouTube")
+                addView(Ui.segmented(ctx, tabs.map { it.second }, tabs.indexOfFirst { it.first == Prefs.startTab(ctx) }.coerceAtLeast(0)) {
+                    Prefs.setStartTab(ctx, tabs[it].first)
+                }, LinearLayout.LayoutParams(Ui.dp(ctx, 230), -2))
+            })
+            addView(Ui.divider(ctx))
+            val pin = Prefs.settingsPin(ctx)
+            addView(Ui.row(ctx, "Lock Settings with a PIN", if (pin.isEmpty()) "Off" else "On") { editPin() })
+        })
+        column.addView(Ui.caption(ctx,
+            "With a PIN, Settings asks for it before opening, so the filters stay as you set them. It is asked again each time the app is reopened."))
 
         // Catalog
         val hasKey = Prefs.catalogKey(ctx).isNotEmpty()
@@ -205,8 +250,25 @@ class FiltersScreen(private val activity: MainActivity) {
                 Prefs.setSoundPack(ctx, packs[it].id)
                 Sounds.play(ctx, Sounds.OPEN)
             }))
+            addView(Ui.divider(ctx))
+            addView(Ui.row(ctx, "Volume", chevron = false).apply {
+                addView(android.widget.SeekBar(ctx).apply {
+                    max = 100
+                    progress = Prefs.soundVolume(ctx)
+                    val accent = android.content.res.ColorStateList.valueOf(Ui.color(ctx, R.color.accent))
+                    progressTintList = accent
+                    thumbTintList = accent
+                    setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(bar: android.widget.SeekBar, value: Int, fromUser: Boolean) {
+                            if (fromUser) Prefs.setSoundVolume(ctx, value)
+                        }
+                        override fun onStartTrackingTouch(bar: android.widget.SeekBar) {}
+                        override fun onStopTrackingTouch(bar: android.widget.SeekBar) = Sounds.play(ctx, Sounds.TAP)
+                    })
+                }, LinearLayout.LayoutParams(Ui.dp(ctx, 200), -2))
+            })
         })
-        column.addView(Ui.caption(ctx, "Played when you tap, open a title and start watching."))
+        column.addView(Ui.caption(ctx, "Played when you tap, open a title and start watching, at the phone's media volume."))
     }
 
     private fun pickColor(which: String, color: Int) {
@@ -309,6 +371,42 @@ class FiltersScreen(private val activity: MainActivity) {
             .setNegativeButton("Close", null)
             .show()
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    /** Sets, changes or removes the PIN that guards Settings. */
+    private fun editPin() {
+        val field = EditText(activity).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            hint = "Four digits"
+            gravity = android.view.Gravity.CENTER
+            textSize = 22f
+            filters = arrayOf(android.text.InputFilter.LengthFilter(8))
+        }
+        val box = FrameLayout(activity).apply {
+            setPadding(Ui.dp(activity, 24), Ui.dp(activity, 8), Ui.dp(activity, 24), 0)
+            addView(field)
+        }
+        val builder = AlertDialog.Builder(activity)
+            .setTitle(if (Prefs.settingsPin(activity).isEmpty()) "Set a PIN" else "Change the PIN")
+            .setMessage("Settings will ask for this PIN before opening.")
+            .setView(box)
+            .setPositiveButton("Save") { _, _ ->
+                val pin = field.text.toString()
+                if (pin.length < 4) {
+                    Ui.toast(activity, "Use at least four digits")
+                } else {
+                    Prefs.setSettingsPin(activity, pin)
+                    MainActivity.settingsUnlocked = true
+                    Ui.toast(activity, "Settings are locked with your PIN")
+                    rebuild()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+        if (Prefs.settingsPin(activity).isNotEmpty()) builder.setNeutralButton("Remove PIN") { _, _ ->
+            Prefs.setSettingsPin(activity, "")
+            rebuild()
+        }
+        builder.show()
     }
 
     private fun editWords(title: String, words: Set<String>, onSave: (Set<String>) -> Unit) =

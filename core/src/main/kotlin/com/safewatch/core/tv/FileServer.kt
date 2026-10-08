@@ -28,6 +28,11 @@ class FileServer(private val file: File, private val mime: String = "video/mp4")
     @Volatile var requests = 0
         private set
 
+    /** How far into the file the TV has read, as a share from 0 to 1: near 1 once it has played to the end. */
+    val readShare: Double get() = if (file.length() == 0L) 0.0 else furthest.toDouble() / file.length()
+
+    @Volatile private var furthest = 0L
+
     val port: Int get() = socket?.localPort ?: 0
 
     /** The file's address as seen from the TV, given the phone's address on the network. */
@@ -125,6 +130,7 @@ class FileServer(private val file: File, private val mime: String = "video/mp4")
                     return false // the TV stopped listening, as it does when it jumps elsewhere in the film
                 }
                 left -= n
+                furthest = maxOf(furthest, to - left + 1)
                 lastRequestAt = System.currentTimeMillis()
             }
         }

@@ -112,6 +112,72 @@ object Prefs {
 
     fun setBlockPopups(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("blockPopups", on).apply()
 
+    // ---- Customisation ----
+
+    /** Loudness of the app's own sounds, 0 to 100. */
+    fun soundVolume(ctx: Context): Int = prefs(ctx).getInt("soundVolume", 80)
+
+    fun setSoundVolume(ctx: Context, v: Int) = prefs(ctx).edit().putInt("soundVolume", v.coerceIn(0, 100)).apply()
+
+    /** The tab the app opens on (one of MainActivity's TAB_ values). */
+    fun startTab(ctx: Context): Int = prefs(ctx).getInt("startTab", 0)
+
+    fun setStartTab(ctx: Context, tab: Int) = prefs(ctx).edit().putInt("startTab", tab).apply()
+
+    /** The browser's search engine: "google", "duckduckgo" or "bing". */
+    fun searchEngine(ctx: Context): String = prefs(ctx).getString("searchEngine", "google")!!
+
+    fun setSearchEngine(ctx: Context, id: String) = prefs(ctx).edit().putString("searchEngine", id).apply()
+
+    fun searchPrefix(ctx: Context): String = when (searchEngine(ctx)) {
+        "duckduckgo" -> "https://duckduckgo.com/?q="
+        "bing" -> "https://www.bing.com/search?q="
+        else -> "https://www.google.com/search?q="
+    }
+
+    /** Whether the browser's bar slides away while reading down a page. */
+    fun hideBarWhileScrolling(ctx: Context): Boolean = prefs(ctx).getBoolean("autoHideBar", true)
+
+    fun setHideBarWhileScrolling(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("autoHideBar", on).apply()
+
+    /** How far the player's back and forward buttons jump, in seconds. */
+    fun skipSeconds(ctx: Context): Int = prefs(ctx).getInt("skipSeconds", 10)
+
+    fun setSkipSeconds(ctx: Context, s: Int) = prefs(ctx).edit().putInt("skipSeconds", s).apply()
+
+    /** How hidden pictures look: "blur" (shapes and colours move, nothing can be made out) or "black". */
+    fun hideStyle(ctx: Context): String = prefs(ctx).getString("hideStyle", "blur")!!
+
+    fun setHideStyle(ctx: Context, style: String) = prefs(ctx).edit().putString("hideStyle", style).apply()
+
+    /** A four-digit PIN asked for before Settings opens; empty for none. */
+    fun settingsPin(ctx: Context): String = prefs(ctx).getString("settingsPin", "")!!
+
+    fun setSettingsPin(ctx: Context, pin: String) = prefs(ctx).edit().putString("settingsPin", pin).apply()
+
+    /** The browser's six quick links, as (name, address). Empty slots are left out. */
+    fun quickLinks(ctx: Context): List<Pair<String, String>> {
+        val saved = prefs(ctx).getString("quickLinks", null) ?: return DEFAULT_QUICK_LINKS
+        return try {
+            val list = org.json.JSONArray(saved)
+            (0 until list.length()).map { list.getJSONArray(it).let { p -> p.getString(0) to p.getString(1) } }
+        } catch (e: Exception) {
+            DEFAULT_QUICK_LINKS
+        }
+    }
+
+    fun setQuickLinks(ctx: Context, links: List<Pair<String, String>>) = prefs(ctx).edit().putString("quickLinks",
+        org.json.JSONArray(links.take(6).map { org.json.JSONArray().put(it.first).put(it.second) }).toString()).apply()
+
+    private val DEFAULT_QUICK_LINKS = listOf(
+        "Google" to "https://www.google.com/",
+        "YouTube" to "https://m.youtube.com/",
+        "Wikipedia" to "https://en.m.wikipedia.org/",
+        "Weather" to "https://weather.com/",
+        "Pluto TV" to "https://pluto.tv/",
+        "Tubi" to "https://tubitv.com/",
+    )
+
     /** Whether a hidden second copy of a video may play ahead of the viewer, so scenes are hidden before they arrive. */
     fun lookAhead(ctx: Context): Boolean = prefs(ctx).getBoolean("lookAhead", true)
 

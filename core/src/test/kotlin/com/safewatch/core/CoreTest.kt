@@ -556,3 +556,43 @@ class AndroidRegexTest {
         assertEquals(null, problem("\\d{3}\\s*-->[\\[(]x[\\])]"))
     }
 }
+
+class StreamInfoTest {
+    private val master = """#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",LANGUAGE="en",URI="audio/en.m3u8"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",URI="subs/en.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,AUDIO="aac"
+low/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,AUDIO="aac"
+high/index.m3u8
+"""
+    private val vod = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\na.ts\n#EXTINF:6.0,\nb.ts\n#EXT-X-ENDLIST\n"
+
+    @Test fun readsAnHlsMasterPlaylist() {
+        assertEquals(StreamInfo.Kind.HLS, StreamInfo.kindOf(master))
+        assertTrue(StreamInfo.hlsIsMaster(master))
+        assertEquals(listOf("high/index.m3u8", "low/index.m3u8"), StreamInfo.hlsVariants(master))
+        assertEquals(listOf("audio/en.m3u8"), StreamInfo.hlsRenditions(master, "AUDIO"))
+        assertEquals(null, StreamInfo.refusal(master, listOf(vod)))
+    }
+
+    @Test fun refusesEncryptedAndLiveStreams() {
+        val locked = vod.replace("#EXTINF:6.0,\na.ts", "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:6.0,\na.ts")
+        assertEquals(StreamInfo.LOCKED, StreamInfo.refusal(locked))
+        assertEquals(StreamInfo.LOCKED, StreamInfo.refusal(master, listOf(locked)))
+        assertEquals(StreamInfo.LOCKED, StreamInfo.refusal("#EXTM3U\n#EXT-X-SESSION-KEY:METHOD=SAMPLE-AES,URI=\"skd://x\"\n#EXT-X-STREAM-INF:BANDWIDTH=1\nv.m3u8\n"))
+        assertEquals(null, StreamInfo.refusal(vod.replace("#EXTINF:6.0,\na.ts", "#EXT-X-KEY:METHOD=NONE\n#EXTINF:6.0,\na.ts")))
+        assertEquals(StreamInfo.LIVE, StreamInfo.refusal(vod.replace("#EXT-X-ENDLIST\n", "")))
+        assertEquals(StreamInfo.LIVE, StreamInfo.refusal(master, listOf(vod.replace("#EXT-X-ENDLIST\n", ""))))
+    }
+
+    @Test fun readsDashManifests() {
+        val clear = """<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT10M"><Period/></MPD>"""
+        assertEquals(StreamInfo.Kind.DASH, StreamInfo.kindOf(clear))
+        assertEquals(null, StreamInfo.refusal(clear))
+        val drm = clear.replace("<Period/>", "<Period><AdaptationSet><ContentProtection schemeIdUri=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\"/></AdaptationSet></Period>")
+        assertEquals(StreamInfo.LOCKED, StreamInfo.refusal(drm))
+        assertEquals(StreamInfo.LIVE, StreamInfo.refusal(clear.replace("static", "dynamic")))
+        assertEquals(null, StreamInfo.kindOf("<html>not a manifest</html>"))
+    }
+}

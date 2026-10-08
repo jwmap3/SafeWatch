@@ -9,12 +9,19 @@ import android.os.Looper
 import android.webkit.CookieManager
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.Clock
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.transformer.AssetLoader
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultDecoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExoPlayerAssetLoader
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
@@ -29,6 +36,7 @@ import com.safewatch.core.CleanPlanner
 import com.safewatch.core.CueTagger
 import com.safewatch.core.ProfanityMatcher
 import com.safewatch.core.Ranges
+import com.safewatch.core.StreamInfo
 import com.safewatch.core.Strictness
 import com.safewatch.core.Tag
 import org.json.JSONArray
@@ -41,20 +49,38 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Something that can be made into a clean copy: a video file on the phone, or a link straight
- * to a video file. [captions] are addresses of caption files that go with it. [key] is the
- * name scenes marked for it are kept under.
+ * Something that can be made into a clean copy: a video file on the phone, a link straight to a
+ * video file, or a website's stream (HLS or DASH, given in [stream]) whose pieces are not locked.
+ * [captions] are addresses of caption files that go with it. [key] is the name scenes marked for
+ * it are kept under.
  */
-data class CleanSource(val title: String, val key: String, val address: String, val captions: List<String> = emptyList(), val referrer: String = "") {
+data class CleanSource(
+    val title: String,
+    val key: String,
+    val address: String,
+    val captions: List<String> = emptyList(),
+    val referrer: String = "",
+    val stream: String = "",
+) {
     fun toJson(): String = JSONObject().put("title", title).put("key", key).put("address", address)
-        .put("captions", JSONArray(captions)).put("referrer", referrer).toString()
+        .put("captions", JSONArray(captions)).put("referrer", referrer).put("stream", stream).toString()
 
     companion object {
+        const val HLS = "hls"
+        const val DASH = "dash"
+
         fun fromJson(text: String): CleanSource {
             val o = JSONObject(text)
             val caps = o.optJSONArray("captions") ?: JSONArray()
             return CleanSource(o.getString("title"), o.getString("key"), o.getString("address"),
-                (0 until caps.length()).map { caps.getString(it) }, o.optString("referrer"))
+                (0 until caps.length()).map { caps.getString(it) }, o.optString("referrer"), o.optString("stream"))
+        }
+
+        /** Whether an address is a stream's manifest, and which kind. */
+        fun streamKind(address: String): String = when {
+            Regex("\\.m3u8(\\?|#|$)", RegexOption.IGNORE_CASE).containsMatchIn(address) -> HLS
+            Regex("\\.mpd(\\?|#|$)", RegexOption.IGNORE_CASE).containsMatchIn(address) -> DASH
+            else -> ""
         }
 
         /** Whether a video address points at a whole file that can be fetched (not a stream cut into pieces). */
@@ -141,6 +167,7 @@ class CleanCopy(private val context: Context, private val report: (step: String,
 
     private fun fetch(source: CleanSource, into: File): File {
         val address = source.address
+        if (source.stream.isNotEmpty()) return fetchStream(source, into)
         if (address.startsWith("content:") || address.startsWith("file:")) {
             report("Copying the video", 0)
             context.contentResolver.openInputStream(Uri.parse(address))!!.use { input ->
@@ -164,10 +191,12 @@ class CleanCopy(private val context: Context, private val report: (step: String,
                     return@repeat
                 }
                 if (code !in 200..299) throw IOException("The site refused the download ($code)")
-                val type = c.contentType.orEmpty()
-                if (type.startsWith("text/") || type.contains("mpegurl") || type.contains("dash+xml")) {
-                    throw IOException("This video comes in streaming pieces, not as one file, so it cannot be saved")
+                val type = c.contentType.orEmpty().lowercase()
+                if (type.contains("mpegurl") || type.contains("dash+xml")) {
+                    // Not a file after all, but a stream's list of pieces.
+                    return fetchStream(source.copy(address = url, stream = if (type.contains("dash")) CleanSource.DASH else CleanSource.HLS), into)
                 }
+                if (type.startsWith("text/")) throw IOException("The link leads to a page, not a video file")
                 val total = c.contentLengthLong
                 var done = 0L
                 var lastShown = -1
@@ -194,6 +223,72 @@ class CleanCopy(private val context: Context, private val report: (step: String,
             }
         }
         throw IOException("The download was sent elsewhere too many times")
+    }
+
+    // ---- Getting a stream that comes in pieces ----
+
+    /**
+     * Saves a website's stream as one file. The manifest is read first, and the stream is refused if
+     * its pieces are encrypted or it is live. The pieces are then gathered by the same player engine
+     * the app uses, signed in as the browser is, and written out as one ordinary video.
+     */
+    private fun fetchStream(source: CleanSource, into: File): File {
+        report("Checking the stream", -1)
+        val manifest = httpText(source.address, source.referrer)
+        val kind = StreamInfo.kindOf(manifest) ?: throw IOException("The video's list of pieces could not be read")
+        val media = ArrayList<String>()
+        if (kind == StreamInfo.Kind.HLS && StreamInfo.hlsIsMaster(manifest)) {
+            // The best picture, and the sound if it comes separately: both are checked for locks.
+            StreamInfo.hlsVariants(manifest).firstOrNull()?.let { media += httpText(URL(URL(source.address), it).toString(), source.referrer) }
+            StreamInfo.hlsRenditions(manifest, "AUDIO").firstOrNull()?.let { media += httpText(URL(URL(source.address), it).toString(), source.referrer) }
+        }
+        StreamInfo.refusal(manifest, media)?.let { throw IOException(it) }
+        check()
+
+        val item = MediaItem.Builder().setUri(source.address)
+            .setMimeType(if (kind == StreamInfo.Kind.HLS) MimeTypes.APPLICATION_M3U8 else MimeTypes.APPLICATION_MPD)
+            .build()
+        val output = File(into.parentFile, into.name + ".mp4")
+        export(Composition.Builder(EditedMediaItemSequence(listOf(EditedMediaItem.Builder(item).build()))).build(),
+            output, "Downloading the stream", loaderFor(source))
+        return output
+    }
+
+    /** Reads a stream's pieces the way the browser would: its cookies, and the page it came from. */
+    private fun loaderFor(source: CleanSource): AssetLoader.Factory {
+        val headers = HashMap<String, String>()
+        if (source.referrer.startsWith("http")) {
+            headers["Referer"] = source.referrer
+            val page = Uri.parse(source.referrer)
+            headers["Origin"] = "${page.scheme}://${page.authority}"
+        }
+        val http = DefaultHttpDataSource.Factory()
+            .setUserAgent(AGENT)
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(30_000)
+            .setDefaultRequestProperties(headers)
+        val withCookies = ResolvingDataSource.Factory(http) { spec ->
+            val cookie = try { CookieManager.getInstance().getCookie(spec.uri.toString()) } catch (e: Exception) { null }
+            if (cookie.isNullOrEmpty()) spec else spec.withAdditionalHeaders(mapOf("Cookie" to cookie))
+        }
+        return ExoPlayerAssetLoader.Factory(context, DefaultDecoderFactory.Builder(context).build(), Clock.DEFAULT,
+            DefaultMediaSourceFactory(withCookies))
+    }
+
+    private fun httpText(address: String, referrer: String): String {
+        val c = URL(address).openConnection() as HttpURLConnection
+        try {
+            c.connectTimeout = 15_000
+            c.readTimeout = 30_000
+            c.setRequestProperty("User-Agent", AGENT)
+            if (referrer.startsWith("http")) c.setRequestProperty("Referer", referrer)
+            CookieManager.getInstance().getCookie(address)?.let { c.setRequestProperty("Cookie", it) }
+            if (c.responseCode !in 200..299) throw IOException("The site refused the video (${c.responseCode})")
+            return c.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            c.disconnect()
+        }
     }
 
     private fun durationOf(file: File): Long {
@@ -270,7 +365,12 @@ class CleanCopy(private val context: Context, private val report: (step: String,
             val audio = if (plan.mute.isEmpty()) emptyList() else listOf(SilenceProcessor(plan, piece.first))
             EditedMediaItem.Builder(item).setEffects(Effects(audio, video)).build()
         }
-        val composition = Composition.Builder(EditedMediaItemSequence(pieces)).build()
+        export(Composition.Builder(EditedMediaItemSequence(pieces)).build(), output, "Making the clean copy", null)
+    }
+
+    /** Writes [composition] to [output] as an MP4 any TV plays, reporting progress as [step]. */
+    private fun export(composition: Composition, output: File, step: String, loader: AssetLoader.Factory?) {
+        report(step, 0)
         val done = CountDownLatch(1)
         val failure = AtomicReference<Exception?>(null)
         val main = Handler(Looper.getMainLooper())
@@ -280,6 +380,7 @@ class CleanCopy(private val context: Context, private val report: (step: String,
                 val t = Transformer.Builder(context)
                     .setVideoMimeType(MimeTypes.VIDEO_H264) // plays on every TV
                     .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                    .apply { if (loader != null) setAssetLoaderFactory(loader) }
                     .addListener(object : Transformer.Listener {
                         override fun onCompleted(composition: Composition, exportResult: ExportResult) = done.countDown()
                         override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
@@ -300,7 +401,7 @@ class CleanCopy(private val context: Context, private val report: (step: String,
                             done.countDown()
                             return
                         }
-                        if (t.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) report("Making the clean copy", holder.progress)
+                        if (t.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) report(step, holder.progress)
                         main.postDelayed(this, 1000)
                     }
                 }
@@ -313,7 +414,7 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         done.await()
         failure.get()?.let {
             output.delete()
-            throw IOException(if (it.message == "Stopped") "Stopped" else "The clean copy could not be made: ${it.message}")
+            throw IOException(if (it.message == "Stopped") "Stopped" else "$step failed: ${it.message}")
         }
     }
 
@@ -332,9 +433,18 @@ class CleanCopy(private val context: Context, private val report: (step: String,
             } catch (e: Exception) { null }
         }.sortedByDescending { it.madeAt }
 
-        fun delete(copy: CleanCopyFile) {
-            copy.file.delete()
-            File(copy.file.parentFile, copy.file.name.removeSuffix(".mp4") + ".json").delete()
+        fun delete(copy: CleanCopyFile) = delete(copy.file)
+
+        fun delete(video: File) {
+            video.delete()
+            File(video.parentFile, video.name.removeSuffix(".mp4") + ".json").delete()
+        }
+
+        /** A clean copy is for one viewing: anything a day old is deleted, whether or not it was played. */
+        fun deleteOld(context: Context) {
+            val dayAgo = System.currentTimeMillis() - 24 * 60 * 60_000L
+            folder(context).listFiles().orEmpty().filter { it.lastModified() < dayAgo }.forEach { it.delete() }
+            File(context.cacheDir, "clean-work").listFiles().orEmpty().filter { it.lastModified() < dayAgo }.forEach { it.delete() }
         }
     }
 }

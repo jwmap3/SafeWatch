@@ -228,7 +228,7 @@ class TitleActivity : AppCompatActivity() {
          */
         fun watch(ctx: Context, title: Title, service: Service? = Services.byId(title.serviceId), episode: Episode? = null) {
             val url = when {
-                service == null -> BrowserActivity.WEB_SEARCH + android.net.Uri.encode("watch ${title.name}")
+                service == null -> Prefs.searchPrefix(ctx) + android.net.Uri.encode("watch ${title.name}")
                 service.id == title.serviceId && title.link != null -> playerLink(service, title.link, episode)
                 else -> service.searchFor(title.name)
             }

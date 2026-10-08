@@ -46,10 +46,14 @@ class Curtain(private val anchor: View) {
 
     val isUp: Boolean get() = popup.isShowing
 
-    /** Shows the curtain, or refreshes it, with a smeared copy of [frame]. */
+    /** Shows the curtain, or refreshes it, with a smeared copy of [frame] (or plain black, if the viewer chose that). */
     fun show(frame: Bitmap) {
-        val small = Bitmap.createScaledBitmap(frame, DOTS, (DOTS * frame.height / maxOf(1, frame.width)).coerceAtLeast(2), true)
-        image.setImageBitmap(small)
+        if (com.safewatch.app.data.Prefs.hideStyle(anchor.context) == "black") {
+            image.setImageDrawable(null)
+        } else {
+            val small = Bitmap.createScaledBitmap(frame, DOTS, (DOTS * frame.height / maxOf(1, frame.width)).coerceAtLeast(2), true)
+            image.setImageBitmap(small)
+        }
         if (!anchor.isAttachedToWindow || anchor.width == 0) return
         val at = IntArray(2)
         anchor.getLocationInWindow(at)

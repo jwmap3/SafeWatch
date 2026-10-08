@@ -41,7 +41,8 @@ class TvActivity : AppCompatActivity() {
         column.addView(Ui.largeTitle(this, "TV"))
         column.addView(Ui.subtitle(this,
             "A clean copy is the video with the filtering built in. Your Roku or smart TV plays it by itself, so your phone " +
-                "can be locked while it plays. Keep the phone on the Wi-Fi: the TV fetches the video from it."))
+                "can be locked while it plays. Keep the phone on the Wi-Fi: the TV fetches the video from it. Each copy is for " +
+                "one viewing: it deletes itself once it has played through, or after a day."))
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(body)
         setContentView(page)
@@ -52,6 +53,7 @@ class TvActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        CleanCopy.deleteOld(this)
         TvState.listeners += listener
         show()
     }
@@ -117,7 +119,7 @@ class TvActivity : AppCompatActivity() {
         if (copies.isEmpty()) {
             body.addView(Ui.caption(this,
                 "None yet. While watching a video file or a website's video, tap Send to TV, then Clean copy to TV. " +
-                    "Streaming services and YouTube cannot be saved; use Mirror to TV for those."))
+                    "Netflix, HBO Max and the other paid services lock their videos, so use Mirror to TV for those."))
             return
         }
         body.addView(Ui.card(this).apply {
@@ -196,6 +198,30 @@ class TvActivity : AppCompatActivity() {
         rememberTv(this, device)
         TvService.play(this, copy, device)
         Ui.toast(this, "Sending to ${device.name}. A Samsung or LG TV may ask you to allow it.")
+        askToRunWithScreenOff()
+    }
+
+    /**
+     * Some phones stop apps that work with the screen off to save battery, which would cut the TV off
+     * mid-film. Asked once: the viewer can let SafeWatch run without that limit.
+     */
+    private fun askToRunWithScreenOff() {
+        val power = getSystemService(android.os.PowerManager::class.java)
+        if (power.isIgnoringBatteryOptimizations(packageName) || prefs(this).getBoolean("askedBattery", false)) return
+        prefs(this).edit().putBoolean("askedBattery", true).apply()
+        AlertDialog.Builder(this)
+            .setTitle("Keep playing with the screen off")
+            .setMessage("So the TV is not cut off mid-film when your phone locks, let SafeWatch run without battery limits.")
+            .setPositiveButton("Allow") { _, _ ->
+                try {
+                    @Suppress("BatteryLife")
+                    startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                    startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                }
+            }
+            .setNegativeButton("Not now", null)
+            .show()
     }
 
     companion object {

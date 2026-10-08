@@ -97,6 +97,17 @@ open class BrowserActivity : AppCompatActivity() {
     private var playerLayer: PlayerLayer? = null
     private lateinit var address: EditText
     private lateinit var chrome: List<View>
+
+    // The Browser tab's own parts: one bar at the bottom that can be hidden, a quick-links start
+    // screen, and a pill that only shows while a scene is being marked.
+    private var bottomBar: View? = null
+    private var barDivider: View? = null
+    private var revealButton: View? = null
+    private var quickLinks: QuickLinks? = null
+    private var markingPill: TextView? = null
+    private var barHidden = false
+    private var barHiddenByChoice = false
+    private var currentUrl = ""
     private val markButtons = ArrayList<TextView>()
     private var playerBar: View? = null
     private var label = ""
@@ -164,6 +175,12 @@ open class BrowserActivity : AppCompatActivity() {
     // The video file the page is playing, if it plays a whole file, and caption files that go with it.
     @Volatile private var pageVideoSrc = ""
     @Volatile private var pageVideoTracks: List<String> = emptyList()
+
+    // Streams' manifests the page has loaded, and every caption line with times the page script has
+    // read: what a clean copy for the TV is made from.
+    private class PageManifest(val kind: String, val address: String, val master: Boolean, val refusal: String?)
+    private val pageManifests = ArrayList<PageManifest>()
+    private val pageCues = LinkedHashMap<String, Triple<Long, Long, String>>()
 
     private var pageStartedAt = 0L
     private var allowOnce: String? = null
@@ -234,7 +251,8 @@ open class BrowserActivity : AppCompatActivity() {
         web.webChromeClient = Chrome()
 
         if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) {
-            load(requestedUrl(intent) ?: Prefs.lastPage(this) ?: START_PAGE)
+            // Opened on its own, the Browser tab starts at the quick links.
+            load(requestedUrl(intent) ?: if (watchMode) Prefs.lastPage(this) ?: START_PAGE else START_PAGE)
         }
     }
 
@@ -282,25 +300,26 @@ open class BrowserActivity : AppCompatActivity() {
         address = EditText(this).apply {
             textSize = 15f
             maxLines = 1
-            hint = "Search or enter a website"
+            hint = "Search Google or type a website"
+            gravity = Gravity.CENTER
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_GO
             setSelectAllOnFocus(true)
             setTextColor(Ui.color(context, R.color.text))
             setHintTextColor(Ui.color(context, R.color.text_secondary))
-            background = Ui.rounded(Ui.color(context, R.color.fill), Ui.dp(context, 10).toFloat())
-            setPadding(Ui.dp(context, 12), Ui.dp(context, 8), Ui.dp(context, 12), Ui.dp(context, 8))
+            background = Ui.rounded(Ui.color(context, R.color.fill), Ui.dp(context, 18).toFloat())
+            setPadding(Ui.dp(context, 14), Ui.dp(context, 9), Ui.dp(context, 14), Ui.dp(context, 9))
             setOnEditorActionListener { v, _, _ ->
                 go(v.text.toString())
                 true
             }
-        }
-        val top = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(Ui.dp(context, 4), Ui.dp(context, 6), Ui.dp(context, 4), Ui.dp(context, 6))
-            addView(Ui.iconButton(context, R.drawable.ic_home, "Home") { MainActivity.open(context) })
-            addView(address, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(Ui.iconButton(context, R.drawable.ic_more, "More") { showMenu(it) })
+            // Away from the keyboard the bar shows just the site's name; tapped, the whole address, ready to replace.
+            setOnFocusChangeListener { _, focused ->
+                gravity = if (focused) Gravity.START or Gravity.CENTER_VERTICAL else Gravity.CENTER
+                showAddress()
+                if (focused) selectAll()
+                showQuickLinks(focused || currentUrl == START_PAGE)
+            }
         }
 
         web = WebView(this)
@@ -335,27 +354,93 @@ open class BrowserActivity : AppCompatActivity() {
             return root
         }
 
-        val markButton = Ui.pill(this, MARK_START, filled = false) { onMarkTapped() }
-        markButtons += markButton
+        // The Browser tab: the page fills the screen, with one slim bar at the bottom for back, the
+        // address and a menu. The bar slides away while reading down a page and comes back on the way up.
+        val links = QuickLinks(this) { url -> go(url) }.apply { visibility = View.GONE }
+        quickLinks = links
+        stage.addView(links, FrameLayout.LayoutParams(-1, -1))
+        val pill = Ui.pill(this, MARK_END, filled = true) { onMarkTapped() }.apply { visibility = View.GONE }
+        markButtons += pill
+        markingPill = pill
+        stage.addView(pill, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = Ui.dp(this@BrowserActivity, 16)
+        })
+        val reveal = FrameLayout(this).apply {
+            contentDescription = "Show the bar"
+            background = Ui.rounded(Color.argb(150, 30, 30, 34), Ui.dp(context, 22).toFloat())
+            addView(Ui.icon(context, R.drawable.ic_up, R.color.on_accent, 22), FrameLayout.LayoutParams(Ui.dp(context, 22), Ui.dp(context, 22), Gravity.CENTER))
+            visibility = View.GONE
+            setOnClickListener {
+                barHiddenByChoice = false
+                setBarHidden(false)
+            }
+        }
+        revealButton = reveal
+        stage.addView(reveal, FrameLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44), Gravity.BOTTOM or Gravity.END).apply {
+            setMargins(0, 0, Ui.dp(this@BrowserActivity, 14), Ui.dp(this@BrowserActivity, 14))
+        })
         val bottom = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4))
-            addView(Ui.iconButton(context, R.drawable.ic_back, "Back") { if (web.canGoBack()) web.goBack() })
-            addView(Ui.iconButton(context, R.drawable.ic_forward, "Forward") { if (web.canGoForward()) web.goForward() })
-            addView(Ui.spacer(context))
-            addView(markButton)
-            addView(Ui.spacer(context))
-            addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV") { sendToTv() })
-            addView(Ui.iconButton(context, R.drawable.ic_filters, "Filters") { MainActivity.open(context, MainActivity.TAB_FILTERS) })
+            setBackgroundColor(Ui.color(context, R.color.bar))
+            setPadding(Ui.dp(context, 4), Ui.dp(context, 6), Ui.dp(context, 4), Ui.dp(context, 6))
+            addView(Ui.iconButton(context, R.drawable.ic_back, "Back") { goBack() })
+            addView(address, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(Ui.iconButton(context, R.drawable.ic_more, "More") { showMenu(it) })
         }
-
-        root.addView(top)
-        root.addView(Ui.divider(this, 0))
+        val divider = Ui.divider(this, 0)
+        bottomBar = bottom
+        barDivider = divider
         root.addView(stageHolder, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(Ui.divider(this, 0))
+        root.addView(divider)
         root.addView(bottom)
-        chrome = listOf(top, bottom)
+        chrome = listOf(divider, bottom)
+        web.setOnScrollChangeListener { _, _, y, _, oldY ->
+            if (barHiddenByChoice || playerView || address.hasFocus() || !Prefs.hideBarWhileScrolling(this)) return@setOnScrollChangeListener
+            if (y > oldY + 10 && y > Ui.dp(this, 80)) setBarHidden(true)
+            else if (y < oldY - 10) setBarHidden(false)
+        }
         return root
+    }
+
+    /** Hides or shows the browser's bottom bar. While it is hidden, a small button in the corner brings it back. */
+    private fun setBarHidden(hide: Boolean) {
+        val bar = bottomBar ?: return
+        if (hide == barHidden || playerView) return
+        barHidden = hide
+        if (hide) {
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(address.windowToken, 0)
+            address.clearFocus()
+            bar.animate().translationY(bar.height.toFloat()).setDuration(160).withEndAction {
+                if (barHidden) {
+                    bar.visibility = View.GONE
+                    barDivider?.visibility = View.GONE
+                }
+            }.start()
+        } else {
+            bar.visibility = View.VISIBLE
+            barDivider?.visibility = View.VISIBLE
+            bar.translationY = bar.height.toFloat()
+            bar.animate().translationY(0f).setDuration(160).start()
+        }
+        revealButton?.visibility = if (hide) View.VISIBLE else View.GONE
+    }
+
+    /** The address bar's text: the site's name, or, while it is being typed in, the whole address. */
+    private fun showAddress() {
+        if (!::address.isInitialized) return
+        val url = currentUrl
+        val text = when {
+            url == START_PAGE || url.isEmpty() || fixedKey != null -> ""
+            address.hasFocus() -> url
+            else -> Uri.parse(url).host.orEmpty().removePrefix("www.").removePrefix("m.")
+        }
+        if (address.text.toString() != text) address.setText(text)
+    }
+
+    private fun showQuickLinks(show: Boolean) {
+        val links = quickLinks ?: return
+        if (show && links.visibility != View.VISIBLE) links.refresh()
+        links.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     /** Back, the title, Mark scene and Send to TV: everything the player shows besides the picture. */
@@ -434,9 +519,10 @@ open class BrowserActivity : AppCompatActivity() {
         val middle = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             visibility = View.GONE
-            addView(round(label("−10"), 54) { send("skip:-10") }.apply { contentDescription = "Back 10 seconds" })
+            val jump = Prefs.skipSeconds(this@BrowserActivity)
+            addView(round(label("−$jump"), 54) { send("skip:-$jump") }.apply { contentDescription = "Back $jump seconds" })
             addView(round(play, 72) { send(if (videoPaused) "play" else "pause") }.apply { contentDescription = "Play or pause" })
-            addView(round(label("+10"), 54) { send("skip:10") }.apply { contentDescription = "Forward 10 seconds" })
+            addView(round(label("+$jump"), 54) { send("skip:$jump") }.apply { contentDescription = "Forward $jump seconds" })
         }
         holder.addView(middle, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
 
@@ -560,7 +646,9 @@ open class BrowserActivity : AppCompatActivity() {
         playerView = on
         wantsFullPicture = on
         ViewCompat.requestApplyInsets(root)
-        chrome.forEach { it.visibility = if (on) View.GONE else View.VISIBLE }
+        chrome.forEach { it.visibility = if (on || barHidden) View.GONE else View.VISIBLE }
+        if (!on) bottomBar?.translationY = 0f
+        revealButton?.visibility = if (!on && barHidden) View.VISIBLE else View.GONE
         requestedOrientation = if (on) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         WindowCompat.getInsetsController(window, root).apply {
             if (on) {
@@ -600,13 +688,18 @@ open class BrowserActivity : AppCompatActivity() {
         controlViews.forEach { it.visibility = View.GONE }
     }
 
-    private fun setMarkLabel(text: String) = markButtons.forEach { it.text = text }
+    private fun setMarkLabel(text: String) {
+        markButtons.forEach { it.text = text }
+        // In the Browser tab, Mark scene lives in the menu; while a scene is being marked, a pill ends it.
+        markingPill?.visibility = if (markStartMs != null && !playerView) View.VISIBLE else View.GONE
+    }
 
     override fun onResume() {
         super.onResume()
         web.onResume()
         settings = Prefs.settings(this)
         matcher = ProfanityMatcher(settings)
+        searchPrefix = Prefs.searchPrefix(this)
         version.incrementAndGet()
         if (detector == null && settings.nudity != Strictness.OFF) {
             background.execute {
@@ -670,6 +763,10 @@ open class BrowserActivity : AppCompatActivity() {
         when {
             fullscreenView != null -> web.webChromeClient?.onHideCustomView()
             watchMode && playerView -> finish()
+            !watchMode && address.hasFocus() -> {
+                address.clearFocus()
+                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(address.windowToken, 0)
+            }
             web.canGoBack() -> web.goBack()
             watchMode -> finish()
             else -> MainActivity.open(this)
@@ -681,10 +778,13 @@ open class BrowserActivity : AppCompatActivity() {
     private fun go(input: String) {
         val text = input.trim()
         if (text.isEmpty()) return
+        showQuickLinks(false)
+        address.clearFocus()
         load(toUrl(text))
         web.requestFocus()
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(address.windowToken, 0)
     }
+
 
     /** Whether a page should be asked for as a computer would: always if the viewer chose so, and for services that need it. */
     private fun wantsDesktop(url: String): Boolean =
@@ -696,7 +796,13 @@ open class BrowserActivity : AppCompatActivity() {
         return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeVersion Safari/537.36"
     }
 
+    private fun forgetPageMedia() {
+        synchronized(pageManifests) { pageManifests.clear() }
+        synchronized(pageCues) { pageCues.clear() }
+    }
+
     private fun load(url: String) {
+        forgetPageMedia()
         val video = YOUTUBE_PLAYER.find(url)?.groupValues?.get(1)
         if (video != null) {
             // A YouTube video picked in the app plays in YouTube's embedded player, filling the screen.
@@ -759,19 +865,33 @@ open class BrowserActivity : AppCompatActivity() {
     private fun showMenu(anchor: View) {
         val desktop = Prefs.desktopSite(this)
         PopupMenu(this, anchor).apply {
-            menu.add(0, 1, 0, "Reload")
-            menu.add(0, 2, 1, if (desktop) "Mobile site" else "Desktop site")
-            menu.add(0, 3, 2, "Send to TV")
-            menu.add(0, 4, 3, "Clear marked scenes on this page")
+            if (web.canGoForward()) menu.add(0, 1, 0, "Forward")
+            menu.add(0, 2, 1, "Reload")
+            menu.add(0, 3, 2, if (markStartMs == null) "Mark scene" else "End scene")
+            menu.add(0, 4, 3, "Send to TV")
+            menu.add(0, 5, 4, "Quick links")
+            menu.add(0, 6, 5, "Hide this bar")
+            menu.add(0, 7, 6, if (desktop) "Mobile site" else "Desktop site")
+            menu.add(0, 8, 7, "SafeWatch home")
+            menu.add(0, 9, 8, "Clear marked scenes on this page")
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
-                    1 -> web.reload()
-                    2 -> {
+                    1 -> web.goForward()
+                    2 -> web.reload()
+                    3 -> onMarkTapped()
+                    4 -> sendToTv()
+                    5 -> load(START_PAGE)
+                    6 -> {
+                        barHiddenByChoice = true
+                        setBarHidden(true)
+                        Ui.toast(this@BrowserActivity, "Tap the arrow in the corner to bring the bar back")
+                    }
+                    7 -> {
                         Prefs.setDesktopSite(this@BrowserActivity, !desktop)
                         web.url?.let { load(it) }
                     }
-                    3 -> sendToTv()
-                    4 -> {
+                    8 -> MainActivity.open(this@BrowserActivity)
+                    9 -> {
                         TagStore.save(this@BrowserActivity, pageKey, pageTitle, emptyList())
                         version.incrementAndGet()
                         Ui.toast(this@BrowserActivity, "Marked scenes cleared")
@@ -811,6 +931,7 @@ open class BrowserActivity : AppCompatActivity() {
                 playingFile = null
                 pageVideoSrc = ""
                 pageVideoTracks = emptyList()
+                forgetPageMedia()
             }
             // Moving to a site that needs the other kind of page: ask again the right way.
             if (request.isForMainFrame && agentFor(url) != view.settings.userAgentString) {
@@ -824,7 +945,9 @@ open class BrowserActivity : AppCompatActivity() {
             pageKey = fixedKey ?: MediaKey.forUrl(url)
             version.incrementAndGet()
             noteSignIn(url)
-            if (!address.hasFocus()) address.setText(if (url == START_PAGE || fixedKey != null) "" else url)
+            currentUrl = url
+            showAddress()
+            showQuickLinks(url == START_PAGE || address.hasFocus())
             if (markStartMs != null) {
                 markStartMs = null
                 setMarkLabel(MARK_START)
@@ -951,14 +1074,39 @@ open class BrowserActivity : AppCompatActivity() {
     private fun cleanSource(): Pair<com.safewatch.app.tv.CleanSource?, String?> {
         val title = label.ifEmpty { pageTitle }.ifEmpty { "Video" }
         if (playingYoutube != null) return null to "YouTube videos cannot be saved."
-        playingFile?.let { return com.safewatch.app.tv.CleanSource(title, pageKey, it, pageVideoTracks) to null }
+        val captions = pageVideoTracks + listOfNotNull(cuesFile())
+        playingFile?.let { return com.safewatch.app.tv.CleanSource(title, pageKey, it, captions) to null }
         Services.forUrl(web.url)?.takeIf { it.protectedVideo }?.let { return null to "${it.name} locks its videos so they cannot be saved." }
         val src = pageVideoSrc
-        if (src.isEmpty()) return null to "Start the video first, then tap Send to TV."
-        if (!src.startsWith("http") || !com.safewatch.app.tv.CleanSource.isWholeFile(src)) {
-            return null to "This video streams in pieces rather than as one file, so it cannot be saved."
+        val referrer = web.url.orEmpty()
+        // A whole video file.
+        if (src.startsWith("http") && com.safewatch.app.tv.CleanSource.streamKind(src).isEmpty() && com.safewatch.app.tv.CleanSource.isWholeFile(src)) {
+            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer) to null
         }
-        return com.safewatch.app.tv.CleanSource(title, pageKey, src, pageVideoTracks, web.url.orEmpty()) to null
+        // A stream in pieces: the video's own manifest, or the one the page's player loaded.
+        com.safewatch.app.tv.CleanSource.streamKind(src).takeIf { it.isNotEmpty() }?.let { kind ->
+            return com.safewatch.app.tv.CleanSource(title, pageKey, src, captions, referrer, kind) to null
+        }
+        val manifest = synchronized(pageManifests) { pageManifests.lastOrNull { it.master } ?: pageManifests.lastOrNull() }
+        if (manifest != null) {
+            manifest.refusal?.let { return null to it }
+            return com.safewatch.app.tv.CleanSource(title, pageKey, manifest.address, captions, referrer, manifest.kind) to null
+        }
+        if (src.isEmpty()) return null to "Start the video first, then tap Send to TV."
+        return null to "The video's source could not be found on this page. Start it playing, then try again."
+    }
+
+    /** The caption lines the page script read for this video, written as a caption file for the clean copy. */
+    private fun cuesFile(): String? {
+        val lines = synchronized(pageCues) { pageCues.values.sortedBy { it.first } }
+        if (lines.isEmpty()) return null
+        fun stamp(ms: Long): String {
+            val t = ms.coerceAtLeast(0)
+            return String.format(java.util.Locale.US, "%02d:%02d:%02d.%03d", t / 3_600_000, t / 60_000 % 60, t / 1000 % 60, t % 1000)
+        }
+        val file = java.io.File(cacheDir, "clean-captions-${System.currentTimeMillis()}.vtt")
+        file.writeText("WEBVTT\n\n" + lines.joinToString("\n\n") { (start, end, text) -> "${stamp(start)} --> ${stamp(end)}\n$text" } + "\n")
+        return file.absolutePath
     }
 
     // ---- Pop-ups and redirects ----
@@ -1160,6 +1308,37 @@ open class BrowserActivity : AppCompatActivity() {
                 val list = JSONArray(captions)
                 (0 until list.length()).map { list.getString(it) }.filter { it.startsWith("http") }
             } catch (e: Exception) { emptyList() }
+        }
+
+        /** A stream's manifest the page loaded: kept, with whether it may be saved, for Send to TV. */
+        @JavascriptInterface
+        fun manifest(kind: String, address: String, text: String) {
+            if (!address.startsWith("http")) return
+            val master = kind == com.safewatch.app.tv.CleanSource.DASH || com.safewatch.core.StreamInfo.hlsIsMaster(text)
+            val refusal = com.safewatch.core.StreamInfo.refusal(text)
+            synchronized(pageManifests) {
+                pageManifests.removeAll { it.address == address }
+                pageManifests += PageManifest(kind, address, master, refusal)
+                while (pageManifests.size > 12) pageManifests.removeAt(0)
+            }
+        }
+
+        /** Caption lines with times, as `[[startMs, endMs, "text"], ...]`, kept for a clean copy made for the TV. */
+        @JavascriptInterface
+        fun copyCues(lines: String) {
+            try {
+                val list = JSONArray(lines)
+                synchronized(pageCues) {
+                    for (i in 0 until list.length()) {
+                        val line = list.getJSONArray(i)
+                        val start = line.getLong(0)
+                        val text = line.getString(2)
+                        if (pageCues.size < 30_000) pageCues["$start|$text"] = Triple(start, line.getLong(1), text)
+                    }
+                }
+            } catch (e: Exception) {
+                // Not lines after all.
+            }
         }
 
         /** True while the player view is up, so the page should let its video fill the screen. */
@@ -1399,7 +1578,8 @@ open class BrowserActivity : AppCompatActivity() {
         private val YOUTUBE_PLAYER = Regex("^safewatch://youtube/([A-Za-z0-9_-]{6,20})$")
         private val DIRECT_VIDEO = Regex("^https?://[^?#]+\\.(mp4|m4v|webm|mov|ogv)([?#].*)?$", RegexOption.IGNORE_CASE)
         const val START_PAGE = "file:///android_asset/start.html"
-        const val WEB_SEARCH = "https://www.google.com/search?q="
+        /** Where typed words are searched; set from Settings. */
+        @Volatile var searchPrefix = "https://www.google.com/search?q="
         private const val MARK_START = "Mark scene"
         private const val MARK_END = "End scene"
         private const val CHECK_EVERY_MS = 250L
@@ -1430,7 +1610,7 @@ open class BrowserActivity : AppCompatActivity() {
             return when {
                 t.startsWith("http://") || t.startsWith("https://") -> t
                 looksLikeAddress(t) -> "https://$t"
-                else -> WEB_SEARCH + android.net.Uri.encode(t)
+                else -> searchPrefix + android.net.Uri.encode(t)
             }
         }
     }

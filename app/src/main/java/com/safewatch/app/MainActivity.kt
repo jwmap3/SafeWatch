@@ -76,7 +76,9 @@ class MainActivity : AppCompatActivity() {
         filters = FiltersScreen(this)
         for (page in listOf(home.view, search.view, youtube.view, filters.view)) content.addView(page, FrameLayout.LayoutParams(-1, -1))
 
-        show(savedInstanceState?.getInt(STATE_TAB) ?: intent.getIntExtra(EXTRA_TAB, TAB_HOME))
+        val start = Prefs.startTab(this)
+        show(savedInstanceState?.getInt(STATE_TAB) ?: intent.getIntExtra(EXTRA_TAB, if (start == TAB_BROWSER || start == TAB_FILTERS) TAB_HOME else start))
+        if (savedInstanceState == null && !intent.hasExtra(EXTRA_TAB) && start == TAB_BROWSER && Prefs.welcomed(this)) show(TAB_BROWSER)
         if (savedInstanceState == null && !Prefs.welcomed(this)) startActivity(Intent(this, WelcomeActivity::class.java))
     }
 
@@ -127,9 +129,9 @@ class MainActivity : AppCompatActivity() {
         }
         val tabs = listOf(
             Triple(TAB_HOME, "Home", R.drawable.ic_home),
+            Triple(TAB_BROWSER, "Browser", R.drawable.ic_globe),
             Triple(TAB_SEARCH, "Search", R.drawable.ic_search),
             Triple(TAB_YOUTUBE, "YouTube", R.drawable.ic_play),
-            Triple(TAB_BROWSER, "Browser", R.drawable.ic_globe),
             Triple(TAB_FILTERS, "Settings", R.drawable.ic_filters),
         )
         for ((id, label, iconRes) in tabs) {
@@ -162,6 +164,11 @@ class MainActivity : AppCompatActivity() {
 
     /** Switches tab. The Browser tab is its own screen, so it opens on top and the tab shown here stays put. */
     fun show(which: Int) {
+        // With a PIN set, Settings only opens once it is given, so children cannot switch the filters off.
+        if (which == TAB_FILTERS && Prefs.settingsPin(this).isNotEmpty() && !settingsUnlocked) {
+            askForPin { show(TAB_FILTERS) }
+            return
+        }
         if (which == TAB_BROWSER) {
             BrowserActivity.resume(this)
             return
@@ -174,7 +181,7 @@ class MainActivity : AppCompatActivity() {
         if (which == TAB_YOUTUBE) youtube.onShown() else youtube.onHidden()
         if (which == TAB_SEARCH) search.onShown() else search.onHidden()
         if (which == TAB_FILTERS) filters.onShown()
-        val order = listOf(TAB_HOME, TAB_SEARCH, TAB_YOUTUBE, TAB_BROWSER, TAB_FILTERS)
+        val order = TAB_ORDER
         tabViews.forEachIndexed { i, (icon, text) ->
             val color = Ui.color(this, if (order[i] == which) R.color.accent else R.color.text_secondary)
             icon.imageTintList = android.content.res.ColorStateList.valueOf(color)
@@ -187,12 +194,51 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    override fun onStop() {
+        super.onStop()
+        // Leaving the app locks Settings again.
+        if (!isChangingConfigurations) settingsUnlocked = false
+    }
+
+    private fun askForPin(then: () -> Unit) {
+        val field = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            hint = "PIN"
+            gravity = Gravity.CENTER
+            textSize = 22f
+        }
+        val box = FrameLayout(this).apply {
+            setPadding(Ui.dp(context, 24), Ui.dp(context, 8), Ui.dp(context, 24), 0)
+            addView(field)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Settings are locked")
+            .setMessage("Enter the PIN to change the filters.")
+            .setView(box)
+            .setPositiveButton("Open") { _, _ ->
+                if (field.text.toString() == Prefs.settingsPin(this)) {
+                    settingsUnlocked = true
+                    then()
+                } else {
+                    Ui.toast(this, "That PIN is not right")
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+        field.requestFocus()
+    }
+
     companion object {
         const val TAB_HOME = 0
         const val TAB_SEARCH = 1
         const val TAB_BROWSER = 2
         const val TAB_FILTERS = 3
         const val TAB_YOUTUBE = 4
+        /** The tabs, in the order they sit along the bottom. */
+        val TAB_ORDER = listOf(TAB_HOME, TAB_BROWSER, TAB_SEARCH, TAB_YOUTUBE, TAB_FILTERS)
+
+        /** Whether Settings has been opened with its PIN since the app was last left. */
+        var settingsUnlocked = false
         private const val EXTRA_TAB = "tab"
         private const val STATE_TAB = "tab"
 

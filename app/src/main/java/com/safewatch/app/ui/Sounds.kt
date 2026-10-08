@@ -42,7 +42,8 @@ object Sounds {
             val fresh = SoundPool.Builder()
                 .setMaxStreams(2)
                 .setAudioAttributes(AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    // Played with the media volume, which is up while watching, not the system volume, which is often off.
+                    .setUsage(AudioAttributes.USAGE_GAME)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build())
                 .build()
@@ -51,11 +52,11 @@ object Sounds {
             loadedPack = pack.id
             // A sound cannot play until it has loaded, so the one asked for plays as soon as it is ready.
             val wanted = ids.getOrNull(which)
-            fresh.setOnLoadCompleteListener { p, id, status -> if (status == 0 && id == wanted) p.play(id, VOLUME, VOLUME, 1, 0, 1f) }
+            val volume = Prefs.soundVolume(ctx) / 100f
+            fresh.setOnLoadCompleteListener { p, id, status -> if (status == 0 && id == wanted) p.play(id, volume, volume, 1, 0, 1f) }
             return
         }
-        ids.getOrNull(which)?.let { pool?.play(it, VOLUME, VOLUME, 1, 0, 1f) }
+        val volume = Prefs.soundVolume(ctx) / 100f
+        if (volume > 0f) ids.getOrNull(which)?.let { pool?.play(it, volume, volume, 1, 0, 1f) }
     }
-
-    private const val VOLUME = 0.55f
 }

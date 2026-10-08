@@ -18,25 +18,34 @@ object Images {
     private val pool = Executors.newFixedThreadPool(4)
     private val ui = Handler(Looper.getMainLooper())
 
-    /** [minWidth] is the smallest width in pixels the picture is allowed to be shrunk to. */
-    fun load(url: String, into: ImageView, minWidth: Int = 360) {
-        val key = "$minWidth:$url"
+    /**
+     * [minWidth] is the smallest width in pixels the picture is allowed to be shrunk to. [clear] keeps
+     * see-through parts see-through (for icons); photos do without, to save memory.
+     */
+    fun load(url: String, into: ImageView, minWidth: Int = 360, clear: Boolean = false, onLoaded: (() -> Unit)? = null) {
+        val key = "$minWidth:$clear:$url"
         into.tag = key
         val ready = cache.get(key)
         if (ready != null) {
             into.setImageBitmap(ready)
+            onLoaded?.invoke()
             return
         }
         into.setImageDrawable(null)
         pool.execute {
-            val bitmap = try { fetch(url, minWidth) } catch (e: Exception) { null } ?: return@execute
+            val bitmap = try { fetch(url, minWidth, clear) } catch (e: Exception) { null } ?: return@execute
             cache.put(key, bitmap)
             // The view may have been reused for another picture while this one loaded.
-            ui.post { if (into.tag == key) into.setImageBitmap(bitmap) }
+            ui.post {
+                if (into.tag == key) {
+                    into.setImageBitmap(bitmap)
+                    onLoaded?.invoke()
+                }
+            }
         }
     }
 
-    private fun fetch(url: String, minWidth: Int): Bitmap? {
+    private fun fetch(url: String, minWidth: Int, clear: Boolean): Bitmap? {
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 10_000
@@ -48,7 +57,7 @@ object Images {
             while (bounds.outWidth / (sample * 2) >= minWidth) sample *= 2
             val options = BitmapFactory.Options().apply {
                 inSampleSize = sample
-                inPreferredConfig = Bitmap.Config.RGB_565
+                inPreferredConfig = if (clear) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
             }
             return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
         } finally {
