@@ -35,7 +35,7 @@ PER_SERVICE = 200
 def fetch(url):
     for attempt in range(5):
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "SafeWatch catalog builder"})
+            request = urllib.request.Request(url, headers={"User-Agent": "EdenOS catalog builder"})
             with urllib.request.urlopen(request, timeout=30) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:

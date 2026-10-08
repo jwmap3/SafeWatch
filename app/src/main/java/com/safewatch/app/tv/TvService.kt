@@ -118,7 +118,7 @@ class TvService : Service() {
         val address = TvFinder.phoneAddress(this)
         if (address == null) {
             // Started as a foreground service, it has to show itself before it may stop.
-            val note = Notification.Builder(this, channel(this)).setSmallIcon(R.drawable.ic_cast).setContentTitle("SafeWatch").build()
+            val note = Notification.Builder(this, channel(this)).setSmallIcon(R.drawable.ic_cast).setContentTitle("EdenOS").build()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTE_ID, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK) else startForeground(NOTE_ID, note)
             TvState.job = TvState.Job(title, "Not sent", -1, error = "The phone is not on Wi-Fi")
             TvState.changed()
@@ -228,7 +228,7 @@ class TvService : Service() {
             server != null -> (if (TvState.paused) "Paused on " else "Playing on ") + (TvState.playingOn?.name ?: "TV")
             else -> TvState.job?.let { it.step + if (it.percent >= 0) " ${it.percent}%" else "" } ?: "Working"
         }
-        val title = if (server != null) TvState.playingTitle ?: "SafeWatch" else "Clean copy: ${TvState.job?.title ?: ""}"
+        val title = if (server != null) TvState.playingTitle ?: "EdenOS" else "Clean copy: ${TvState.job?.title ?: ""}"
         val builder = Notification.Builder(this, channel(this))
             .setSmallIcon(R.drawable.ic_cast)
             .setContentTitle(title)

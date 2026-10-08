@@ -15,7 +15,7 @@ import com.safewatch.app.data.Shelf
 import com.safewatch.app.ui.Ui
 
 /**
- * One streaming service's page in SafeWatch's layout: its popular and new
+ * One streaming service's page in EdenOS's layout: its popular and new
  * shows and its biggest genres, as shelves. Titles open on their own pages
  * and play in the app's player.
  *

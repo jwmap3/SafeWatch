@@ -230,12 +230,15 @@ object Ui {
                 text = label
                 textSize = 14f
                 gravity = Gravity.CENTER
+                maxLines = 1
+                // A long name ("DuckDuckGo") shrinks a little to stay on one line instead of breaking.
+                setAutoSizeTextTypeUniformWithConfiguration(10, 14, 1, TypedValue.COMPLEX_UNIT_SP)
                 setTextColor(color(ctx, R.color.text))
-                setPadding(0, dp(ctx, 8), 0, dp(ctx, 8))
+                setPadding(dp(ctx, 3), 0, dp(ctx, 3), 0)
                 setOnClickListener { Sounds.play(ctx, Sounds.TAP); paint(i); onSelect(i) }
             }
             cells += cell
-            track.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            track.addView(cell, LinearLayout.LayoutParams(0, dp(ctx, 35), 1f))
         }
         paint(selected)
         return track
@@ -278,6 +281,29 @@ object Ui {
         setImageResource(drawable)
         imageTintList = ColorStateList.valueOf(color(ctx, colorRes))
         layoutParams = LinearLayout.LayoutParams(dp(ctx, sizeDp), dp(ctx, sizeDp))
+    }
+
+    /**
+     * The EdenOS mark: the tree of life, with the sword of fire turning slowly around it, as the cherubim's
+     * sword "turned every way" to keep the garden. The viewer can still it in Settings.
+     */
+    fun logo(ctx: Context, sizeDp: Int): FrameLayout = FrameLayout(ctx).apply {
+        contentDescription = "EdenOS"
+        val fire = ImageView(ctx).apply { setImageResource(R.drawable.ic_logo_fire) }
+        addView(fire, FrameLayout.LayoutParams(-1, -1))
+        addView(ImageView(ctx).apply { setImageResource(R.drawable.ic_logo_tree) }, FrameLayout.LayoutParams(-1, -1))
+        layoutParams = LinearLayout.LayoutParams(dp(ctx, sizeDp), dp(ctx, sizeDp))
+        if (!com.safewatch.app.data.Prefs.turningLogo(ctx) || !android.animation.ValueAnimator.areAnimatorsEnabled()) return@apply
+        val turn = android.animation.ObjectAnimator.ofFloat(fire, View.ROTATION, 0f, 360f).apply {
+            duration = 14_000L
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = android.view.animation.LinearInterpolator()
+        }
+        // Only turns while it is on screen.
+        addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) = if (turn.isStarted) turn.resume() else turn.start()
+            override fun onViewDetachedFromWindow(v: View) = turn.pause()
+        })
     }
 
     /** A round, tappable icon for toolbars. */

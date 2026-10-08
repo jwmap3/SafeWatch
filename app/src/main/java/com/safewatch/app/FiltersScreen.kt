@@ -66,7 +66,7 @@ class FiltersScreen(private val activity: MainActivity) {
         })
         column.addView(Ui.caption(ctx,
             "Sign in once on each service's own page. The sign-in is kept on this phone, the way a browser keeps it, " +
-                "so titles open straight into that service. SafeWatch never sees your password."))
+                "so titles open straight into that service. EdenOS never sees your password."))
 
         // Language
         column.addView(Ui.sectionHeader(ctx, "Language"))
@@ -210,6 +210,23 @@ class FiltersScreen(private val activity: MainActivity) {
         column.addView(Ui.caption(ctx,
             "With a PIN, Settings asks for it before opening, so the filters stay as you set them. It is asked again each time the app is reopened."))
 
+        // Tabs
+        val hiddenTabs = Prefs.hiddenTabs(ctx)
+        column.addView(Ui.sectionHeader(ctx, "Tabs"))
+        column.addView(Ui.card(ctx).apply {
+            addView(Ui.row(ctx, "Arrange tabs",
+                if (hiddenTabs.isEmpty()) "All shown" else "${MainActivity.TAB_ORDER.size - hiddenTabs.size} of ${MainActivity.TAB_ORDER.size} shown") { arrangeTabs() })
+            addView(Ui.divider(ctx))
+            addView(Ui.row(ctx, "Tab bar shows", chevron = false).apply {
+                addView(Ui.segmented(ctx, listOf("Icons and names", "Icons only"), if (Prefs.tabNames(ctx)) 0 else 1) {
+                    Prefs.setTabNames(ctx, it == 0)
+                    activity.rebuildTabBar()
+                }, LinearLayout.LayoutParams(Ui.dp(ctx, 230), -2))
+            })
+        })
+        column.addView(Ui.caption(ctx,
+            "Put the tabs along the bottom in any order and hide the ones you do not use. Settings always stays, so this can be changed back."))
+
         // Catalog
         val hasKey = Prefs.catalogKey(ctx).isNotEmpty()
         column.addView(Ui.sectionHeader(ctx, "Titles"))
@@ -239,6 +256,11 @@ class FiltersScreen(private val activity: MainActivity) {
             addView(Ui.divider(ctx))
             addView(Ui.fieldLabel(ctx, "Card colour"))
             addView(Ui.swatches(ctx, Palette.cardChoices(ctx), Prefs.customColor(ctx, Prefs.COLOR_CARD)) { pickColor(Prefs.COLOR_CARD, it) })
+            addView(Ui.divider(ctx))
+            addView(Ui.switchRow(ctx, "Turn the fire around the logo", Prefs.turningLogo(ctx)) {
+                Prefs.setTurningLogo(ctx, it)
+                activity.recreate()
+            })
         })
         column.addView(Ui.caption(ctx, "Primary is used for buttons and highlights. Text adjusts by itself to stay readable on the background you pick."))
 
@@ -286,7 +308,7 @@ class FiltersScreen(private val activity: MainActivity) {
     private fun setUpDetection() {
         AlertDialog.Builder(activity)
             .setTitle("Set up nudity detection")
-            .setMessage("SafeWatch needs to download its detection file, about 11 MB. It is only downloaded once.")
+            .setMessage("EdenOS needs to download its detection file, about 11 MB. It is only downloaded once.")
             .setPositiveButton("Download") { _, _ ->
                 ModelSetup.ensure(activity)
                 rebuild()
@@ -364,13 +386,80 @@ class FiltersScreen(private val activity: MainActivity) {
             .setView(scroll)
             .setPositiveButton("Copy") { _, _ ->
                 val board = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                board.setPrimaryClip(android.content.ClipData.newPlainText("SafeWatch filter report", report))
+                board.setPrimaryClip(android.content.ClipData.newPlainText("EdenOS filter report", report))
                 Ui.toast(activity, "Report copied")
             }
             .setNeutralButton("Clear") { _, _ -> FilterLog.clear(activity) }
             .setNegativeButton("Close", null)
             .show()
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    /** Lets the viewer move each tab up or down the bar, and take tabs off it. */
+    private fun arrangeTabs() {
+        val ctx = activity
+        val order = Prefs.tabOrder(ctx).toMutableList()
+        val hidden = Prefs.hiddenTabs(ctx).toMutableSet()
+        val list = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Ui.dp(ctx, 12), Ui.dp(ctx, 4), Ui.dp(ctx, 8), 0)
+        }
+        fun arrow(up: Boolean, enabled: Boolean, onClick: () -> Unit) = Ui.iconButton(ctx, R.drawable.ic_up, if (up) "Move up" else "Move down") { onClick() }.apply {
+            rotation = if (up) 0f else 180f
+            isEnabled = enabled
+            alpha = if (enabled) 1f else 0.25f
+            layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 42), Ui.dp(ctx, 42))
+        }
+        fun render() {
+            list.removeAllViews()
+            order.forEachIndexed { i, id ->
+                val (name, icon) = MainActivity.tabInfo(id)
+                val shown = id !in hidden
+                list.addView(LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    minimumHeight = Ui.dp(ctx, 52)
+                    addView(Ui.icon(ctx, icon, if (shown) R.color.accent else R.color.text_secondary))
+                    addView(android.widget.TextView(ctx).apply {
+                        text = if (shown) name else "$name (hidden)"
+                        textSize = 16f
+                        setTextColor(Ui.color(ctx, if (shown) R.color.text else R.color.text_secondary))
+                        setPadding(Ui.dp(ctx, 14), 0, Ui.dp(ctx, 8), 0)
+                    }, LinearLayout.LayoutParams(0, -2, 1f))
+                    if (id != MainActivity.TAB_FILTERS) {
+                        addView(androidx.appcompat.widget.SwitchCompat(ctx).apply {
+                            isChecked = shown
+                            contentDescription = "Show $name"
+                            setOnCheckedChangeListener { _, on ->
+                                if (on) hidden -= id else hidden += id
+                                list.post { render() }
+                            }
+                        })
+                    }
+                    addView(arrow(true, i > 0) { order.add(i - 1, order.removeAt(i)); render() })
+                    addView(arrow(false, i < order.size - 1) { order.add(i + 1, order.removeAt(i)); render() })
+                })
+            }
+        }
+        render()
+        AlertDialog.Builder(ctx)
+            .setTitle("Arrange tabs")
+            .setMessage("Left to right along the bottom. Settings always stays.")
+            .setView(android.widget.ScrollView(ctx).apply { addView(list) })
+            .setPositiveButton("Done") { _, _ ->
+                Prefs.setTabOrder(ctx, order)
+                Prefs.setHiddenTabs(ctx, hidden)
+                activity.rebuildTabBar()
+                rebuild()
+            }
+            .setNeutralButton("Reset") { _, _ ->
+                Prefs.setTabOrder(ctx, MainActivity.TAB_ORDER)
+                Prefs.setHiddenTabs(ctx, emptySet())
+                activity.rebuildTabBar()
+                rebuild()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     /** Sets, changes or removes the PIN that guards Settings. */

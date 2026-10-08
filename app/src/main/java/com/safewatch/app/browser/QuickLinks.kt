@@ -36,17 +36,8 @@ class QuickLinks(context: Context, private val onOpen: (String) -> Unit) : Frame
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(Ui.dp(context, 20), 0, Ui.dp(context, 20), 0)
         }
-        // The logo, in the viewer's colour, as on Home.
-        column.addView(FrameLayout(context).apply {
-            addView(ImageView(context).apply {
-                setImageResource(R.drawable.ic_logo_halo)
-                setColorFilter(Ui.color(context, R.color.accent))
-            }, FrameLayout.LayoutParams(Ui.dp(context, 64), Ui.dp(context, 64), Gravity.CENTER))
-            addView(ImageView(context).apply {
-                setImageResource(R.drawable.ic_logo_eye)
-                setColorFilter(Ui.color(context, R.color.accent))
-            }, FrameLayout.LayoutParams(Ui.dp(context, 64), Ui.dp(context, 64), Gravity.CENTER))
-        }, LinearLayout.LayoutParams(Ui.dp(context, 64), Ui.dp(context, 64)).apply { bottomMargin = Ui.dp(context, 28) })
+        // The EdenOS mark, as on Home.
+        column.addView(Ui.logo(context, 72), LinearLayout.LayoutParams(Ui.dp(context, 72), Ui.dp(context, 72)).apply { bottomMargin = Ui.dp(context, 26) })
         column.addView(grid, LinearLayout.LayoutParams(-1, -2))
         column.addView(TextView(context).apply {
             text = "Press and hold a link to change it."

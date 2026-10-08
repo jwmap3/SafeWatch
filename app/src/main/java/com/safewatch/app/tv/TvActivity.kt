@@ -203,7 +203,7 @@ class TvActivity : AppCompatActivity() {
 
     /**
      * Some phones stop apps that work with the screen off to save battery, which would cut the TV off
-     * mid-film. Asked once: the viewer can let SafeWatch run without that limit.
+     * mid-film. Asked once: the viewer can let EdenOS run without that limit.
      */
     private fun askToRunWithScreenOff() {
         val power = getSystemService(android.os.PowerManager::class.java)
@@ -211,7 +211,7 @@ class TvActivity : AppCompatActivity() {
         prefs(this).edit().putBoolean("askedBattery", true).apply()
         AlertDialog.Builder(this)
             .setTitle("Keep playing with the screen off")
-            .setMessage("So the TV is not cut off mid-film when your phone locks, let SafeWatch run without battery limits.")
+            .setMessage("So the TV is not cut off mid-film when your phone locks, let EdenOS run without battery limits.")
             .setPositiveButton("Allow") { _, _ ->
                 try {
                     @Suppress("BatteryLife")

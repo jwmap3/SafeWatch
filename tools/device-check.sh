@@ -153,6 +153,17 @@ tap "More";               shot 19e-browser-menu 2
 back
 cp /tmp/tvsite/setup.log "$OUT/test-site-setup.txt" 2>/dev/null; ls -la /tmp/tvsite >> "$OUT/test-site-setup.txt" 2>&1
 
+# ---- Arranging the tabs: move Home one place along, icons only, then put everything back ----
+start;                    sleep 5
+tap "Settings";           sleep 2
+tap_scrolling "Arrange tabs"; shot 20-arrange-tabs 2
+tap "Move down";          shot 20b-arrange-moved 1
+tap "Done";               shot 20c-tabs-moved 2
+tap "Icons only";         shot 20d-icons-only 2
+tap "Icons and names";    sleep 1
+tap "Arrange tabs";       sleep 1
+tap "Reset";              shot 20e-tabs-reset 2
+
 start;                    sleep 5
 tap "Settings";           sleep 2
 tap_scrolling "Light";    shot 17-light 5

@@ -1,4 +1,4 @@
-// SafeWatch page script. Runs inside every page (and every frame) the built-in
+// EdenOS page script (the file keeps its first name, safewatch.js). Runs inside every page (and every frame) the built-in
 // browser opens. It never decides what is objectionable itself: it asks the app
 // through SafeWatchBridge, then mutes, skips or blurs the page's own <video>.
 //

@@ -75,7 +75,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * The built-in browser. Every page gets the SafeWatch script (assets/safewatch.js),
+ * The built-in browser. Every page gets the EdenOS page script (assets/safewatch.js),
  * which mutes, skips and blurs the page's own video player. The script asks this
  * activity what to filter through [Bridge].
  *
@@ -277,7 +277,7 @@ open class BrowserActivity : AppCompatActivity() {
 
     /**
      * The page an intent asks for: one chosen inside the app, a link opened
-     * from another app, or a link shared to SafeWatch from another browser.
+     * from another app, or a link shared to EdenOS from another browser.
      */
     private fun requestedUrl(intent: Intent): String? {
         signingInTo = Services.byId(intent.getStringExtra(EXTRA_SIGN_IN))
@@ -872,7 +872,7 @@ open class BrowserActivity : AppCompatActivity() {
             menu.add(0, 5, 4, "Quick links")
             menu.add(0, 6, 5, "Hide this bar")
             menu.add(0, 7, 6, if (desktop) "Mobile site" else "Desktop site")
-            menu.add(0, 8, 7, "SafeWatch home")
+            menu.add(0, 8, 7, "EdenOS home")
             menu.add(0, 9, 8, "Clear marked scenes on this page")
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {

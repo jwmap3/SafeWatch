@@ -124,6 +124,32 @@ object Prefs {
 
     fun setStartTab(ctx: Context, tab: Int) = prefs(ctx).edit().putInt("startTab", tab).apply()
 
+    /** The bottom tabs from left to right, as the viewer arranged them. Tabs added in later versions go at the end. */
+    fun tabOrder(ctx: Context): List<Int> {
+        val known = com.safewatch.app.MainActivity.TAB_ORDER
+        val saved = prefs(ctx).getString("tabOrder", null)?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
+        return (saved.filter { it in known } + known).distinct()
+    }
+
+    fun setTabOrder(ctx: Context, order: List<Int>) = prefs(ctx).edit().putString("tabOrder", order.joinToString(",")).apply()
+
+    /** Tabs the viewer took off the bar. Settings can never be hidden, so this can always be undone. */
+    fun hiddenTabs(ctx: Context): Set<Int> =
+        prefs(ctx).getString("hiddenTabs", "")!!.split(',').mapNotNull { it.trim().toIntOrNull() }.toSet() - com.safewatch.app.MainActivity.TAB_FILTERS
+
+    fun setHiddenTabs(ctx: Context, hidden: Set<Int>) =
+        prefs(ctx).edit().putString("hiddenTabs", (hidden - com.safewatch.app.MainActivity.TAB_FILTERS).joinToString(",")).apply()
+
+    /** Whether the tab bar shows each tab's name under its icon. */
+    fun tabNames(ctx: Context): Boolean = prefs(ctx).getBoolean("tabNames", true)
+
+    fun setTabNames(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("tabNames", on).apply()
+
+    /** Whether the sword of fire in the EdenOS mark turns, or stands still. */
+    fun turningLogo(ctx: Context): Boolean = prefs(ctx).getBoolean("turningLogo", true)
+
+    fun setTurningLogo(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("turningLogo", on).apply()
+
     /** The browser's search engine: "google", "duckduckgo" or "bing". */
     fun searchEngine(ctx: Context): String = prefs(ctx).getString("searchEngine", "google")!!
 
@@ -222,7 +248,7 @@ object Prefs {
 
     // ---- YouTube ----
 
-    /** Channels the viewer follows inside SafeWatch, as channel id to name. Kept on the phone only. */
+    /** Channels the viewer follows inside EdenOS, as channel id to name. Kept on the phone only. */
     fun followedChannels(ctx: Context): Map<String, String> =
         prefs(ctx).getStringSet("ytFollowing", emptySet())!!.associate { it.substringBefore('|') to it.substringAfter('|') }
 

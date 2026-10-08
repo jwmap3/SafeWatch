@@ -22,8 +22,8 @@ import com.safewatch.app.ui.Sounds
 import com.safewatch.app.ui.Ui
 
 /**
- * The app's main window: Home, Search and Filters as tabs along the bottom,
- * plus a Browser tab that opens the built-in browser.
+ * The app's main window: Home, Search, YouTube and Settings as tabs along the bottom, plus a Browser tab
+ * that opens the built-in browser. The viewer can put the tabs in any order and hide all but Settings.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -32,7 +32,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var search: SearchScreen
     private lateinit var youtube: YouTubeScreen
     private lateinit var filters: FiltersScreen
-    private val tabViews = ArrayList<Pair<ImageView, TextView>>()
+    private val tabViews = ArrayList<Triple<Int, ImageView, TextView>>()
+    private lateinit var tabBar: FrameLayout
     private var tab = TAB_HOME
 
     val pickVideo = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -65,8 +66,10 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Ui.color(context, R.color.bg))
             addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
             addView(Ui.divider(context, 0))
-            addView(buildTabBar())
+            tabBar = FrameLayout(context)
+            addView(tabBar)
         }
+        rebuildTabBar()
         setContentView(root)
         Ui.fitSystemBars(this, root)
 
@@ -76,8 +79,9 @@ class MainActivity : AppCompatActivity() {
         filters = FiltersScreen(this)
         for (page in listOf(home.view, search.view, youtube.view, filters.view)) content.addView(page, FrameLayout.LayoutParams(-1, -1))
 
-        val start = Prefs.startTab(this)
-        show(savedInstanceState?.getInt(STATE_TAB) ?: intent.getIntExtra(EXTRA_TAB, if (start == TAB_BROWSER || start == TAB_FILTERS) TAB_HOME else start))
+        // A start tab the viewer has since hidden gives way to the first tab on the bar.
+        val start = Prefs.startTab(this).takeIf { it !in Prefs.hiddenTabs(this) } ?: baseTab()
+        show(savedInstanceState?.getInt(STATE_TAB) ?: intent.getIntExtra(EXTRA_TAB, if (start == TAB_BROWSER || start == TAB_FILTERS) baseTab() else start))
         if (savedInstanceState == null && !intent.hasExtra(EXTRA_TAB) && start == TAB_BROWSER && Prefs.welcomed(this)) show(TAB_BROWSER)
         if (savedInstanceState == null && !Prefs.welcomed(this)) startActivity(Intent(this, WelcomeActivity::class.java))
     }
@@ -117,8 +121,22 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        // Leaving from Home puts the app in the background instead of closing it, so the browser keeps its page.
-        if (tab != TAB_HOME) show(TAB_HOME) else moveTaskToBack(true)
+        // Back goes to the first tab on the bar; from there it puts the app in the background instead of
+        // closing it, so the browser keeps its page.
+        if (tab != baseTab()) show(baseTab()) else moveTaskToBack(true)
+    }
+
+    /** The first tab on the bar that shows in this window (the Browser opens on top of it). */
+    private fun baseTab(): Int {
+        val hidden = Prefs.hiddenTabs(this)
+        return Prefs.tabOrder(this).firstOrNull { it !in hidden && it != TAB_BROWSER } ?: TAB_FILTERS
+    }
+
+    /** Lays the tab bar out again after the viewer changes its order, hides a tab or changes its look. */
+    fun rebuildTabBar() {
+        tabBar.removeAllViews()
+        tabBar.addView(buildTabBar())
+        if (::home.isInitialized) show(tab)
     }
 
     private fun buildTabBar(): View {
@@ -127,29 +145,28 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Ui.color(context, R.color.bar))
             setPadding(0, Ui.dp(context, 6), 0, Ui.dp(context, 6))
         }
-        val tabs = listOf(
-            Triple(TAB_HOME, "Home", R.drawable.ic_home),
-            Triple(TAB_BROWSER, "Browser", R.drawable.ic_globe),
-            Triple(TAB_SEARCH, "Search", R.drawable.ic_search),
-            Triple(TAB_YOUTUBE, "YouTube", R.drawable.ic_play),
-            Triple(TAB_FILTERS, "Settings", R.drawable.ic_filters),
-        )
-        for ((id, label, iconRes) in tabs) {
-            val icon = Ui.icon(this, iconRes, R.color.text_secondary)
+        tabViews.clear()
+        val hidden = Prefs.hiddenTabs(this)
+        val names = Prefs.tabNames(this)
+        for (id in Prefs.tabOrder(this).filter { it !in hidden }) {
+            val (label, iconRes) = tabInfo(id)
+            val icon = Ui.icon(this, iconRes, R.color.text_secondary, if (names) 24 else 26)
             val text = TextView(this).apply {
                 this.text = label
                 textSize = 11f
                 gravity = Gravity.CENTER
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 setPadding(0, Ui.dp(context, 3), 0, 0)
+                visibility = if (names) View.VISIBLE else View.GONE
             }
-            tabViews += icon to text
+            tabViews += Triple(id, icon, text)
             bar.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
+                contentDescription = label
                 addView(icon)
                 addView(text)
-                setPadding(0, Ui.dp(context, 4), 0, Ui.dp(context, 2))
+                setPadding(0, Ui.dp(context, if (names) 4 else 9), 0, Ui.dp(context, if (names) 2 else 9))
                 setOnClickListener { Sounds.play(context, Sounds.TAP); show(id) }
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
@@ -181,9 +198,8 @@ class MainActivity : AppCompatActivity() {
         if (which == TAB_YOUTUBE) youtube.onShown() else youtube.onHidden()
         if (which == TAB_SEARCH) search.onShown() else search.onHidden()
         if (which == TAB_FILTERS) filters.onShown()
-        val order = TAB_ORDER
-        tabViews.forEachIndexed { i, (icon, text) ->
-            val color = Ui.color(this, if (order[i] == which) R.color.accent else R.color.text_secondary)
+        tabViews.forEach { (id, icon, text) ->
+            val color = Ui.color(this, if (id == which) R.color.accent else R.color.text_secondary)
             icon.imageTintList = android.content.res.ColorStateList.valueOf(color)
             text.setTextColor(color)
         }
@@ -234,8 +250,17 @@ class MainActivity : AppCompatActivity() {
         const val TAB_BROWSER = 2
         const val TAB_FILTERS = 3
         const val TAB_YOUTUBE = 4
-        /** The tabs, in the order they sit along the bottom. */
+        /** The tabs, in the order they sit along the bottom until the viewer arranges them (Settings > Tabs). */
         val TAB_ORDER = listOf(TAB_HOME, TAB_BROWSER, TAB_SEARCH, TAB_YOUTUBE, TAB_FILTERS)
+
+        /** Each tab's name and icon. */
+        fun tabInfo(id: Int): Pair<String, Int> = when (id) {
+            TAB_HOME -> "Home" to R.drawable.ic_home
+            TAB_BROWSER -> "Browser" to R.drawable.ic_globe
+            TAB_SEARCH -> "Search" to R.drawable.ic_search
+            TAB_YOUTUBE -> "YouTube" to R.drawable.ic_play
+            else -> "Settings" to R.drawable.ic_filters
+        }
 
         /** Whether Settings has been opened with its PIN since the app was last left. */
         var settingsUnlocked = false

@@ -366,7 +366,7 @@ object Catalog {
                 connection.connectTimeout = 10_000
                 connection.readTimeout = 15_000
                 connection.setRequestProperty("Accept", "application/json")
-                connection.setRequestProperty("User-Agent", "SafeWatch/0.2 (personal Android app)")
+                connection.setRequestProperty("User-Agent", "EdenOS/0.3 (personal Android app)")
                 if (bearer != null) connection.setRequestProperty("Authorization", "Bearer $bearer")
                 val code = connection.responseCode
                 if (code == 429 && attempt < 2) {
