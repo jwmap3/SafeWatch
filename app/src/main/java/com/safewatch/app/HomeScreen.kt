@@ -76,13 +76,25 @@ class HomeScreen(private val activity: MainActivity) {
         val failed = job?.takeIf { it.error != null }
         val queued = tv.queued
         val ready = com.safewatch.app.tv.CleanCopy.all(ctx).take(8)
-        if (making == null && failed == null && queued.isEmpty() && ready.isEmpty()) {
-            scrubbed.visibility = View.GONE
-            return
-        }
-        scrubbed.visibility = View.VISIBLE
         scrubbed.addView(Ui.shelfTitle(ctx, "Your Scrubbed Movies"))
         val card = Ui.card(ctx)
+        val lastFailure = if (failed == null) com.safewatch.app.tv.TvState.lastFailure(ctx) else null
+        if (making == null && failed == null && queued.isEmpty() && ready.isEmpty() && lastFailure == null) {
+            card.addView(TextView(ctx).apply {
+                text = "Nothing yet. While a movie plays, tap Superclean at the top of the player: it is downloaded and scrubbed " +
+                    "here in the background, and shows up here as it goes."
+                textSize = 14f
+                setTextColor(Ui.color(ctx, R.color.text_secondary))
+                setPadding(Ui.dp(ctx, 16), Ui.dp(ctx, 14), Ui.dp(ctx, 16), Ui.dp(ctx, 14))
+            })
+        }
+        lastFailure?.let { (title, error) ->
+            card.addView(Ui.row(ctx, title, "Not made") {
+                android.app.AlertDialog.Builder(ctx).setTitle(title).setMessage(error)
+                    .setPositiveButton("Dismiss") { _, _ -> com.safewatch.app.tv.TvState.clearFailure(ctx); showScrubbed() }
+                    .setNegativeButton("Close", null).show()
+            })
+        }
         fun gap() { if (card.childCount > 0) card.addView(Ui.divider(ctx)) }
         if (making != null) {
             card.addView(LinearLayout(ctx).apply {
@@ -137,7 +149,7 @@ class HomeScreen(private val activity: MainActivity) {
             gap()
             card.addView(Ui.row(ctx, failed.title, "Not made") {
                 android.app.AlertDialog.Builder(ctx).setTitle(failed.title).setMessage(failed.error)
-                    .setPositiveButton("Dismiss") { _, _ -> tv.job = null; showScrubbed() }
+                    .setPositiveButton("Dismiss") { _, _ -> tv.job = null; com.safewatch.app.tv.TvState.clearFailure(ctx); showScrubbed() }
                     .setNegativeButton("Close", null).show()
             })
         }
@@ -255,8 +267,8 @@ class HomeScreen(private val activity: MainActivity) {
         column.addView(header())
         // A different featured title each day, taken from the first shelf.
         val candidates = shelves.first().titles.filter { it.poster != null }.take(7)
-        if (candidates.isNotEmpty()) column.addView(hero(candidates[(LocalDate.now().toEpochDay() % candidates.size).toInt()]))
         addScrubbed()
+        if (candidates.isNotEmpty()) column.addView(hero(candidates[(LocalDate.now().toEpochDay() % candidates.size).toInt()]))
         column.addView(services())
         for (shelf in shelves) {
             column.addView(Ui.shelfTitle(activity, shelf.name))

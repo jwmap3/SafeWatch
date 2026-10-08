@@ -53,6 +53,18 @@ object TvState {
     val listeners = CopyOnWriteArraySet<() -> Unit>()
 
     fun changed() = main.post { listeners.forEach { it() } }
+
+    /** The last copy that could not be made and why, kept until dismissed, so it is still shown after the app restarts. */
+    fun lastFailure(ctx: Context): Pair<String, String>? {
+        val p = ctx.getSharedPreferences("tv", Context.MODE_PRIVATE)
+        val title = p.getString("failedTitle", null) ?: return null
+        return title to p.getString("failedWhy", "").orEmpty()
+    }
+
+    fun rememberFailure(ctx: Context, title: String, why: String) =
+        ctx.getSharedPreferences("tv", Context.MODE_PRIVATE).edit().putString("failedTitle", title).putString("failedWhy", why).apply()
+
+    fun clearFailure(ctx: Context) = ctx.getSharedPreferences("tv", Context.MODE_PRIVATE).edit().remove("failedTitle").remove("failedWhy").apply()
 }
 
 /**
@@ -128,11 +140,13 @@ class TvService : Service() {
                 replaces?.let { CleanCopy.delete(File(it)) }
                 FilterLog.add("clean copy made: ${made.summary}")
                 Log.i("SafeWatch", "clean copy made: ${made.summary}")
+                TvState.clearFailure(applicationContext)
                 TvState.Job(source.title, "Ready", 100, made = made)
             } catch (e: Exception) {
                 Log.i("SafeWatch", "clean copy failed", e)
                 FilterLog.add("clean copy not made: ${e.message}")
                 Log.i("SafeWatch", "clean copy not made: ${e.message}")
+                if (e.message != "Stopped") TvState.rememberFailure(applicationContext, source.title, e.message ?: "Something went wrong")
                 TvState.Job(source.title, "Not made", -1, error = e.message ?: "Something went wrong")
             }
             ui.post {
