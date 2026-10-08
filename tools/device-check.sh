@@ -14,6 +14,8 @@ swipe_up() { adb shell input swipe 540 1700 540 600 400; }
 # The test phone's own launcher sometimes stops answering just after it starts; its "isn't responding" box would cover the app.
 no_anr() { timeout 30 python3 tools/tap.py "Wait" exact > /dev/null && echo "dismissed an 'isn't responding' box" | tee -a "$OUT/summary.txt"; }
 start() { adb shell am force-stop $PKG; adb shell am start -W -n $PKG/.MainActivity > /dev/null; }
+# Brings the app's Home forward without stopping it, so work going on in the background carries on.
+home() { adb shell am start -W -n $PKG/.MainActivity --ei tab 0 > /dev/null; }
 # Taps something further down a long screen, scrolling until it is in view.
 tap_scrolling() { for i in 1 2 3 4 5 6 7 8 9 10; do timeout 60 python3 tools/tap.py "$1" > /dev/null && { echo "tap: $1" | tee -a "$OUT/summary.txt"; return 0; }; [ $i = 1 ] && no_anr; swipe_up; sleep 1; done; echo "tap: '$1' not found on the screen" | tee -a "$OUT/summary.txt"; }
 
@@ -187,14 +189,14 @@ PY
   tap "More";             sleep 1
   tap "Send to TV";       shot 22c-send-superclean 3
   tap "Superclean to TV"; shot 22d-superclean-started 1   # one tap: it starts in the background
-  start;                  sleep 4; shot 22e-home-scrubbing 1
+  home;                   sleep 4; shot 22e-home-scrubbing 1
   sleep 20;               shot 22f-home-scrubbing-later 1
   for i in $(seq 1 60); do
     if adb logcat -d -s SafeWatch:I | grep -q "clean copy made\|clean copy not made"; then break; fi
     sleep 10
   done
   adb logcat -d -s SafeWatch:I | grep -i "clean copy\|superclean\|parents guide" | tee -a "$OUT/summary.txt"
-  start;                  sleep 4; shot 22i-home-scrubbed 1
+  home;                   sleep 4; shot 22i-home-scrubbed 1
   timeout 60 adb exec-out run-as $PKG sh -c 'cat "$(ls -t files/clean/*.mp4 | head -1)"' > "$OUT/22-superclean-copy.mp4"
   [ -s "$OUT/22-superclean-copy.mp4" ] || rm -f "$OUT/22-superclean-copy.mp4"
   tap "Test clip";        shot 22j-copy-options 3
