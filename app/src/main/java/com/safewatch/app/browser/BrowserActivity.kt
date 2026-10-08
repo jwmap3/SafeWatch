@@ -89,7 +89,8 @@ open class BrowserActivity : AppCompatActivity() {
     private lateinit var root: LinearLayout
     private lateinit var web: WebView
     private lateinit var stage: FrameLayout
-    private lateinit var cover: View
+    private lateinit var curtain: Curtain
+    private var playerLayer: PlayerLayer? = null
     private lateinit var address: EditText
     private lateinit var chrome: List<View>
     private val markButtons = ArrayList<TextView>()
@@ -97,6 +98,7 @@ open class BrowserActivity : AppCompatActivity() {
     private var label = ""
     private var playerView = false
     private var playingChecks = 0
+    private var resumed = false
     @Volatile private var lastWidthShare = 0.0
     @Volatile private var wantsFullPicture = false
 
@@ -114,6 +116,7 @@ open class BrowserActivity : AppCompatActivity() {
     @Volatile private var videoLengthMs = 0L
     @Volatile private var videoPaused = true
     @Volatile private var advertPlaying = false
+    @Volatile private var lastStateAt = 0L
 
     private val ui = Handler(Looper.getMainLooper())
     private val background = Executors.newSingleThreadExecutor()
@@ -260,37 +263,32 @@ open class BrowserActivity : AppCompatActivity() {
         }
 
         web = WebView(this)
-        cover = View(this).apply {
-            setBackgroundColor(Color.BLACK)
-            visibility = View.GONE
-        }
         stage = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(web, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
-        // The cover sits beside the stage, not inside it, so it stays sharp while the stage is blurred.
-        val stageHolder = object : FrameLayout(this) {
-            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-                // Any touch on the picture brings the player's controls back for a moment.
-                // (With the app's own controls up, the layer over the picture does this itself.)
-                if (event.actionMasked == MotionEvent.ACTION_DOWN && playerView && touchCatcher?.visibility != View.VISIBLE) showPlayerBar()
-                return super.dispatchTouchEvent(event)
-            }
-        }.apply {
-            addView(stage, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            addView(cover, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        }
+        curtain = Curtain(stage)
+        val stageHolder = stage
 
         if (watchMode) {
-            // A slim bar while browsing to the video, and a see-through one over the picture once it plays.
+            // A slim bar while browsing to the video. Once it plays, the controls move to a layer
+            // of their own over the picture, above the blur, so they can always be seen.
             val bar = watchControls(overPicture = false)
+            val layer = PlayerLayer(this, below = { fullscreenView ?: web }, onTouched = {
+                // Any touch on the picture brings the controls back for a moment.
+                // (With the app's own controls up, the layer over the picture decides that itself.)
+                if (touchCatcher?.visibility != View.VISIBLE) showPlayerBar()
+            })
             val floating = watchControls(overPicture = true).apply { visibility = View.GONE }
-            addOwnControls(stageHolder)
-            stageHolder.addView(floating, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+            addOwnControls(layer)
+            layer.addView(floating, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
             playerBar = floating
+            playerLayer = layer
             root.addView(bar)
             root.addView(stageHolder, LinearLayout.LayoutParams(-1, 0, 1f))
             chrome = listOf(bar)
+            // The layer follows the picture's place on screen, through turning the phone and the bars coming and going.
+            stage.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (playerView) layer.showOver(stage) }
             return root
         }
 
@@ -470,6 +468,7 @@ open class BrowserActivity : AppCompatActivity() {
         }
         if (on) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            stage.post { playerLayer?.showOver(stage) }
             showPlayerBar()
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -477,6 +476,7 @@ open class BrowserActivity : AppCompatActivity() {
             playerBar?.visibility = View.GONE
             controlViews.forEach { it.visibility = View.GONE }
             touchCatcher?.visibility = View.GONE
+            playerLayer?.dismiss()
         }
     }
 
@@ -511,11 +511,18 @@ open class BrowserActivity : AppCompatActivity() {
         }
         ui.removeCallbacks(watch)
         ui.post(watch)
+        resumed = true
+        if (playerView) stage.post { playerLayer?.showOver(stage) }
     }
 
     override fun onPause() {
         super.onPause()
+        resumed = false
         ui.removeCallbacks(watch)
+        // The floating layers belong to this screen and must not outlive its time in front.
+        hidden = false
+        curtain.drop()
+        playerLayer?.dismiss()
         // Nothing should keep playing unfiltered behind another screen.
         web.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){m.pause()})", null)
         web.onPause()
@@ -801,6 +808,7 @@ open class BrowserActivity : AppCompatActivity() {
             videoLengthMs = lengthMs.toLong()
             videoPaused = paused
             advertPlaying = advert
+            lastStateAt = SystemClock.elapsedRealtime()
         }
 
         /** The latest press on the app's controls that the page has not yet carried out; empty when there is none. */
@@ -853,31 +861,34 @@ open class BrowserActivity : AppCompatActivity() {
 
     // ---- Live nudity detection ----
     //
-    // Several times a second, while a video plays, a small copy of the browser
-    // area is checked. A hit blurs the whole area for HOLD_MS. The copy is taken
-    // of what is on screen, so a blurred picture cannot be checked: when the
-    // hold ends the blur lifts and the next check follows at once, which can let
-    // a brief glimpse through if the scene is still going. Protected streams
-    // copy as black frames, so they are never detected here.
+    // Several times a second, while a video plays, a small copy of the picture
+    // is taken from the app's main window and checked. A hit puts the curtain
+    // up. The curtain is a separate window, so the copies go on showing the
+    // real picture underneath: checking continues behind the curtain, and it
+    // stays up until HOLD_MS after the last hit, which is to say for as long as
+    // the scene lasts. Protected streams copy as black frames, so they are
+    // never detected here.
 
     private val watch = object : Runnable {
         override fun run() {
             val now = SystemClock.elapsedRealtime()
-            if (hidden && now >= hiddenUntil) setHidden(false)
+            if (hidden && now >= hiddenUntil) {
+                hidden = false
+                curtain.drop()
+                Log.i("SafeWatch", "filter: picture shown again on $pageKey")
+            }
             refreshOwnControls()
             // In watch mode, a video that plays with sound across most of the page for a moment is the feature: show it as a player.
             if (watchMode && !playerView) {
                 playingChecks = if (videoIsPlaying() && lastWidthShare >= 0.6) playingChecks + 1 else 0
                 if (playingChecks >= 3) setPlayerView(true)
             }
-            if (!hidden && !checking && detector != null && settings.nudity != Strictness.OFF && videoIsPlaying()) check()
+            // Checked whenever the page has a video on it, playing or paused, since a paused picture is
+            // still on screen, and for as long as the curtain is up.
+            val videoOnPage = now - lastStateAt < 1000
+            if (!checking && detector != null && settings.nudity != Strictness.OFF && (videoOnPage || videoIsPlaying() || hidden)) check()
             ui.postDelayed(this, CHECK_EVERY_MS)
         }
-    }
-
-    private fun setHidden(on: Boolean) {
-        hidden = on
-        Ui.setHidden(stage, cover, on)
     }
 
     private fun check() {
@@ -910,11 +921,14 @@ open class BrowserActivity : AppCompatActivity() {
                     }
                     ui.post {
                         checking = false
+                        if (isDestroyed || !resumed) return@post
                         if (level > 0 && settings.nudity.filters(level)) {
                             if (!hidden) Log.i("SafeWatch", "filter: picture hidden (level $level) on $pageKey")
+                            hidden = true
                             hiddenUntil = SystemClock.elapsedRealtime() + HOLD_MS
-                            setHidden(true)
                         }
+                        // While hidden, each new copy refreshes the curtain, so the blur moves with the video.
+                        if (hidden) curtain.show(frame)
                     }
                 }
             }, ui)
@@ -936,7 +950,7 @@ open class BrowserActivity : AppCompatActivity() {
         private const val MARK_START = "Mark scene"
         private const val MARK_END = "End scene"
         private const val CHECK_EVERY_MS = 250L
-        private const val HOLD_MS = 4000L
+        private const val HOLD_MS = 1500L
 
         /** Shows the browser on the given page, reusing the one already open. */
         fun open(ctx: Context, urlOrSearch: String) = ctx.startActivity(

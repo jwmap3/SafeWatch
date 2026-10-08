@@ -72,9 +72,11 @@ if [ -n "$VIDEO" ]; then
   shot 14-player 12
   adb shell input tap 1200 250
   shot 14b-player-controls 1
-  shot 14c-player-later 10
-  shot 14d-player-later 12
-  shot 14e-player-later 12
+  shot 14c-player-later 8
+  shot 14d-player-later 8
+  shot 14e-player-later 8
+  shot 14f-player-later 8
+  shot 14g-player-later 8
 fi
 adb logcat -d -s SafeWatch:I > "$OUT/filter-log.txt"; echo "(end of filter log)" >> "$OUT/filter-log.txt"
 
