@@ -56,6 +56,7 @@ shot 09-video 10
 # Play on TV: the video starts here silently to read its captions, then goes to the TV's YouTube app.
 # YouTube will not play for this test phone (below), so it ends at the question about captions.
 tap "Play on TV";         shot 09c-play-on-tv 22
+timeout 60 python3 tools/tap.py "Got it" > /dev/null   # the phone's own one-time note about full screen
 back; back;               sleep 2
 swipe_up; swipe_up;       sleep 1
 tap "Show comments";      shot 09b-comments 8
@@ -140,9 +141,9 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   make_copy 18-file-copy page.html
   tap "Test clip";        shot 18e-copy-options 2
   tap "Play on a TV…";    shot 18f-tv-search 8
-  back; back
-  tap_scrolling "Link with TV code"; shot 18g-link-youtube 2
   back
+  tap_scrolling "Link with TV code"; shot 18g-link-youtube 2
+  back; back
   make_copy 18-stream-copy stream.html
   back; back
 else

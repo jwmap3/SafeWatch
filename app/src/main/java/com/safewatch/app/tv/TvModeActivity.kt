@@ -126,9 +126,11 @@ class TvModeActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = Ui.dp(context, 12) })
     }
 
+    /** Leaves TV Mode for the phone's own Home. */
     private fun exit() {
         TvMode.active = false
         closeStage()
+        com.safewatch.app.MainActivity.open(this)
         finish()
     }
 
