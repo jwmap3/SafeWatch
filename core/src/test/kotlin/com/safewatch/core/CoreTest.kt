@@ -262,3 +262,52 @@ class MediaKeyTest {
         assertTrue(name.all { it.isLetterOrDigit() })
     }
 }
+
+class LookAheadTest {
+    private fun looked(vararg samples: Pair<Long, Int>) = LookAhead(reachMs = 2000).apply { samples.forEach { add(it.first, it.second) } }
+
+    @Test fun hidesBeforeTheSceneAndForAllOfIt() {
+        // Looked at every half second from 0 to 20 s; nudity found from 8 s to 12 s.
+        val ahead = LookAhead(reachMs = 2000)
+        for (t in 0L..20000L step 500) ahead.add(t, if (t in 8000..12000) 3 else 0)
+        assertEquals(0, ahead.levelAt(5500))
+        assertEquals(3, ahead.levelAt(6100))  // two seconds before it starts
+        assertEquals(3, ahead.levelAt(10000))
+        assertEquals(3, ahead.levelAt(13900)) // two seconds after it ends
+        assertEquals(0, ahead.levelAt(14600))
+        assertEquals(listOf(6000L..14000L), ahead.stretches(1))
+    }
+
+    @Test fun aMissedPictureInTheMiddleDoesNotLiftTheBlur() {
+        // A scene from 8 s to 14 s in which the detector missed the pictures around 11 s.
+        val ahead = LookAhead(reachMs = 2000)
+        for (t in 0L..20000L step 500) ahead.add(t, if (t in 8000..14000 && t !in 10500..11500) 2 else 0)
+        for (t in 6100L..15900L step 100) assertTrue(ahead.levelAt(t) > 0)
+        assertEquals(0, ahead.levelAt(16600))
+    }
+
+    @Test fun slowLookingHidesEverythingBetweenAFlaggedPictureAndItsNeighbours() {
+        val ahead = looked(0L to 0, 3000L to 2, 6000L to 0, 9000L to 0)
+        assertTrue(ahead.levelAt(500) > 0)
+        assertTrue(ahead.levelAt(5900) > 0)
+        assertEquals(0, ahead.levelAt(6500))
+    }
+
+    @Test fun knowsWhatItHasNotLookedAt() {
+        val ahead = looked(0L to 0, 1000L to 0, 2000L to 0, 9000L to 0, 10000L to 0)
+        assertTrue(ahead.covers(1500))
+        assertFalse(ahead.covers(5000)) // a seven-second hole
+        assertFalse(ahead.covers(10500)) // past the last look
+        assertTrue(ahead.covers(9500))
+        assertEquals(1500, ahead.knownAheadOf(500))
+        assertEquals(0, ahead.knownAheadOf(20000))
+        ahead.clear()
+        assertFalse(ahead.covers(1500))
+    }
+
+    @Test fun aSecondLookKeepsTheWorseFinding() {
+        val ahead = looked(4000L to 2, 4020L to 0)
+        assertEquals(2, ahead.levelAt(4000))
+        assertEquals(1, ahead.size)
+    }
+}

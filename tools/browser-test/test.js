@@ -103,5 +103,40 @@ const server = http.createServer((req, res) => {
   check('the play control resumes the video', await page.evaluate(() => !document.getElementById('v').paused));
   check('each mute is noted for the app', await page.evaluate(() => (window.__notes || []).length > 0));
   const beats = await page.evaluate(() => window.__beats.length); check('reports playback position to the app', beats > 20, `beats=${beats}`);
+
+  // The hidden copy that looks ahead: silent, filling its screen, filtering nothing, going where it is told.
+  const scout = await browser.newPage({ viewport: { width: 640, height: 360 } });
+  scout.on('pageerror', (e) => pageErrors.push(String(e)));
+  await scout.addInitScript(() => {
+    window.SafeWatchBridge = {
+      scout: () => true, version: () => 1, fullPicture: () => false, beat: () => {}, wanted: () => 30000,
+      config: () => JSON.stringify({ version: 1, language: false, tags: [] }),
+      state: (pos, dur, paused, ad) => { window.__state = { pos, dur, paused, ad }; },
+      steady: (ok) => { window.__steady = ok; },
+      command: () => { const c = window.__command || ''; window.__command = ''; return c; },
+      note: () => {},
+    };
+  });
+  await scout.addInitScript(script);
+  await scout.goto(`http://127.0.0.1:${port}/scout.html`);
+  const inner = () => scout.frames().find((f) => f.url().includes('scout-inner'));
+  await scout.waitForFunction(() => document.getElementById('f') && document.getElementById('f').getBoundingClientRect().width >= 640, null, { timeout: 15000 }).catch(() => {});
+  await scout.waitForTimeout(1500);
+  let box = await scout.evaluate(() => { const b = document.getElementById('f').getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; });
+  check('look-ahead copy: the frame holding the player fills the screen', box[0] === 0 && box[1] === 0 && box[2] >= 640 && box[3] >= 360, JSON.stringify(box));
+  let sv = await inner().evaluate(() => { const v = document.getElementById('v'), b = v.getBoundingClientRect(); return { muted: v.muted, paused: v.paused, w: b.width, h: b.height, iw: innerWidth, ih: innerHeight, state: window.__state, steady: window.__steady }; });
+  check('look-ahead copy: the video fills its frame', sv.w >= sv.iw && sv.h >= sv.ih && sv.iw >= 640, JSON.stringify(sv));
+  check('look-ahead copy: silent and playing', sv.muted && !sv.paused, JSON.stringify(sv));
+  check('look-ahead copy: reports where it is', sv.state && sv.state.pos > 0 && Math.abs(sv.state.dur - 30000) < 1500 && sv.steady === true, JSON.stringify(sv));
+  await inner().evaluate(() => { document.getElementById('v').muted = false; window.__command = 'seek:9'; }); await scout.waitForTimeout(700);
+  sv = await inner().evaluate(() => { const v = document.getElementById('v'); return { t: v.currentTime, muted: v.muted }; });
+  check('look-ahead copy: goes where it is told and stays silent', sv.t >= 9 && sv.t < 11 && sv.muted, JSON.stringify(sv));
+  await inner().evaluate(() => { window.__command = 'rate:3'; }); await scout.waitForTimeout(1000);
+  sv = await inner().evaluate(() => { const v = document.getElementById('v'); return { t: v.currentTime, rate: v.playbackRate }; });
+  check('look-ahead copy: runs fast to get in front', sv.rate === 3 && sv.t > 11.5, JSON.stringify(sv));
+  await inner().evaluate(() => { document.getElementById('v').playbackRate = 1; window.__command = 'pause'; }); await scout.waitForTimeout(500);
+  sv = await inner().evaluate(() => { const v = document.getElementById('v'); return { paused: v.paused, rate: v.playbackRate, state: window.__state }; });
+  check('look-ahead copy: waits when far enough in front, keeping its speed', sv.paused && sv.rate === 3 && sv.state.paused === true, JSON.stringify(sv));
+  check('no script errors on any page', pageErrors.length === 0, pageErrors.join(' | '));
   await browser.close(); server.close(); console.log(fail ? `${fail} FAILED` : 'all passed'); process.exit(fail ? 1 : 0);
 });

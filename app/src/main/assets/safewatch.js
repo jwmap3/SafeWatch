@@ -24,6 +24,11 @@
     '.plyr__caption'
   ].join(', ');
   var TICK_MS = 100;
+  // True in the hidden second copy of a video that the app plays a few seconds ahead of the viewer
+  // to see what is coming. That copy filters nothing: it stays silent, fills its screen with the
+  // video, reports where it is and goes where it is told.
+  var SCOUT = false;
+  try { SCOUT = !!(B.scout && B.scout()); } catch (e) { /* an ordinary page */ }
   var DOM_MUTE_MS = 1500;
 
   var S = window.__safewatch = {
@@ -295,6 +300,60 @@
     else if (command === 'pause') video.pause();
     else if (command.indexOf('seek:') === 0) seekTo(video, parseFloat(command.slice(5)));
     else if (command.indexOf('skip:') === 0) seekTo(video, Math.max(0, video.currentTime + parseFloat(command.slice(5))));
+    else if (command.indexOf('rate:') === 0) S.rate = parseFloat(command.slice(5)) || 1;
+  }
+
+  // ---- The hidden copy that looks ahead ----
+
+  var FILL = [['position', 'fixed'], ['top', '0'], ['left', '0'], ['width', '100vw'], ['height', '100vh'],
+    ['max-width', 'none'], ['max-height', 'none'], ['margin', '0'], ['transform', 'none'], ['z-index', '2147483647'],
+    ['border', '0'], ['object-fit', 'contain'], ['background', '#000'], ['opacity', '1'], ['visibility', 'visible']];
+
+  // Stretches an element over its whole frame, and asks the frame around it to do the same.
+  function fill(el) {
+    for (var i = 0; i < FILL.length; i++) el.style.setProperty(FILL[i][0], FILL[i][1], 'important');
+    if (window.parent !== window) {
+      try { window.parent.postMessage({ safewatchFill: 1 }, '*'); } catch (e) { /* ignore */ }
+    }
+  }
+
+  if (SCOUT) {
+    // No sound from this copy, ever: every video is silenced the moment it starts.
+    document.addEventListener('play', function (e) { if (e.target && 'muted' in e.target) e.target.muted = true; }, true);
+    window.addEventListener('message', function (e) {
+      if (!e.data || e.data.safewatchFill !== 1) return;
+      var frames = document.querySelectorAll('iframe');
+      for (var i = 0; i < frames.length; i++) if (frames[i].contentWindow === e.source) fill(frames[i]);
+    });
+  }
+
+  function scoutTick(videos) {
+    var wanted = 0, target = null, biggest = null, biggestArea = -1, i;
+    try { wanted = B.wanted(); } catch (e) { /* not known yet */ }
+    for (i = 0; i < videos.length; i++) {
+      var v = videos[i];
+      if (!v.muted) v.muted = true;
+      var area = v.clientWidth * v.clientHeight;
+      if (area > biggestArea) { biggestArea = area; biggest = v; }
+      // The video the viewer is watching is picked out by its length.
+      if (!target && wanted > 0 && isFinite(v.duration) && Math.abs(v.duration * 1000 - wanted) < 2500) target = v;
+    }
+    if (!target) {
+      // Not found yet. Starting the largest video gets a player to load it, or to get through what comes first.
+      target = biggest;
+      if (target && target.paused && S.ticks % 20 === 0) { var p = target.play(); if (p && p.catch) p.catch(function () {}); }
+    }
+    if (!target) return;
+    stateOf(target);
+    if (S.ticks % 10 === 1) fill(target);
+    if (S.rate && target.playbackRate !== S.rate) { try { target.playbackRate = S.rate; } catch (e) { /* keep its own speed */ } }
+    try {
+      B.steady(!target.seeking && target.readyState >= 3);
+      B.state(target.currentTime * 1000, isFinite(target.duration) ? target.duration * 1000 : 0, target.paused,
+        !!document.querySelector('.ad-showing, .ad-interrupting'));
+      var command = B.command();
+      if (command) obey(target, command);
+    } catch (e) { /* ignore */ }
   }
 
   function tick() {
@@ -302,6 +361,7 @@
     try { if (B.version() !== S.version) loadConfig(); } catch (e) { return; }
     var videos = document.querySelectorAll('video');
     if (!videos.length) return;
+    if (SCOUT) { scoutTick(videos); return; }
     if (S.language) checkDomCaptions();
     var now = Date.now(), main = null, mainArea = -1, biggest = null, biggestArea = -1;
 

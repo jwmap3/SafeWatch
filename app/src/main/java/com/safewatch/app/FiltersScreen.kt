@@ -123,6 +123,13 @@ class FiltersScreen(private val activity: MainActivity) {
         if (installed && settings.nudity != Strictness.OFF) {
             column.addView(Ui.sectionHeader(ctx, ""))
             column.addView(Ui.card(ctx).apply {
+                addView(Ui.switchRow(ctx, "Look ahead", Prefs.lookAhead(ctx)) { Prefs.setLookAhead(ctx, it) })
+            })
+            column.addView(Ui.caption(ctx,
+                "Plays a hidden second copy of the video a few seconds in front of you, so a scene is blurred before it " +
+                "starts and until it ends. Works on YouTube, video files and ordinary websites, and uses about twice the data."))
+            column.addView(Ui.sectionHeader(ctx, ""))
+            column.addView(Ui.card(ctx).apply {
                 addView(Ui.row(ctx, "Test the blur", chevron = false) {
                     Prefs.startBlurTest(ctx)
                     Ui.toast(ctx, "For two minutes, faces are blurred too. Play any video with people in it.")

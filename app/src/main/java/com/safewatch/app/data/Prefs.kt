@@ -97,6 +97,11 @@ object Prefs {
     fun startBlurTest(ctx: Context) =
         prefs(ctx).edit().putLong("testBlurUntil", System.currentTimeMillis() + 2 * 60 * 1000).apply()
 
+    /** Whether a hidden second copy of a video may play ahead of the viewer, so scenes are hidden before they arrive. */
+    fun lookAhead(ctx: Context): Boolean = prefs(ctx).getBoolean("lookAhead", true)
+
+    fun setLookAhead(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("lookAhead", on).apply()
+
     // ---- Colours the viewer picked. 0 means "use the built-in colour". ----
 
     const val COLOR_PRIMARY = "colorPrimary"

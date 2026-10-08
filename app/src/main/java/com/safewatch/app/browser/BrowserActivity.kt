@@ -133,8 +133,19 @@ open class BrowserActivity : AppCompatActivity() {
     private var markStartMs: Long? = null
     private var detector: NudityDetector? = null
     private var checking = false
+    private var copying = false
     private var hidden = false
     private var hiddenUntil = 0L
+    private var lastLiveCheckAt = 0L
+
+    // Looking ahead: a hidden second copy of the video, and whether what it found is hiding the picture now.
+    private var scout: Scout? = null
+    private var scoutKey = ""
+    private var scoutGaveUpOn = ""
+    private var scoutDoubts = 0
+    private var aheadHidden = false
+    private var playingYoutube: String? = null
+    private var playingFile: String? = null
     private var fullscreenView: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private var pageScript = ""
@@ -513,6 +524,7 @@ open class BrowserActivity : AppCompatActivity() {
         ui.removeCallbacks(watch)
         ui.post(watch)
         resumed = true
+        scout?.wake()
         if (playerView) stage.post { playerLayer?.showOver(stage) }
     }
 
@@ -522,7 +534,9 @@ open class BrowserActivity : AppCompatActivity() {
         ui.removeCallbacks(watch)
         // The floating layers belong to this screen and must not outlive its time in front.
         hidden = false
+        aheadHidden = false
         curtain.drop()
+        scout?.rest()
         playerLayer?.dismiss()
         // Nothing should keep playing unfiltered behind another screen.
         web.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){m.pause()})", null)
@@ -538,6 +552,8 @@ open class BrowserActivity : AppCompatActivity() {
             super.onDestroy()
             return
         }
+        scout?.stop()
+        scout = null
         val open = detector
         detector = null
         background.execute { open?.close() }
@@ -590,43 +606,54 @@ open class BrowserActivity : AppCompatActivity() {
             // YouTube only plays embedded when it is told which app is asking, hence the app's own address.
             web.settings.userAgentString = mobileAgent
             ownControls = watchMode
+            playingYoutube = video
+            playingFile = null
             val key = MediaKey.forUrl("https://www.youtube.com/watch?v=$video")
             fixedKey = key
             pageKey = key
             version.incrementAndGet()
-            web.loadDataWithBaseURL(APP_ORIGIN, youtubePage(video), "text/html", "utf-8", null)
+            web.loadDataWithBaseURL(APP_ORIGIN, youtubePage(video, hiddenCopy = false), "text/html", "utf-8", null)
             showOwnPlayer()
             return
         }
         if (watchMode && DIRECT_VIDEO.containsMatchIn(url)) {
             // A plain video file gets a page with nothing on it but the video, and the app's own controls.
             ownControls = true
+            playingYoutube = null
+            playingFile = url
             val key = MediaKey.forUrl(url)
             fixedKey = key
             pageKey = key
             version.incrementAndGet()
-            val source = url.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;")
-            web.loadDataWithBaseURL(APP_ORIGIN, """
-                <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-                <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}video{width:100%;height:100%;object-fit:contain;background:#000}</style>
-                </head><body><video src="$source" autoplay playsinline></video></body></html>
-            """.trimIndent(), "text/html", "utf-8", null)
+            web.loadDataWithBaseURL(APP_ORIGIN, filePage(url, hiddenCopy = false), "text/html", "utf-8", null)
             showOwnPlayer()
             return
         }
         fixedKey = null
+        playingYoutube = null
+        playingFile = null
         ownControls = false
         web.settings.userAgentString = agentFor(url)
         web.loadUrl(url)
     }
 
-    private fun youtubePage(videoId: String): String = """
+    /** A page with nothing on it but one video file. The hidden look-ahead copy gets the same page, silent. */
+    private fun filePage(url: String, hiddenCopy: Boolean): String {
+        val source = url.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;")
+        return """
+            <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}video{width:100%;height:100%;object-fit:contain;background:#000}</style>
+            </head><body><video src="$source" autoplay playsinline${if (hiddenCopy) " muted" else ""}></video></body></html>
+        """.trimIndent()
+    }
+
+    private fun youtubePage(videoId: String, hiddenCopy: Boolean): String = """
         <!doctype html><html><head>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="referrer" content="strict-origin-when-cross-origin">
         <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style>
         </head><body>
-        <iframe src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&cc_load_policy=1&rel=0&iv_load_policy=3&controls=${if (ownControls) 0 else 1}&fs=0&origin=$APP_ORIGIN"
+        <iframe src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&cc_load_policy=1&rel=0&iv_load_policy=3&controls=${if (ownControls || hiddenCopy) 0 else 1}${if (hiddenCopy) "&mute=1" else ""}&fs=0&origin=$APP_ORIGIN"
           referrerpolicy="strict-origin-when-cross-origin"
           allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
         </body></html>
@@ -677,7 +704,11 @@ open class BrowserActivity : AppCompatActivity() {
                 }
                 return true
             }
-            if (request.isForMainFrame) fixedKey = null
+            if (request.isForMainFrame) {
+                fixedKey = null
+                playingYoutube = null
+                playingFile = null
+            }
             // Moving to a site that needs the other kind of page: ask again the right way.
             if (request.isForMainFrame && agentFor(url) != view.settings.userAgentString) {
                 load(url)
@@ -873,22 +904,30 @@ open class BrowserActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Live nudity detection ----
+    // ---- Nudity: looking ahead, and watching live ----
     //
-    // Several times a second, while a video plays, a small copy of the picture
-    // is taken from the app's main window and checked. A hit puts the curtain
-    // up. The curtain is a separate window, so the copies go on showing the
-    // real picture underneath: checking continues behind the curtain, and it
-    // stays up until HOLD_MS after the last hit, which is to say for as long as
-    // the scene lasts. Protected streams copy as black frames, so they are
-    // never detected here.
+    // Two things decide whether the picture is hidden.
+    //
+    // Looking ahead. Where the picture can be read, a hidden second copy of the
+    // video (Scout) plays a few seconds in front. What it finds is known before
+    // the viewer gets there, so the curtain goes up before a scene starts and
+    // comes down after it ends.
+    //
+    // Watching live. Several times a second a small copy of the picture on
+    // screen is checked. This covers whatever has not been looked at ahead: the
+    // first moments of a video, the moments after a jump, and pages where a
+    // second copy cannot be made. It goes on at a slower pace even where the
+    // look-ahead has been, as a second opinion.
+    //
+    // The curtain is a separate window, so the copies taken from the screen go
+    // on showing the real picture underneath it. Protected streams copy as
+    // black frames, so they are never detected by either.
 
     private val watch = object : Runnable {
         override fun run() {
             val now = SystemClock.elapsedRealtime()
             if (hidden && now >= hiddenUntil) {
                 hidden = false
-                curtain.drop()
                 Log.i("SafeWatch", "filter: picture shown again on $pageKey")
             }
             refreshOwnControls()
@@ -897,39 +936,107 @@ open class BrowserActivity : AppCompatActivity() {
                 playingChecks = if (videoIsPlaying() && lastWidthShare >= 0.6) playingChecks + 1 else 0
                 if (playingChecks >= 3) setPlayerView(true)
             }
-            // Checked whenever the page has a video on it, playing or paused, since a paused picture is
-            // still on screen, and for as long as the curtain is up.
             val videoOnPage = now - lastStateAt < 1000
-            if (!checking && detector != null && settings.nudity != Strictness.OFF && (videoOnPage || videoIsPlaying() || hidden)) check()
+            val detecting = detector != null && settings.nudity != Strictness.OFF
+            lookAhead(detecting, videoOnPage)
+            if (!hidden && !aheadHidden && curtain.isUp) curtain.drop()
+            if (detecting && (videoOnPage || videoIsPlaying() || hidden || aheadHidden)) {
+                // Checked whenever the page has a video on it, playing or paused, since a paused picture is
+                // still on screen. Where the look-ahead has already been, a live check now and then is enough.
+                val known = scout?.ahead?.covers(videoPositionMs) == true
+                val due = !checking && (!known || now - lastLiveCheckAt >= SECOND_OPINION_MS)
+                if (due || hidden || aheadHidden) look(due)
+            }
             ui.postDelayed(this, CHECK_EVERY_MS)
         }
     }
 
-    private fun check() {
+    /** What the hidden copy should be showing for the page as it is now; null when there is nothing it could look ahead in. */
+    private fun scoutPage(): Triple<String?, String?, String>? {
+        if (!Prefs.lookAhead(this) || pageKey == scoutGaveUpOn) return null
+        if (videoLengthMs <= 0 || advertPlaying) return null // nothing playing yet, or a live broadcast with no "ahead"
+        playingYoutube?.let { return Triple(null, youtubePage(it, hiddenCopy = true), APP_ORIGIN) }
+        playingFile?.let { return Triple(null, filePage(it, hiddenCopy = true), APP_ORIGIN) }
+        // Any other website: a second copy of the page itself, once its video is clearly what is being watched.
+        val url = web.url ?: return null
+        if (!url.startsWith("http") || Services.forUrl(url)?.protectedVideo == true) return null
+        if (!Scout.canSilenceAnyPage || !(playerView || (videoIsPlaying() && lastWidthShare >= 0.6))) return null
+        return Triple(url, null, url)
+    }
+
+    private fun lookAhead(detecting: Boolean, videoOnPage: Boolean) {
+        var sc = scout
+        if (sc != null && sc.running && (scoutKey != pageKey || !detecting || !Prefs.lookAhead(this))) {
+            // A different page, or the viewer switched it off: what the hidden copy knew no longer applies.
+            sc.stop()
+            aheadHidden = false
+        }
+        if (!detecting || !videoOnPage) return
+        if (sc == null || !sc.running) {
+            val page = scoutPage() ?: return
+            sc = scout ?: Scout(this, pageScript).also { scout = it }
+            scoutKey = pageKey
+            scoutDoubts = 0
+            if (!sc.start(page.first, page.second, page.third, web.settings.userAgentString)) {
+                scoutGaveUpOn = pageKey
+                return
+            }
+        }
+        if (sc.lostFor(SCOUT_PATIENCE_MS)) {
+            Log.i("SafeWatch", "look-ahead: the hidden copy never found the video on $pageKey; watching live only")
+            scoutGaveUpOn = pageKey
+            sc.stop()
+            aheadHidden = false
+            return
+        }
+        sc.follow(videoPositionMs, videoLengthMs)
+        detector?.let { sc.sample(it, background, Prefs.testingBlur(this)) }
+        val level = sc.ahead.levelAt(videoPositionMs)
+        val hide = level > 0 && settings.nudity.filters(level)
+        if (hide != aheadHidden) {
+            aheadHidden = hide
+            Log.i("SafeWatch", if (hide) "filter: picture hidden ahead of time (level $level) at ${videoPositionMs / 1000}s on $pageKey"
+                else "filter: scene over, picture shown again at ${videoPositionMs / 1000}s on $pageKey")
+        }
+    }
+
+    /**
+     * Takes a small copy of the picture on screen. While the picture is hidden the copy becomes the
+     * curtain's moving blur. With [detect] it is also checked for nudity.
+     */
+    private fun look(detect: Boolean) {
         val det = detector ?: return
-        if (stage.width == 0 || stage.height == 0) return
+        if (copying || stage.width == 0 || stage.height == 0) return
         val at = IntArray(2)
         stage.getLocationInWindow(at)
         val area = Rect(at[0], at[1], at[0] + stage.width, at[1] + stage.height)
-        val scale = (if (Prefs.testingBlur(this)) 640f else 320f) / maxOf(stage.width, stage.height)
+        val testing = Prefs.testingBlur(this)
+        val scale = (if (testing) 640f else 320f) / maxOf(stage.width, stage.height)
         val frame = Bitmap.createBitmap(
             (stage.width * scale).toInt().coerceAtLeast(1),
             (stage.height * scale).toInt().coerceAtLeast(1),
             Bitmap.Config.ARGB_8888,
         )
-        checking = true
-        val testing = Prefs.testingBlur(this)
+        copying = true
         val startedAt = SystemClock.elapsedRealtime()
-        val curtainWasUp = hidden
+        val copiedAt = videoPositionMs
+        val curtainWasUp = hidden || aheadHidden
         try {
             PixelCopy.request(window, area, frame, { result ->
+                copying = false
                 if (result != PixelCopy.SUCCESS || background.isShutdown) {
                     if (testing) Log.i("SafeWatch", "blur test: the screen could not be read (code $result)")
-                    checking = false
                     return@request
                 }
+                if (isDestroyed || !resumed) return@request
+                // While hidden, each new copy refreshes the curtain, so the blur moves with the video.
+                if (hidden || aheadHidden) curtain.show(frame)
+                if (!detect || checking) return@request
+                checking = true
+                lastLiveCheckAt = startedAt
                 background.execute {
                     val level = try { det.maxLevel(frame, testing) } catch (e: Exception) { 0 }
+                    val brightness = Scout.brightnessOf(frame)
                     if (testing) {
                         // While testing, say what the detector was shown and what it made of it. "Detail" is how
                         // much neighbouring dots differ along the middle row: a real picture scores well above a
@@ -951,14 +1058,36 @@ open class BrowserActivity : AppCompatActivity() {
                             // Held until well after the next look can report, however long a look takes on this phone.
                             val took = SystemClock.elapsedRealtime() - startedAt
                             hiddenUntil = SystemClock.elapsedRealtime() + maxOf(HOLD_MS, took * 2 + 500)
+                            curtain.show(frame)
                         }
-                        // While hidden, each new copy refreshes the curtain, so the blur moves with the video.
-                        if (hidden) curtain.show(frame)
+                        doubtScout(copiedAt, brightness)
                     }
                 }
             }, ui)
         } catch (e: IllegalArgumentException) {
-            checking = false // the window is not ready to be copied yet
+            copying = false // the window is not ready to be copied yet
+        }
+    }
+
+    /**
+     * A check on the look-ahead itself. If the viewer's copy shows a picture where the hidden copy
+     * showed only black, several times running, the hidden copy is not seeing the video (some phones
+     * may not draw video on a hidden screen) and nothing it reported can be relied on. It is stopped
+     * and live watching carries on alone.
+     */
+    private fun doubtScout(positionMs: Long, brightness: Int) {
+        val sc = scout ?: return
+        if (!sc.running) return
+        when (sc.agreesWith(positionMs, brightness)) {
+            true -> scoutDoubts = 0
+            false -> scoutDoubts++
+            null -> return
+        }
+        if (scoutDoubts >= 3) {
+            Log.i("SafeWatch", "look-ahead: the hidden copy shows black where the video has a picture; stopped, watching live only")
+            scoutGaveUpOn = pageKey
+            sc.stop()
+            aheadHidden = false
         }
     }
 
@@ -976,6 +1105,8 @@ open class BrowserActivity : AppCompatActivity() {
         private const val MARK_END = "End scene"
         private const val CHECK_EVERY_MS = 250L
         private const val HOLD_MS = 1500L
+        private const val SECOND_OPINION_MS = 1500L
+        private const val SCOUT_PATIENCE_MS = 25000L
 
         /** Shows the browser on the given page, reusing the one already open. */
         fun open(ctx: Context, urlOrSearch: String) = ctx.startActivity(

@@ -13,6 +13,15 @@ back() { adb shell input keyevent 4; sleep 1; }
 swipe_up() { adb shell input swipe 540 1700 540 600 400; }
 start() { adb shell am force-stop $PKG; adb shell am start -W -n $PKG/.MainActivity > /dev/null; }
 
+# Shared scene lists: is the public service that offers them answering, and what does it send?
+for u in "https://cleanstream.elfhosted.com/api/filters" "https://cleanstream.elfhosted.com/api/skips/tt0133093" "https://cleanstream.elfhosted.com/api/skips/tt0120338" "https://cleanstream.elfhosted.com/manifest.json"; do
+  name=$(echo "$u" | sed 's|.*/api/||; s|.*/||; s|[^A-Za-z0-9]|-|g')
+  code=$(curl -sL -m 25 -o "$OUT/scene-lists-$name.txt" -w '%{http_code} %{content_type} %{size_download}' "$u")
+  echo "scene lists: $u answered $code" | tee -a "$OUT/scene-lists.txt"
+  head -c 6000 "$OUT/scene-lists-$name.txt" > "$OUT/scene-lists-$name.cut" && mv "$OUT/scene-lists-$name.cut" "$OUT/scene-lists-$name.txt"
+  [ -s "$OUT/scene-lists-$name.txt" ] || echo "(nothing)" > "$OUT/scene-lists-$name.txt"
+done
+
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 : > "$OUT/summary.txt"
@@ -77,6 +86,13 @@ if [ -n "$VIDEO" ]; then
   shot 14e-player-later 8
   shot 14f-player-later 8
   shot 14g-player-later 8
+  shot 14h-player-later 8
+  shot 14i-player-later 8
+  shot 14j-player-later 8
+  shot 14k-player-later 8
+  # What the hidden look-ahead copy of the video saw, kept by the app while the blur test is on.
+  timeout 30 adb exec-out run-as $PKG cat cache/look-ahead-test.png > "$OUT/14z-look-ahead-copy.png" 2>/dev/null
+  [ -s "$OUT/14z-look-ahead-copy.png" ] || { rm -f "$OUT/14z-look-ahead-copy.png"; echo "no picture from the look-ahead copy" | tee -a "$OUT/summary.txt"; }
 fi
 adb logcat -d -s SafeWatch:I > "$OUT/filter-log.txt"; echo "(end of filter log)" >> "$OUT/filter-log.txt"
 
