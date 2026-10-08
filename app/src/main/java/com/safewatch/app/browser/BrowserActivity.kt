@@ -1075,8 +1075,9 @@ open class BrowserActivity : AppCompatActivity() {
                     cues += com.safewatch.core.Cue(line.getLong(0), line.getLong(1), line.getString(2))
                 }
                 for (t in CueTagger.tagsFor(cues, matcher)) out.put(JSONArray().put(t.startMs).put(t.endMs))
-            } catch (e: Exception) {
-                // Not lines after all; nothing to mute.
+            } catch (e: Throwable) {
+                // Said in the filter report: a failure here would otherwise go unnoticed.
+                this@BrowserActivity.note("could not work out when to mute: $e")
             }
             return out.toString()
         }
@@ -1089,7 +1090,10 @@ open class BrowserActivity : AppCompatActivity() {
         fun captionCues(file: String): String {
             val out = JSONArray()
             if (!CaptionFormats.recognises(file)) return out.toString()
-            val cues = try { CaptionFormats.parse(file) } catch (e: Exception) { emptyList() }
+            val cues = try { CaptionFormats.parse(file) } catch (e: Throwable) {
+                this@BrowserActivity.note("could not read a caption file: $e")
+                emptyList()
+            }
             for (c in cues) out.put(JSONArray().put(c.startMs).put(c.endMs).put(c.text))
             return out.toString()
         }

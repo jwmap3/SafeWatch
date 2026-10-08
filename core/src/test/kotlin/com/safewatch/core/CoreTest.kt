@@ -460,3 +460,99 @@ class TvLinkTest {
         }
     }
 }
+
+/**
+ * Android's regular expressions are not Java's: they reject a "}" or "]" that is not escaped,
+ * where Java takes it as a plain character. A pattern that compiles in these tests can still
+ * fail on the phone, as one did, silently stopping all muting from caption files. This checks
+ * every pattern in the app's source is written the way both accept.
+ */
+class AndroidRegexTest {
+    private fun problem(p: String): String? {
+        var i = 0
+        var inSet = false
+        while (i < p.length) {
+            val c = p[i]
+            if (c == '\\') {
+                // A property such as \p{L} is one item, braces and all.
+                if (i + 2 < p.length && (p[i + 1] == 'p' || p[i + 1] == 'P') && p[i + 2] == '{') {
+                    i = p.indexOf('}', i) + 1
+                    continue
+                }
+                i += 2
+                continue
+            }
+            if (inSet) {
+                when (c) {
+                    ']' -> inSet = false
+                    '[' -> return "an unescaped [ inside a set"
+                    '{', '}' -> return "an unescaped brace inside a set"
+                }
+            } else {
+                when (c) {
+                    '[' -> inSet = true
+                    ']' -> return "an unescaped ]"
+                    '}' -> return "an unescaped }"
+                    '{' -> {
+                        val q = Regex("\\{\\d+(,\\d*)?\\}").find(p, i)?.takeIf { it.range.first == i } ?: return "an unescaped {"
+                        i += q.value.length
+                        continue
+                    }
+                }
+            }
+            i++
+        }
+        return null
+    }
+
+    private fun unescape(literal: String): String {
+        val text = literal.replace(Regex("(?<!\\\\)\\$\\{[^\\}]*\\}|(?<!\\\\)\\$[A-Za-z_]\\w*"), "x")
+        val out = StringBuilder()
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            if (c == '\\' && i + 1 < text.length) {
+                val n = text[i + 1]
+                when (n) {
+                    'n' -> out.append('\n')
+                    't' -> out.append('\t')
+                    'u' -> { out.append(text.substring(i + 2, i + 6).toInt(16).toChar()); i += 6; continue }
+                    else -> out.append(n)
+                }
+                i += 2
+                continue
+            }
+            out.append(c)
+            i++
+        }
+        return out.toString()
+    }
+
+    @Test fun everyPatternIsWrittenTheWayAndroidAccepts() {
+        var dir = java.io.File("").absoluteFile
+        while (!java.io.File(dir, "settings.gradle.kts").exists()) dir = dir.parentFile ?: return
+        val literal = Regex("Regex\\(\"((?:[^\"\\\\]|\\\\.)*)\"")
+        val problems = ArrayList<String>()
+        var checked = 0
+        for (root in listOf("core/src/main", "app/src/main/java")) {
+            for (file in java.io.File(dir, root).walk().filter { it.extension == "kt" }) {
+                file.readLines().forEachIndexed { n, line ->
+                    for (m in literal.findAll(line)) {
+                        checked++
+                        val pattern = unescape(m.groupValues[1])
+                        problem(pattern)?.let { problems += "${file.name}:${n + 1}: $it in $pattern" }
+                    }
+                }
+            }
+        }
+        assertTrue(checked > 30)
+        assertEquals(emptyList<String>(), problems)
+    }
+
+    @Test fun theCheckCatchesWhatAndroidRejects() {
+        assertEquals("an unescaped }", problem("<[^>]*>|\\{[^x]*}"))
+        assertEquals("an unescaped brace inside a set", problem("\\{[^{}]*\\}"))
+        assertEquals("an unescaped ]", problem("\\[ _+ ]"))
+        assertEquals(null, problem("\\d{3}\\s*-->[\\[(]x[\\])]"))
+    }
+}

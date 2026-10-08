@@ -7,7 +7,7 @@ data class Cue(val startMs: Long, val endMs: Long, val text: String)
 object SubtitleParser {
     private val TIME = "(?:(\\d{1,3}):)?(\\d{1,2}):(\\d{2})[.,](\\d{1,3})"
     private val TIMING = Regex("$TIME\\s*-->\\s*$TIME")
-    private val MARKUP = Regex("<[^>]*>|\\{[^}]*}")
+    private val MARKUP = Regex("<[^>]*>|\\{[^\\}]*\\}")
 
     fun parse(content: String): List<Cue> {
         val cues = ArrayList<Cue>()

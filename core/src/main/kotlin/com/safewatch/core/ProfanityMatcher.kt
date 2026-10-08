@@ -72,7 +72,7 @@ class ProfanityMatcher(settings: FilterSettings) {
         private val TOKEN = Regex("[\\p{L}\\p{N}]+(?:['’][\\p{L}]+)*")
         private val CENSORED = listOf(
             Regex("\\p{L}+\\*+\\p{L}+|\\p{L}+\\*{2,}"),                 // f**k, sh*t, f***
-            Regex("\\[[\\s\\u00A0]*_+[\\s\\u00A0]*]"),                      // [ __ ], as YouTube writes it
+            Regex("\\[[\\s\\u00A0]*_+[\\s\\u00A0]*\\]"),                      // [ __ ], as YouTube writes it
             Regex("(?<![\\p{L}_])\\p{L}{1,2}_{2,}\\p{L}{0,2}(?![\\p{L}_])"), // f___, s__t
             Regex("[\\[(]\\s*(?:bleep\\w*|beep\\w*|expletive\\w*|censored)\\s*[\\])]", RegexOption.IGNORE_CASE),
             Regex("(?=[@#$%&!*]*[@#$%&*])[@#$%&!*]{4,}"),              // @#$%!, ****

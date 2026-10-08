@@ -85,11 +85,11 @@ object CaptionFormats {
     // Automatic captions carry a time for each word, which is used to mute the word alone.
     private fun youtubeJson(text: String): List<Cue> {
         val cues = ArrayList<Cue>()
-        val events = Regex("\\{[^{}]*\"tStartMs\"\\s*:\\s*(\\d+)[^{}]*?(?:\"segs\"\\s*:\\s*\\[(.*?)])?[^{}]*}", RegexOption.DOT_MATCHES_ALL)
+        val events = Regex("\\{[^\\{\\}]*\"tStartMs\"\\s*:\\s*(\\d+)[^\\{\\}]*?(?:\"segs\"\\s*:\\s*\\[(.*?)\\])?[^\\{\\}]*\\}", RegexOption.DOT_MATCHES_ALL)
         for (event in events.findAll(text)) {
             val start = event.groupValues[1].toLong()
             val length = Regex("\"dDurationMs\"\\s*:\\s*(\\d+)").find(event.value)?.groupValues?.get(1)?.toLong() ?: 2000
-            val segs = Regex("\\{[^{}]*}").findAll(event.groupValues[2]).map { seg ->
+            val segs = Regex("\\{[^\\{\\}]*\\}").findAll(event.groupValues[2]).map { seg ->
                 val words = Regex("\"utf8\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(seg.value)?.groupValues?.get(1).orEmpty()
                 val offset = Regex("\"tOffsetMs\"\\s*:\\s*(\\d+)").find(seg.value)?.groupValues?.get(1)?.toLong()
                 unescapeJson(words) to offset

@@ -223,7 +223,7 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         } catch (e: Exception) {
             return emptyList()
         }
-        return if (CaptionFormats.recognises(text)) try { CaptionFormats.parse(text) } catch (e: Exception) { emptyList() } else emptyList()
+        return if (CaptionFormats.recognises(text)) try { CaptionFormats.parse(text) } catch (e: Throwable) { emptyList() } else emptyList()
     }
 
     // ---- Finding nudity ----
