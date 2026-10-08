@@ -130,6 +130,44 @@ class SubtitleTest {
     }
 }
 
+class CaptionFormatsTest {
+    @Test fun readsTtmlWithClockAndTickTimes() {
+        val ttml = """<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml" ttp:tickRate="10000000"><body><div>
+            <p begin="00:00:01.500" end="00:00:03.000">Hello <span>there</span><br/>friend</p>
+            <p xml:id="s2" begin="50000000t" end="62500000t">Tick &amp; tock</p>
+            <p begin="12.5s" dur="2s">Offset time</p>
+            </div></body></tt>"""
+        assertTrue(CaptionFormats.recognises(ttml))
+        assertEquals(listOf(Cue(1500, 3000, "Hello there friend"), Cue(5000, 6250, "Tick & tock"), Cue(12500, 14500, "Offset time")),
+            CaptionFormats.parse(ttml))
+    }
+
+    @Test fun readsYouTubeWordTimes() {
+        val json = """{"wireMagic":"pb3","events":[{"tStartMs":0,"dDurationMs":500,"id":1},
+            {"tStartMs":1200,"dDurationMs":3000,"segs":[{"utf8":"so"},{"utf8":" what","tOffsetMs":320},{"utf8":" now","tOffsetMs":900}]},
+            {"tStartMs":5000,"dDurationMs":2000,"segs":[{"utf8":"A whole line\nhere"}]}]}"""
+        assertTrue(CaptionFormats.recognises(json))
+        assertEquals(listOf(Cue(1200, 1520, "so"), Cue(1520, 2100, "what"), Cue(2100, 3000, "now"), Cue(5000, 7000, "A whole line here")),
+            CaptionFormats.parse(json))
+    }
+
+    @Test fun readsYouTubeXmlAndPlainSubtitles() {
+        assertEquals(listOf(Cue(1200, 4200, "so what")),
+            CaptionFormats.parse("""<?xml version="1.0"?><timedtext format="3"><body><p t="1200" d="3000">so <s t="320">what</s></p></body></timedtext>"""))
+        val vtt = "WEBVTT\n\n00:05.000 --> 00:07.500\nHi"
+        assertTrue(CaptionFormats.recognises(vtt))
+        assertEquals(listOf(Cue(5000, 7500, "Hi")), CaptionFormats.parse(vtt))
+        assertFalse(CaptionFormats.recognises("{\"status\":\"ok\"}"))
+    }
+
+    @Test fun aSwearWordTimedAloneIsMutedAlone() {
+        val json = """{"events":[{"tStartMs":10000,"dDurationMs":4000,"segs":[{"utf8":"well"},{"utf8":" shit","tOffsetMs":1500},{"utf8":" happens","tOffsetMs":2100}]}]}"""
+        val tag = CueTagger.tagsFor(CaptionFormats.parse(json), ProfanityMatcher(FilterSettings())).single()
+        assertEquals(11500 - CueTagger.EDGE_MS, tag.startMs)
+        assertEquals(12100 + CueTagger.EDGE_MS, tag.endMs)
+    }
+}
+
 class FilterEngineTest {
     private val tags = listOf(
         Tag(1000, 2000, Category.LANGUAGE, Action.MUTE, 2),

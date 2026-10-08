@@ -58,6 +58,7 @@ import com.safewatch.app.detect.NudityDetector
 import com.safewatch.app.ui.SceneDialog
 import com.safewatch.app.ui.Ui
 import com.safewatch.core.Action
+import com.safewatch.core.CaptionFormats
 import com.safewatch.core.Cue
 import com.safewatch.core.CueTagger
 import com.safewatch.core.FilterEngine
@@ -788,6 +789,19 @@ open class BrowserActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun profane(text: String): Boolean = matcher.containsProfanity(text)
+
+        /**
+         * Given a whole caption file the page's player downloaded, answers with every stretch
+         * to mute, as `[[startMs, endMs], ...]`. Answers `[]` for anything that is not a caption file.
+         */
+        @JavascriptInterface
+        fun captionWindows(file: String): String {
+            val out = JSONArray()
+            if (!CaptionFormats.recognises(file)) return out.toString()
+            val cues = try { CaptionFormats.parse(file) } catch (e: Exception) { emptyList() }
+            for (t in CueTagger.tagsFor(cues, matcher)) out.put(JSONArray().put(t.startMs).put(t.endMs))
+            return out.toString()
+        }
 
         /**
          * Sent several times a second while a video is playing, with its position and how

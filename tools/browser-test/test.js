@@ -3,7 +3,7 @@
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
 const script = fs.readFileSync(path.join(__dirname, '../../app/src/main/assets/safewatch.js'), 'utf8');
-const types = { '.html': 'text/html', '.webm': 'video/webm', '.vtt': 'text/vtt' };
+const types = { '.html': 'text/html', '.webm': 'video/webm', '.vtt': 'text/vtt', '.xml': 'application/octet-stream' };
 const server = http.createServer((req, res) => {
   const f = path.join(__dirname, req.url.split('?')[0]);
   if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); }
@@ -28,6 +28,7 @@ const server = http.createServer((req, res) => {
       profane: (text) => /badword/i.test(text),
       beat: (t, share) => { window.__beats.push(t); window.__share = share; },
       fullPicture: () => !!window.__full,
+      captionWindows: (file) => { const m = file.match(/(\d\d):(\d\d):(\d\d)[.,](\d+)\D+(\d\d):(\d\d):(\d\d)[.,](\d+)/); if (!m || !/badword/i.test(file)) return '[]'; const ms = (i) => ((+m[i] * 60 + +m[i + 1]) * 60 + +m[i + 2]) * 1000 + +m[i + 3]; return JSON.stringify([[ms(1), ms(5)]]); },
       state: (pos, dur, paused, ad) => { window.__state = { pos, dur, paused, ad }; },
       command: () => { const c = window.__command || ''; window.__command = ''; return c; },
       note: (text) => { (window.__notes = window.__notes || []).push(text); },
@@ -74,6 +75,21 @@ const server = http.createServer((req, res) => {
   check('a video the page keeps silent is not treated as the feature', await page.evaluate(() => window.__share) === 0);
   await page.evaluate(() => { document.getElementById('v').muted = false; window.__full = true; }); await page.waitForTimeout(600);
   check('asking for the full picture causes no errors', pageErrors.length === 0, pageErrors.join(' | '));
+  // Caption files the page downloads are read ahead of time.
+  await page.evaluate(async () => {
+    window.__tags = []; window.__ver = 3; window.__full = false; document.getElementById('caps').innerHTML = '';
+    await fetch('ahead.vtt').then((r) => r.text());
+    await new Promise((done) => { const x = new XMLHttpRequest(); x.open('GET', 'ahead.xml'); x.responseType = 'arraybuffer'; x.onload = done; x.send(); });
+    const v = document.getElementById('v'); v.muted = false; v.currentTime = 20.3; return v.play();
+  });
+  await page.waitForTimeout(400);
+  r = await at(0); check('not muted just before a line read ahead', !r.muted && r.t < 21, JSON.stringify(r));
+  r = await at(21.2); check('muted on time from a caption file fetched by the page', r.muted, JSON.stringify(r));
+  r = await at(22.8); check('unmuted after it', !r.muted, JSON.stringify(r));
+  r = await at(24.2); check('muted on time from a caption file with an unhelpful name and type', r.muted, JSON.stringify(r));
+  r = await at(25.8); check('unmuted after it', !r.muted, JSON.stringify(r));
+  check('the page still got its own downloads', await page.evaluate(() => fetch('ahead.vtt').then((x) => x.text()).then((t) => t.startsWith('WEBVTT'))));
+
   // The app's own player controls.
   await page.evaluate(() => { window.__full = false; window.__command = 'pause'; }); await page.waitForTimeout(400);
   let st = await page.evaluate(() => ({ paused: document.getElementById('v').paused, state: window.__state }));

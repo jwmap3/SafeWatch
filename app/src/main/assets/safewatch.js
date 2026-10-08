@@ -27,7 +27,8 @@
   var DOM_MUTE_MS = 1500;
 
   var S = window.__safewatch = {
-    version: -1, language: false, tags: [], domMuteUntil: 0, lastDomText: '', ticks: 0, filledAt: 0
+    version: -1, language: false, tags: [], domMuteUntil: 0, lastDomText: '', ticks: 0, filledAt: 0,
+    captionFiles: [], ahead: []
   };
   var states = new WeakMap();
 
@@ -42,11 +43,94 @@
     return st;
   }
 
+  // ---- Reading the caption file ahead of time ----
+  //
+  // Players download their captions as a file, usually the whole film's at once.
+  // This watches what the page downloads, and when a download turns out to be a
+  // caption file it is handed to the app, which answers with every stretch to
+  // mute. Those are then known before they are spoken, so muting starts on time.
+
+  function addAhead(text) {
+    try {
+      var found = JSON.parse(B.captionWindows(text));
+      for (var i = 0; i < found.length; i++) S.ahead.push(found[i]);
+      if (B.note) B.note('caption file read ahead: ' + found.length + ' stretches to mute');
+    } catch (e) { /* not a caption file after all */ }
+  }
+
+  function looksLikeCaptions(text) {
+    var head = text.slice(0, 1500);
+    if (head.indexOf('X-TIMESTAMP-MAP') >= 0) return false; // one small piece of many, timed differently
+    return /^\uFEFF?\s*WEBVTT/.test(head) || /<tt[\s:>]/.test(head) || head.indexOf('<timedtext') >= 0 ||
+      (head.indexOf('"events"') >= 0 && text.indexOf('tStartMs') >= 0) || /\d\d:\d\d:\d\d[,.]\d{3}\s*-->/.test(head);
+  }
+
+  function offerCaptions(text) {
+    if (!text || text.length < 20 || text.length > 4000000 || !B.captionWindows || !looksLikeCaptions(text)) return;
+    for (var i = 0; i < S.captionFiles.length; i++) if (S.captionFiles[i] === text) return;
+    S.captionFiles.push(text);
+    if (S.captionFiles.length > 4) S.captionFiles.shift();
+    if (S.language) addAhead(text);
+  }
+
+  // Whether a download is worth a look: small, and not plainly something else.
+  function worthALook(url, type, length) {
+    if (length > 4000000) return false;
+    if (/^(video|audio|image|font)\/|javascript|css|text\/html/.test(type)) return false;
+    if (/timedtext|\.vtt|\.ttml|\.dfxp|\.srt|subtitle|caption|ttml|text\/vtt/i.test(url + ' ' + type)) return true;
+    // A caption file can also hide behind an address and a type that say nothing (Netflix).
+    return length > 0 && length < 1500000 && /octet-stream|text\/plain|xml|json|^$/.test(type);
+  }
+
+  (function watchDownloads() {
+    if (!B.captionWindows) return;
+    var realFetch = window.fetch;
+    if (realFetch) {
+      window.fetch = function () {
+        var answer = realFetch.apply(this, arguments);
+        try {
+          answer.then(function (res) {
+            try {
+              var type = res.headers.get('content-type') || '';
+              var length = parseInt(res.headers.get('content-length') || '0', 10) || 0;
+              if (res.ok && worthALook(res.url || '', type, length)) res.clone().text().then(offerCaptions, function () {});
+            } catch (e) { /* leave the page's download alone */ }
+          }, function () {});
+        } catch (e) { /* leave the page's download alone */ }
+        return answer;
+      };
+    }
+    var Request = window.XMLHttpRequest;
+    if (Request && Request.prototype) {
+      var realOpen = Request.prototype.open;
+      Request.prototype.open = function (method, url) {
+        var xhr = this, address = String(url || '');
+        xhr.addEventListener('load', function () {
+          try {
+            var type = xhr.getResponseHeader('content-type') || '';
+            var length = parseInt(xhr.getResponseHeader('content-length') || '0', 10) || 0;
+            var kind = xhr.responseType;
+            if (kind === '' || kind === 'text') {
+              if (worthALook(address, type, length || xhr.responseText.length)) offerCaptions(xhr.responseText);
+            } else if (kind === 'arraybuffer' && xhr.response) {
+              if (worthALook(address, type, xhr.response.byteLength)) offerCaptions(new TextDecoder('utf-8').decode(xhr.response));
+            } else if (kind === 'json' && xhr.response) {
+              if (worthALook(address, type, length)) offerCaptions(JSON.stringify(xhr.response));
+            }
+          } catch (e) { /* leave the page's download alone */ }
+        });
+        return realOpen.apply(this, arguments);
+      };
+    }
+  })();
+
   // Notes, once per video, when it starts and if it fails, so a video that will not play can be explained.
   var watched = new WeakSet();
   function watchForTrouble(video) {
     if (watched.has(video) || !B.note) return;
     watched.add(video);
+    // A new film in the same player: what was read ahead belonged to the old one.
+    video.addEventListener('emptied', function () { S.ahead = []; S.captionFiles = []; });
     var say = function (text) { try { B.note(text); } catch (e) { /* ignore */ } };
     video.addEventListener('playing', function () { say('video playing'); }, { once: true });
     video.addEventListener('error', function () {
@@ -70,6 +154,8 @@
       // Word settings may have changed, so captions are checked again from scratch.
       states = new WeakMap();
       S.lastDomText = '';
+      S.ahead = [];
+      for (var i = 0; i < S.captionFiles.length; i++) addAhead(S.captionFiles[i]);
     } catch (e) { /* keep the previous settings */ }
   }
 
@@ -235,6 +321,11 @@
       if (!mute) {
         for (n = 0; n < st.windows.length; n++) {
           if (t >= st.windows[n][0] && t < st.windows[n][1]) { mute = true; break; }
+        }
+      }
+      if (!mute) {
+        for (n = 0; n < S.ahead.length; n++) {
+          if (t >= S.ahead[n][0] && t < S.ahead[n][1]) { mute = true; break; }
         }
       }
       if (skipTo >= 0) {
