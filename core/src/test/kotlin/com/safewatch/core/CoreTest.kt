@@ -795,3 +795,71 @@ class FakeLounge {
         }
     }
 }
+
+class DeepCleanTest {
+    @Test fun readsClaudesAnswers() {
+        val flags = DeepClean.readFlags("Here you go:\n```json\n{\"flagged\":[{\"time\":\"0:01:04\",\"kind\":\"Nudity\",\"severity\":3},{\"time\":\"12:30\",\"kind\":\"gore\"}]}\n```")
+        assertEquals(listOf(64_000L, 750_000L), flags.map { it.atMs })
+        assertEquals("nudity", flags[0].kind)
+        assertEquals(2, flags[1].severity)
+        assertEquals(emptyList(), DeepClean.readFlags("Nothing to report."))
+        assertEquals(listOf(3 to listOf("frick")), DeepClean.readWords("{\"mute\":[{\"line\":3,\"words\":[\"frick\",\" \"]}]}"))
+        assertEquals(3_723_500L, DeepClean.time("1:02:03.5"))
+        assertEquals("1:02:03", DeepClean.label(3_723_900L))
+    }
+
+    @Test fun flaggedFramesBecomeScenesAndGoreIsAlwaysHidden() {
+        val scenes = DeepClean.scenes(listOf(DeepClean.Flag(10_000, "nudity", 3), DeepClean.Flag(12_000, "nudity", 2),
+            DeepClean.Flag(40_000, "gore", 3)), stepMs = 2000)
+        assertEquals(2, scenes.size)
+        assertEquals(8_000L, scenes[0].startMs)
+        assertEquals(14_500L, scenes[0].endMs)
+        assertEquals(Category.GORE, scenes[1].category)
+        // Gore follows the blur or skip choice, whatever the nudity level is set to.
+        val skip = FilterSettings(nudity = Strictness.OFF, nudityAction = Action.SKIP)
+        val active = FilterEngine(scenes, skip).activeTags
+        assertEquals(listOf(Category.GORE), active.map { it.category })
+        assertEquals(Action.SKIP, active[0].action)
+    }
+
+    @Test fun wordsClaudeFindsAreMutedLikeTheBuiltInOnes() {
+        val cues = listOf(Cue(0, 4000, "Oh frick, the car is gone"), Cue(5000, 7000, "You absolute dingbat"))
+        val tags = DeepClean.wordTags(cues, listOf(cues[0] to listOf("frick"), cues[1] to listOf("absolute dingbat")), FilterSettings())
+        assertEquals(2, tags.size)
+        assertTrue(tags[0].endMs - tags[0].startMs < 4000) // just around the word, not the whole line
+        assertTrue(tags.all { it.source == Tag.SOURCE_CLAUDE && it.action == Action.MUTE })
+        // A word that cannot be found again in its line mutes the line.
+        val whole = DeepClean.wordTags(cues, listOf(cues[1] to listOf("zzz")), FilterSettings())
+        assertEquals(5000L, whole.single().startMs)
+        assertEquals(7000L, whole.single().endMs)
+    }
+
+    @Test fun asksClaudeWithTheKeyAndPictures() {
+        val server = java.net.ServerSocket(0)
+        val heard = java.util.concurrent.atomic.AtomicReference<String>()
+        Thread {
+            server.accept().use { s ->
+                val input = java.io.BufferedInputStream(s.getInputStream())
+                val head = StringBuilder()
+                while (!head.endsWith("\r\n\r\n")) { val b = input.read(); if (b < 0) break; head.append(b.toChar()) }
+                val length = Regex("(?i)content-length: *(\\d+)").find(head)?.groupValues?.get(1)?.toInt() ?: 0
+                heard.set(head.toString() + String(input.readNBytes(length)))
+                val reply = """{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"{\"flagged\":[]}"}]}"""
+                s.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${reply.length}\r\nConnection: close\r\n\r\n$reply".toByteArray())
+            }
+        }.start()
+        val api = ClaudeApi("sk-test", ClaudeApi.HAIKU, "http://127.0.0.1:${server.localPort}")
+        val answer = api.ask("Be careful \"here\"", listOf(ClaudeApi.Part.Jpeg(byteArrayOf(1, 2, 3)), ClaudeApi.Part.Text("Say\nit")))
+        server.close()
+        assertEquals("{\"flagged\":[]}", answer)
+        val request = heard.get()
+        assertTrue(request.contains("x-api-key: sk-test"), request)
+        assertTrue(request.contains("anthropic-version: 2023-06-01"))
+        val body = com.safewatch.core.tv.MiniJson.parse(request.substringAfter("\r\n\r\n")) as Map<*, *>
+        assertEquals("claude-haiku-5-5", body["model"])
+        assertEquals("Be careful \"here\"", body["system"])
+        val content = ((body["messages"] as List<*>)[0] as Map<*, *>)["content"] as List<*>
+        assertEquals("AQID", ((content[0] as Map<*, *>)["source"] as Map<*, *>)["data"])
+        assertEquals("Say\nit", (content[1] as Map<*, *>)["text"])
+    }
+}

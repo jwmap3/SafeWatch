@@ -227,6 +227,31 @@ class FiltersScreen(private val activity: MainActivity) {
         column.addView(Ui.caption(ctx,
             "Put the tabs along the bottom in any order and hide the ones you do not use. Settings always stays, so this can be changed back."))
 
+        // Deep clean with Claude
+        val claudeKey = Prefs.claudeKey(ctx)
+        column.addView(Ui.sectionHeader(ctx, "Deep clean with Claude"))
+        column.addView(Ui.card(ctx).apply {
+            addView(Ui.row(ctx, "Claude API key", if (claudeKey.isEmpty()) "Not added" else "Added") { editClaudeKey() })
+            if (claudeKey.isNotEmpty()) {
+                addView(Ui.divider(ctx))
+                addView(Ui.row(ctx, "Model", chevron = false).apply {
+                    val models = listOf(com.safewatch.core.ClaudeApi.SONNET to "Sonnet 5.5", com.safewatch.core.ClaudeApi.HAIKU to "Haiku 5.5")
+                    addView(Ui.segmented(ctx, models.map { it.second }, models.indexOfFirst { it.first == Prefs.claudeModel(ctx) }.coerceAtLeast(0)) {
+                        Prefs.setClaudeModel(ctx, models[it].first)
+                        rebuild()
+                    }, LinearLayout.LayoutParams(Ui.dp(ctx, 220), -2))
+                })
+            }
+        })
+        val claudeModel = Prefs.claudeModel(ctx)
+        column.addView(Ui.caption(ctx,
+            "Optional, and only when you choose it. With your own key from console.anthropic.com, a clean copy can also go to " +
+                "Claude, who looks at its pictures and reads its captions for nudity, gore and cursing the phone missed. Small " +
+                "pictures (two seconds apart) and the caption text are sent to Anthropic. It costs " +
+                "${com.safewatch.app.tv.DeepCleanRun.costText(3_600_000L, claudeModel)} for each hour of video with " +
+                (if (claudeModel == com.safewatch.core.ClaudeApi.HAIKU) "Haiku" else "Sonnet (Haiku is cheaper but less careful)") +
+                ", billed to your Anthropic account. The key stays on this phone."))
+
         // Catalog
         val hasKey = Prefs.catalogKey(ctx).isNotEmpty()
         column.addView(Ui.sectionHeader(ctx, "Titles"))
@@ -362,6 +387,11 @@ class FiltersScreen(private val activity: MainActivity) {
             .setPositiveButton("Save") { _, _ -> onSave(input.text.toString()) }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun editClaudeKey() = textDialog("Claude API key", Prefs.claudeKey(activity), "sk-ant-…", 1) {
+        Prefs.setClaudeKey(activity, it)
+        rebuild()
     }
 
     private fun editCatalogKey() = textDialog("TMDB catalog key", Prefs.catalogKey(activity), "Paste your key", 1) {

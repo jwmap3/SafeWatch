@@ -1,7 +1,7 @@
 package com.safewatch.core
 
 /** What a filter is about. Gore and others can be added here later. */
-enum class Category { LANGUAGE, NUDITY }
+enum class Category { LANGUAGE, NUDITY, /** Graphic violence; only Deep clean with Claude finds it. */ GORE }
 
 /** What the player does while a tag is active. */
 enum class Action { MUTE, SKIP, BLUR }
@@ -30,6 +30,8 @@ data class Tag(
         const val SOURCE_MANUAL = "manual"
         const val SOURCE_CAPTIONS = "captions"
         const val SOURCE_SCAN = "scan"
+        /** Found by Claude in a Deep clean. */
+        const val SOURCE_CLAUDE = "claude"
     }
 }
 
@@ -55,5 +57,7 @@ data class FilterSettings(
     fun strictnessFor(category: Category): Strictness = when (category) {
         Category.LANGUAGE -> language
         Category.NUDITY -> nudity
+        // Found only when the viewer asks for a Deep clean, and then always hidden.
+        Category.GORE -> Strictness.HIGH
     }
 }

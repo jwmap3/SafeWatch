@@ -61,9 +61,11 @@ data class CleanSource(
     val captions: List<String> = emptyList(),
     val referrer: String = "",
     val stream: String = "",
+    /** Also a Deep clean with Claude, which the viewer asked for. */
+    val deep: Boolean = false,
 ) {
     fun toJson(): String = JSONObject().put("title", title).put("key", key).put("address", address)
-        .put("captions", JSONArray(captions)).put("referrer", referrer).put("stream", stream).toString()
+        .put("captions", JSONArray(captions)).put("referrer", referrer).put("stream", stream).put("deep", deep).toString()
 
     companion object {
         const val HLS = "hls"
@@ -73,7 +75,7 @@ data class CleanSource(
             val o = JSONObject(text)
             val caps = o.optJSONArray("captions") ?: JSONArray()
             return CleanSource(o.getString("title"), o.getString("key"), o.getString("address"),
-                (0 until caps.length()).map { caps.getString(it) }, o.optString("referrer"), o.optString("stream"))
+                (0 until caps.length()).map { caps.getString(it) }, o.optString("referrer"), o.optString("stream"), o.optBoolean("deep"))
         }
 
         /** Whether an address is a stream's manifest, and which kind. */
@@ -92,8 +94,8 @@ data class CleanSource(
     }
 }
 
-/** A finished clean copy, kept in the app's own storage. */
-data class CleanCopyFile(val file: File, val title: String, val summary: String, val madeAt: Long, val durationMs: Long) {
+/** A finished clean copy, kept in the app's own storage. [source] is what it was made from, to make it again. */
+data class CleanCopyFile(val file: File, val title: String, val summary: String, val madeAt: Long, val durationMs: Long, val source: CleanSource? = null) {
     val sizeText: String get() {
         val mb = file.length() / (1024.0 * 1024.0)
         return if (mb >= 1024) String.format("%.1f GB", mb / 1024) else String.format("%.0f MB", mb)
@@ -127,8 +129,8 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         val notes = ArrayList<String>()
 
         // Cursing, from the captions.
+        val cues = source.captions.flatMap { readCaptions(it) }
         if (settings.language != Strictness.OFF) {
-            val cues = source.captions.flatMap { readCaptions(it) }
             if (cues.isEmpty()) notes += "no captions were found, so cursing could not be muted"
             else tags += CueTagger.tagsFor(cues, ProfanityMatcher(settings))
         }
@@ -146,6 +148,23 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         }
         check()
 
+        // A Deep clean, if asked for: Claude looks at the pictures and reads the captions too.
+        if (source.deep) {
+            if (Prefs.claudeKey(context).isEmpty()) {
+                notes += "Deep clean was skipped: there is no Claude key in Settings"
+            } else {
+                val deep = DeepCleanRun(context, settings, report, ::check).run(input, durationMs, cues)
+                tags += deep.tags
+                notes += deep.note
+                if (deep.tags.isNotEmpty()) {
+                    // The phone's own player uses them too, next time this video plays.
+                    val kept = TagStore.load(context, source.key).filter { it.source != Tag.SOURCE_CLAUDE }
+                    TagStore.save(context, source.key, source.title, kept + deep.tags)
+                }
+            }
+        }
+        check()
+
         val plan = CleanPlanner.plan(durationMs, tags, settings)
         val id = System.currentTimeMillis().toString()
         val output = File(folder(context), "$id.mp4")
@@ -154,7 +173,7 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         val summary = (listOf(plan.summary()) + notes).joinToString("; ")
         File(folder(context), "$id.json").writeText(JSONObject()
             .put("title", source.title).put("summary", summary).put("madeAt", System.currentTimeMillis())
-            .put("durationMs", plan.keep.sumOf { it.last - it.first }).put("key", source.key).toString())
+            .put("durationMs", plan.keep.sumOf { it.last - it.first }).put("key", source.key).put("source", source.toJson()).toString())
         work.listFiles()?.forEach { it.delete() }
         return CleanCopyFile(output, source.title, summary, System.currentTimeMillis(), durationMs)
     }
@@ -429,7 +448,8 @@ class CleanCopy(private val context: Context, private val report: (step: String,
             if (!video.exists()) return@mapNotNull null
             try {
                 val o = JSONObject(meta.readText())
-                CleanCopyFile(video, o.optString("title", "Video"), o.optString("summary"), o.optLong("madeAt"), o.optLong("durationMs"))
+                CleanCopyFile(video, o.optString("title", "Video"), o.optString("summary"), o.optLong("madeAt"), o.optLong("durationMs"),
+                    o.optString("source").takeIf { it.isNotEmpty() }?.let { try { CleanSource.fromJson(it) } catch (e: Exception) { null } })
             } catch (e: Exception) { null }
         }.sortedByDescending { it.madeAt }
 

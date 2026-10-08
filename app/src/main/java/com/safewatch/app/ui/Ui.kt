@@ -588,8 +588,11 @@ object Ui {
         } else if (source != null) {
             option("Clean copy to TV", "Makes a copy with the cursing muted and nudity blurred, for your Roku or smart TV to play by itself. " +
                 "Your phone can be locked while it plays.") {
-                com.safewatch.app.tv.TvService.prepare(activity, source)
-                com.safewatch.app.tv.TvActivity.open(activity)
+                fun make(deep: Boolean) {
+                    com.safewatch.app.tv.TvService.prepare(activity, source.copy(deep = deep))
+                    com.safewatch.app.tv.TvActivity.open(activity)
+                }
+                if (com.safewatch.app.data.Prefs.claudeKey(activity).isEmpty()) make(false) else askDeepClean(activity) { make(it) }
             }
         } else {
             option("Clean copy to TV", whyNot ?: "Not for this video: it streams in pieces rather than as one file, so it cannot be saved.", enabled = false) {
@@ -601,6 +604,19 @@ object Ui {
         }
         option("Your clean copies", "Play one on the TV, or see one being made.") { com.safewatch.app.tv.TvActivity.open(activity) }
         dialog = AlertDialog.Builder(activity).setTitle("Send to TV").setView(list).setNegativeButton("Cancel", null).show()
+    }
+
+    /** Asks whether a clean copy should also get a Deep clean with Claude, which costs a little. */
+    fun askDeepClean(activity: Activity, then: (Boolean) -> Unit) {
+        val model = com.safewatch.app.data.Prefs.claudeModel(activity)
+        val hour = com.safewatch.app.tv.DeepCleanRun.costText(3_600_000L, model)
+        AlertDialog.Builder(activity)
+            .setTitle("Deep clean with Claude too?")
+            .setMessage("Claude also looks at the pictures and reads the captions, for nudity, gore and cursing the phone missed. " +
+                "It takes longer, and costs $hour for each hour of video, billed to your Anthropic account.")
+            .setPositiveButton("Deep clean") { _, _ -> then(true) }
+            .setNegativeButton("Just the usual") { _, _ -> then(false) }
+            .show()
     }
 
     /** Opens the phone's screen casting (Smart View on Samsung phones). */

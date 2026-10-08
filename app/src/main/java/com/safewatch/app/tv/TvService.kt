@@ -78,7 +78,7 @@ class TvService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         CleanCopy.deleteOld(this)
         when (intent?.action) {
-            ACTION_PREPARE -> prepare(CleanSource.fromJson(intent.getStringExtra(EXTRA_SOURCE) ?: return START_NOT_STICKY))
+            ACTION_PREPARE -> prepare(CleanSource.fromJson(intent.getStringExtra(EXTRA_SOURCE) ?: return START_NOT_STICKY), intent.getStringExtra(EXTRA_REPLACES))
             ACTION_CANCEL -> making?.cancelled = true
             ACTION_PLAY -> play(File(intent.getStringExtra(EXTRA_FILE) ?: return START_NOT_STICKY), intent.getStringExtra(EXTRA_TITLE).orEmpty(),
                 TvDevice(TvDevice.Kind.valueOf(intent.getStringExtra(EXTRA_KIND) ?: "DLNA"), intent.getStringExtra(EXTRA_NAME).orEmpty(),
@@ -93,7 +93,7 @@ class TvService : Service() {
 
     // ---- Making a clean copy ----
 
-    private fun prepare(source: CleanSource) {
+    private fun prepare(source: CleanSource, replaces: String? = null) {
         if (making != null) return
         val maker = CleanCopy(applicationContext) { step, percent ->
             TvState.job = TvState.Job(source.title, step, percent)
@@ -109,6 +109,8 @@ class TvService : Service() {
         worker.execute {
             val result = try {
                 val made = maker.make(source)
+                // Made again (with a Deep clean): the new copy takes the old one's place.
+                replaces?.let { CleanCopy.delete(File(it)) }
                 FilterLog.add("clean copy made: ${made.summary}")
                 Log.i("SafeWatch", "clean copy made: ${made.summary}")
                 TvState.Job(source.title, "Ready", 100, made = made)
@@ -402,6 +404,7 @@ class TvService : Service() {
         private const val ACTION_YOUTUBE = "youtube"
         private const val ACTION_YOUTUBE_STOP = "youtubeStop"
         private const val EXTRA_SOURCE = "source"
+        private const val EXTRA_REPLACES = "replaces"
         private const val EXTRA_FILE = "file"
         private const val EXTRA_TITLE = "title"
         private const val EXTRA_KIND = "kind"
@@ -432,8 +435,9 @@ class TvService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent) else ctx.startService(intent)
         }
 
-        fun prepare(ctx: Context, source: CleanSource) =
-            start(ctx, Intent(ctx, TvService::class.java).setAction(ACTION_PREPARE).putExtra(EXTRA_SOURCE, source.toJson()))
+        fun prepare(ctx: Context, source: CleanSource, replaces: String? = null) =
+            start(ctx, Intent(ctx, TvService::class.java).setAction(ACTION_PREPARE).putExtra(EXTRA_SOURCE, source.toJson())
+                .putExtra(EXTRA_REPLACES, replaces))
 
         fun cancel(ctx: Context) = ctx.startService(Intent(ctx, TvService::class.java).setAction(ACTION_CANCEL))
 

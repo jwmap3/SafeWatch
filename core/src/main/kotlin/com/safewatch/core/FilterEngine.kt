@@ -16,9 +16,13 @@ class FilterEngine(tags: List<Tag>, private val settings: FilterSettings) {
         .map { it.copy(action = effectiveAction(it)) }
         .sortedBy { it.startMs }
 
-    // Scanned nudity follows the current "blur or skip" setting; scenes marked by hand keep the choice made then.
-    private fun effectiveAction(tag: Tag): Action =
-        if (tag.category == Category.NUDITY && tag.source == Tag.SOURCE_SCAN) settings.nudityAction else tag.action
+    // Nudity and gore that were found (not marked by hand) follow the current "blur or skip" setting;
+    // scenes marked by hand keep the choice made then.
+    private fun effectiveAction(tag: Tag): Action = when {
+        tag.category == Category.GORE -> settings.nudityAction
+        tag.category == Category.NUDITY && (tag.source == Tag.SOURCE_SCAN || tag.source == Tag.SOURCE_CLAUDE) -> settings.nudityAction
+        else -> tag.action
+    }
 
     fun stateAt(positionMs: Long): PlaybackState {
         var mute = false

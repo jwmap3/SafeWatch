@@ -212,12 +212,25 @@ class TvActivity : AppCompatActivity() {
 
     private fun choose(copy: CleanCopyFile) {
         val last = lastTv(this)
-        val options = listOfNotNull(last?.let { "Play on ${it.name}" }, "Play on a TV…", "Delete")
+        val busy = TvState.job?.let { it.made == null && it.error == null } == true
+        val again = copy.source?.takeIf { com.safewatch.app.data.Prefs.claudeKey(this).isNotEmpty() && !busy }
+        val options = listOfNotNull(last?.let { "Play on ${it.name}" }, "Play on a TV…", again?.let { "Make again with a Deep clean" }, "Delete")
         AlertDialog.Builder(this)
             .setTitle(copy.title)
             .setItems(options.toTypedArray()) { _, which ->
                 when (options[which]) {
                     "Play on a TV…" -> pickTv(copy)
+                    "Make again with a Deep clean" -> again?.let { source ->
+                        AlertDialog.Builder(this).setTitle("Deep clean ${copy.title}?")
+                            .setMessage("The video is fetched and checked again, and Claude looks at its pictures and reads its captions too. " +
+                                "It costs ${DeepCleanRun.costText(copy.durationMs, com.safewatch.app.data.Prefs.claudeModel(this))}, billed to your " +
+                                "Anthropic account. The new copy replaces this one when it is ready.")
+                            .setPositiveButton("Deep clean") { _, _ ->
+                                TvService.prepare(this, source.copy(deep = true), replaces = copy.file.absolutePath)
+                                show()
+                            }
+                            .setNegativeButton("Cancel", null).show()
+                    }
                     "Delete" -> AlertDialog.Builder(this).setMessage("Delete the clean copy of ${copy.title}?")
                         .setPositiveButton("Delete") { _, _ -> CleanCopy.delete(copy); show() }
                         .setNegativeButton("Cancel", null).show()

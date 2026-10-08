@@ -145,6 +145,19 @@ object Prefs {
 
     fun setTabNames(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("tabNames", on).apply()
 
+    /**
+     * The viewer's own Anthropic API key, for a Deep clean with Claude. Kept only on this phone, in the
+     * app's private storage, and sent only to Anthropic.
+     */
+    fun claudeKey(ctx: Context): String = prefs(ctx).getString("claudeKey", "")!!
+
+    fun setClaudeKey(ctx: Context, key: String) = prefs(ctx).edit().putString("claudeKey", key.trim()).apply()
+
+    /** Which Claude model a Deep clean uses. */
+    fun claudeModel(ctx: Context): String = prefs(ctx).getString("claudeModel", com.safewatch.core.ClaudeApi.SONNET)!!
+
+    fun setClaudeModel(ctx: Context, model: String) = prefs(ctx).edit().putString("claudeModel", model).apply()
+
     /** Whether the sword of fire in the EdenOS mark turns, or stands still. */
     fun turningLogo(ctx: Context): Boolean = prefs(ctx).getBoolean("turningLogo", true)
 
