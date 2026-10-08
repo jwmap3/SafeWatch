@@ -48,7 +48,8 @@ jobs:
           ffmpeg -nostdin -loglevel error -i /tmp/tvsite/clip.webm -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac \
             -f hls -hls_time 2 -hls_playlist_type vod /tmp/tvsite/hls/index.m3u8 >> /tmp/tvsite/setup.log 2>&1 || true
           printf '<!doctype html><title>Test stream</title><meta name="viewport" content="width=device-width"><video src="hls/index.m3u8" autoplay playsinline controls style="width:100%%"><track kind="subtitles" srclang="en" src="clip.vtt"></video>' > /tmp/tvsite/stream.html
-          cd /tmp/tvsite && nohup python3 -m http.server 8765 > /tmp/tvsite.log 2>&1 &
+          # Also stands in for Anthropic, for Superclean (see the script).
+          nohup python3 tools/test-site.py 8765 /tmp/tvsite > /tmp/tvsite.log 2>&1 &
           sleep 2; ls -la /tmp/tvsite; curl -s -o /dev/null -w 'page %{http_code}\n' http://127.0.0.1:8765/page.html
 
       - name: Allow the test phone to use hardware acceleration

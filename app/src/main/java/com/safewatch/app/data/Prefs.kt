@@ -146,27 +146,39 @@ object Prefs {
     fun setTabNames(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("tabNames", on).apply()
 
     /**
-     * The viewer's own Anthropic API key, for a Deep clean with Claude. Kept only on this phone, in the
-     * app's private storage, and sent only to Anthropic.
+     * The viewer's own Anthropic API key, for Superclean. Kept only on this phone, in the app's private
+     * storage, and sent only to Anthropic.
      */
     fun claudeKey(ctx: Context): String = prefs(ctx).getString("claudeKey", "")!!
 
     fun setClaudeKey(ctx: Context, key: String) = prefs(ctx).edit().putString("claudeKey", key.trim()).apply()
 
-    /** Which Claude model a Deep clean uses. */
+    /** Which Claude model Superclean uses. */
     fun claudeModel(ctx: Context): String = prefs(ctx).getString("claudeModel", com.safewatch.core.ClaudeApi.SONNET)!!
 
     fun setClaudeModel(ctx: Context, model: String) = prefs(ctx).edit().putString("claudeModel", model).apply()
 
-    /** Whether the app opens with its short animation (the sword of fire catching around the tree). */
+    /** What Superclean takes out unless changed for a title, by [com.safewatch.core.Superclean.Choice.id]. */
+    fun supercleanChoices(ctx: Context): Set<String> =
+        prefs(ctx).getStringSet("supercleanChoices", null)?.toSet() ?: com.safewatch.core.Superclean.DEFAULT
+
+    fun setSupercleanChoices(ctx: Context, ids: Set<String>) = prefs(ctx).edit().putStringSet("supercleanChoices", ids).apply()
+
+    /** Whether Superclean cuts scenes out (true) or blurs them (false). */
+    fun supercleanCut(ctx: Context): Boolean = prefs(ctx).getBoolean("supercleanCut", true)
+
+    fun setSupercleanCut(ctx: Context, cut: Boolean) = prefs(ctx).edit().putBoolean("supercleanCut", cut).apply()
+
+    /** Whether Claude looks up each title's IMDb Parents Guide first, so its scenes can be chosen too. */
+    fun supercleanGuide(ctx: Context): Boolean = prefs(ctx).getBoolean("supercleanGuide", true)
+
+    fun setSupercleanGuide(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("supercleanGuide", on).apply()
+
+    /** Whether the app opens with its short animation (the sunlit leaf falling into place). */
     fun openingAnimation(ctx: Context): Boolean = prefs(ctx).getBoolean("openingAnimation", true)
 
     fun setOpeningAnimation(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("openingAnimation", on).apply()
 
-    /** Whether the sword of fire in the EdenOS mark turns, or stands still. */
-    fun turningLogo(ctx: Context): Boolean = prefs(ctx).getBoolean("turningLogo", true)
-
-    fun setTurningLogo(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("turningLogo", on).apply()
 
     /** The browser's search engine: "google", "duckduckgo" or "bing". */
     fun searchEngine(ctx: Context): String = prefs(ctx).getString("searchEngine", "google")!!
@@ -266,7 +278,7 @@ object Prefs {
 
     // ---- YouTube ----
 
-    /** Channels the viewer follows inside EdenOS, as channel id to name. Kept on the phone only. */
+    /** Channels the viewer follows inside edenOS, as channel id to name. Kept on the phone only. */
     fun followedChannels(ctx: Context): Map<String, String> =
         prefs(ctx).getStringSet("ytFollowing", emptySet())!!.associate { it.substringBefore('|') to it.substringAfter('|') }
 

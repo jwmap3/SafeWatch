@@ -30,10 +30,17 @@ adb logcat -c
 # Keeps a running copy of the phone's log, so there is a record even if the phone stops responding.
 adb logcat -v time > "$OUT/logcat.txt" &
 
-start;                    shot 00a-opening 1.1
-shot 00b-opening 0.6
-shot 00c-opening 0.5
-sleep 2;                  shot 00-welcome 3
+# The opening plays only with animations on, which this test phone has off: on for it, recorded, then off again.
+animations() { for s in animator_duration_scale transition_animation_scale window_animation_scale; do adb shell settings put global $s "$1"; done; }
+animations 1
+adb shell screenrecord --time-limit 7 /sdcard/opening.mp4 & recording=$!
+sleep 1
+start;                    shot 00a-opening 0.9
+shot 00b-opening 0.5
+shot 00c-opening 0.4
+wait $recording; adb pull /sdcard/opening.mp4 "$OUT/00-opening.mp4" > /dev/null 2>&1
+animations 0
+sleep 1;                  shot 00-welcome 2
 tap_scrolling "Start watching"; shot 01-home 16
 swipe_up;                 shot 02-home-shelves 3
 
@@ -147,6 +154,43 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   tap_scrolling "Link with TV code"; shot 18g-link-youtube 2
   back; back
   make_copy 18-stream-copy stream.html
+  back; back
+
+  # ---- Superclean, with the test computer standing in for Anthropic (the app uses it only with this made-up key) ----
+  start;                  sleep 5
+  tap "Settings";         sleep 2
+  tap_scrolling "Claude API key"; sleep 2
+  timeout 60 python3 tools/tap.py "sk-ant-" contains > /dev/null
+  adb shell input text test-key-for-the-device-check; sleep 1
+  tap "SAVE";             sleep 2
+  shot 22-settings-superclean 1
+  tap "What it takes out"; shot 22a-superclean-choices 2
+  swipe_up; swipe_up;     shot 22b-superclean-choices-lower 2
+  tap "CANCEL";           sleep 1
+  adb logcat -c
+  adb shell am start -a android.intent.action.VIEW -d "http://10.0.2.2:8765/page.html" -n $PKG/.browser.BrowserActivity > /dev/null
+  sleep 10
+  tap "More";             sleep 1
+  tap "Send to TV";       shot 22c-send-superclean 3
+  tap "Superclean to TV"; shot 22d-superclean-looking 1
+  shot 22e-superclean-guide 8
+  swipe_up;               shot 22f-superclean-guide-lower 2
+  swipe_up; swipe_up;     shot 22g-superclean-start 2
+  tap_scrolling "Superclean and make the copy"; sleep 3
+  timeout 60 python3 tools/tap.py "Allow" > /dev/null
+  shot 22h-superclean-making 4
+  for i in $(seq 1 60); do
+    if adb logcat -d -s SafeWatch:I | grep -q "clean copy made\|clean copy not made"; then break; fi
+    sleep 10
+  done
+  adb logcat -d -s SafeWatch:I | grep -i "clean copy\|superclean\|parents guide" | tee -a "$OUT/summary.txt"
+  shot 22i-superclean-copies 3
+  timeout 60 adb exec-out run-as $PKG sh -c 'cat "$(ls -t files/clean/*.mp4 | head -1)"' > "$OUT/22-superclean-copy.mp4"
+  [ -s "$OUT/22-superclean-copy.mp4" ] || rm -f "$OUT/22-superclean-copy.mp4"
+  tap "Test clip";        shot 22j-copy-options 2
+  back
+  adb logcat -d -s SafeWatch:I > "$OUT/22-superclean-log.txt"
+  cp /tmp/tvsite/anthropic-requests.txt "$OUT/22-anthropic-requests.txt" 2>/dev/null || echo "the stand-in for Anthropic was sent nothing" | tee -a "$OUT/summary.txt"
   back; back
 else
   echo "no test site for the clean copy" | tee -a "$OUT/summary.txt"

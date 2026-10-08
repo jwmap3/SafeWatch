@@ -17,11 +17,11 @@ import android.widget.FrameLayout
 import androidx.appcompat.app.AlertDialog
 
 /**
- * TV Mode: EdenOS on the TV's screen with the phone as its remote, and no app on the TV.
+ * TV Mode: edenOS on the TV's screen with the phone as its remote, and no app on the TV.
  *
  * When the phone is connected to a TV as a second screen (Samsung's Smart View and other screen
  * mirroring, or a USB-C to HDMI cable), Android lets an app show its own window there instead of a
- * copy of the phone. EdenOS shows its TV home there, and pages and players open on the TV, while
+ * copy of the phone. edenOS shows its TV home there, and pages and players open on the TV, while
  * the phone shows a remote. The phone does all the work, so it stays on (dimmed).
  */
 object TvMode {
@@ -51,7 +51,7 @@ object TvMode {
     }
 
     /**
-     * Offers TV Mode once when the phone connects to a TV, so the TV turns into EdenOS without looking
+     * Offers TV Mode once when the phone connects to a TV, so the TV turns into edenOS without looking
      * for a button. Asked again only for a new connection.
      */
     fun offer(activity: Activity, display: Display?) {
@@ -59,8 +59,8 @@ object TvMode {
         if (active || askedFor == display.displayId || activity.isFinishing) return
         askedFor = display.displayId
         AlertDialog.Builder(activity)
-            .setTitle("Show EdenOS on ${display.name}?")
-            .setMessage("Your phone is connected to ${display.name}. EdenOS can fill the TV with its own home screen, " +
+            .setTitle("Show edenOS on ${display.name}?")
+            .setMessage("Your phone is connected to ${display.name}. edenOS can fill the TV with its own home screen, " +
                 "and your phone becomes the remote.")
             .setPositiveButton("TV Mode") { _, _ -> TvModeActivity.open(activity) }
             .setNegativeButton("Not now", null)
@@ -69,7 +69,7 @@ object TvMode {
 }
 
 /**
- * The window EdenOS shows on the TV. Whatever is put in [root] fills the TV. A pointer can be shown over
+ * The window edenOS shows on the TV. Whatever is put in [root] fills the TV. A pointer can be shown over
  * it, worked from the phone's touchpad.
  */
 class TvStage(context: Context, display: Display) : Presentation(context, display) {

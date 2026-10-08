@@ -26,7 +26,6 @@ import com.safewatch.app.R
 import com.safewatch.app.data.Prefs
 import com.safewatch.app.data.TagStore
 import com.safewatch.app.detect.NudityDetector
-import com.safewatch.app.ui.SceneDialog
 import com.safewatch.app.ui.Ui
 import com.safewatch.core.Action
 import com.safewatch.core.Category
@@ -56,7 +55,6 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var playerView: PlayerView
     private lateinit var cover: View
     private lateinit var status: TextView
-    private lateinit var markButton: TextView
     private lateinit var scanButton: TextView
 
     private val ui = Handler(Looper.getMainLooper())
@@ -72,7 +70,6 @@ class PlayerActivity : AppCompatActivity() {
     private var liveHideUntil = 0L
     private var hidden = false
     private var mutedByFilter = false
-    private var markStartMs: Long? = null
     @Volatile private var scanning = false
 
     private val pickSubtitles = registerForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
@@ -139,12 +136,9 @@ class PlayerActivity : AppCompatActivity() {
     private fun buildBar(bar: LinearLayout) {
         val pad = Ui.dp(this, 4)
         bar.setPadding(pad, pad, pad, pad)
-        markButton = Ui.pill(this, MARK_START, filled = false) { onMarkTapped() }
         scanButton = Ui.barButton(this, "Scan") { onScanTapped() }
         bar.addView(Ui.barButton(this, "Done") { finish() })
         bar.addView(Ui.barButton(this, "Subtitles") { pickSubtitles.launch(arrayOf("*/*")) })
-        bar.addView(Ui.spacer(this))
-        bar.addView(markButton)
         bar.addView(Ui.spacer(this))
         bar.addView(scanButton)
         bar.addView(Ui.iconButton(this, R.drawable.ic_cast, "Send to TV", R.color.text) {
@@ -248,29 +242,6 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // ---- Marking a scene by hand ----
-
-    private fun onMarkTapped() {
-        val start = markStartMs
-        if (start == null) {
-            markStartMs = player.currentPosition
-            markButton.text = MARK_END
-            return
-        }
-        val end = player.currentPosition
-        markStartMs = null
-        markButton.text = MARK_START
-        if (end <= start) {
-            Ui.toast(this, "The end has to come after the start")
-            return
-        }
-        SceneDialog.show(this, start, end) { tag ->
-            TagStore.add(this, key, title, tag)
-            rebuildEngine()
-            Ui.toast(this, "Scene saved")
-        }
-    }
-
     // ---- Scanning the whole film ahead of time ----
 
     private fun onScanTapped() {
@@ -350,8 +321,6 @@ class PlayerActivity : AppCompatActivity() {
     private val hideStatus = Runnable { status.visibility = View.GONE }
 
     companion object {
-        private const val MARK_START = "Mark scene"
-        private const val MARK_END = "End scene"
         private const val TICK_MS = 40L
         private const val CHECK_EVERY_MS = 200L
         private const val LIVE_HOLD_MS = 1500L

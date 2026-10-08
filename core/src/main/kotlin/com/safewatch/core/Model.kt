@@ -1,7 +1,17 @@
 package com.safewatch.core
 
-/** What a filter is about. Gore and others can be added here later. */
-enum class Category { LANGUAGE, NUDITY, /** Graphic violence; only Deep clean with Claude finds it. */ GORE }
+/** What a filter is about. */
+enum class Category {
+    LANGUAGE,
+    NUDITY,
+    /** Anything a Superclean took out because the family chose it for this title: always taken out, as the tag says. */
+    SCENE;
+
+    companion object {
+        /** A category by its stored name; "GORE" is what Superclean scenes were called before. */
+        fun named(name: String): Category? = if (name == "GORE") SCENE else Category.entries.firstOrNull { it.name == name }
+    }
+}
 
 /** What the player does while a tag is active. */
 enum class Action { MUTE, SKIP, BLUR }
@@ -30,7 +40,7 @@ data class Tag(
         const val SOURCE_MANUAL = "manual"
         const val SOURCE_CAPTIONS = "captions"
         const val SOURCE_SCAN = "scan"
-        /** Found by Claude in a Deep clean. */
+        /** Found by Claude in a Superclean. */
         const val SOURCE_CLAUDE = "claude"
     }
 }
@@ -57,7 +67,7 @@ data class FilterSettings(
     fun strictnessFor(category: Category): Strictness = when (category) {
         Category.LANGUAGE -> language
         Category.NUDITY -> nudity
-        // Found only when the viewer asks for a Deep clean, and then always hidden.
-        Category.GORE -> Strictness.HIGH
+        // Chosen for this title when the viewer asked for a Superclean, so always taken out.
+        Category.SCENE -> Strictness.HIGH
     }
 }

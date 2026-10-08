@@ -15,7 +15,7 @@ import com.safewatch.core.tv.LoungeScreen
 import org.json.JSONArray
 
 /**
- * YouTube on the TV, with no download: EdenOS starts the video in the TV's own YouTube app (the way the
+ * YouTube on the TV, with no download: edenOS starts the video in the TV's own YouTube app (the way the
  * YouTube phone app does when you cast) and works it like a remote, muting the sound for each curse word
  * it found in the captions and jumping past marked scenes. The phone can be locked; it has to stay on
  * the internet to send the mutes.

@@ -283,27 +283,11 @@ object Ui {
         layoutParams = LinearLayout.LayoutParams(dp(ctx, sizeDp), dp(ctx, sizeDp))
     }
 
-    /**
-     * The EdenOS mark: the tree of life, with the sword of fire turning slowly around it, as the cherubim's
-     * sword "turned every way" to keep the garden. The viewer can still it in Settings.
-     */
+    /** The edenOS mark: two leaves that make a lowercase e. */
     fun logo(ctx: Context, sizeDp: Int): FrameLayout = FrameLayout(ctx).apply {
-        contentDescription = "EdenOS"
-        val fire = ImageView(ctx).apply { setImageResource(R.drawable.ic_logo_fire) }
-        addView(fire, FrameLayout.LayoutParams(-1, -1))
-        addView(ImageView(ctx).apply { setImageResource(R.drawable.ic_logo_tree) }, FrameLayout.LayoutParams(-1, -1))
+        contentDescription = "edenOS"
+        addView(ImageView(ctx).apply { setImageResource(R.drawable.ic_logo) }, FrameLayout.LayoutParams(-1, -1))
         layoutParams = LinearLayout.LayoutParams(dp(ctx, sizeDp), dp(ctx, sizeDp))
-        if (!com.safewatch.app.data.Prefs.turningLogo(ctx) || !android.animation.ValueAnimator.areAnimatorsEnabled()) return@apply
-        val turn = android.animation.ObjectAnimator.ofFloat(fire, View.ROTATION, 0f, 360f).apply {
-            duration = 14_000L
-            repeatCount = android.animation.ValueAnimator.INFINITE
-            interpolator = android.view.animation.LinearInterpolator()
-        }
-        // Only turns while it is on screen.
-        addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-            override fun onViewAttachedToWindow(v: View) = if (turn.isStarted) turn.resume() else turn.start()
-            override fun onViewDetachedFromWindow(v: View) = turn.pause()
-        })
     }
 
     /** A round, tappable icon for toolbars. */
@@ -539,8 +523,9 @@ object Ui {
      * but the phone has to stay on and showing the video.
      *
      * Clean copy to TV makes a copy of the video with the filtering built in, which the TV plays by
-     * itself while the phone is locked. Only whole video files can be copied: [source] is null for
-     * videos that stream in pieces (the paid services, YouTube), and [whyNot] says why.
+     * itself while the phone is locked; Superclean to TV has Claude take out more first. Only whole video
+     * files can be copied: [source] is null for videos that stream in pieces (the paid services, YouTube),
+     * and [whyNot] says why.
      */
     fun sendToTv(activity: Activity, source: com.safewatch.app.tv.CleanSource? = null, whyNot: String? = null, youtube: (() -> Unit)? = null) {
         val list = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(activity, 8), 0, dp(activity, 8)) }
@@ -570,7 +555,7 @@ object Ui {
             option("YouTube on TV", "Plays in your TV's own YouTube app, with the cursing muted from your phone. Nothing to download; " +
                 "your phone can be locked.") { youtube() }
         }
-        option("TV Mode", "EdenOS fills the TV with its own home screen and your phone becomes the remote. Connects with Smart View.") {
+        option("TV Mode", "edenOS fills the TV with its own home screen and your phone becomes the remote. Connects with Smart View.") {
             com.safewatch.app.tv.TvModeActivity.open(activity)
         }
         option("Mirror to TV", "Shows this screen on the TV, filters included. Works with everything; keep the phone on.") {
@@ -586,13 +571,14 @@ object Ui {
         if (youtube != null) {
             // YouTube videos cannot be saved, and YouTube on TV does the job without saving anything.
         } else if (source != null) {
+            option("Superclean to TV", "Claude takes out what you choose, including scenes from the title's IMDb Parents Guide, " +
+                "and the copy goes to your TV. Uses your Claude key.") {
+                com.safewatch.app.tv.SupercleanActivity.open(activity, source)
+            }
             option("Clean copy to TV", "Makes a copy with the cursing muted and nudity blurred, for your Roku or smart TV to play by itself. " +
                 "Your phone can be locked while it plays.") {
-                fun make(deep: Boolean) {
-                    com.safewatch.app.tv.TvService.prepare(activity, source.copy(deep = deep))
-                    com.safewatch.app.tv.TvActivity.open(activity)
-                }
-                if (com.safewatch.app.data.Prefs.claudeKey(activity).isEmpty()) make(false) else askDeepClean(activity) { make(it) }
+                com.safewatch.app.tv.TvService.prepare(activity, source)
+                com.safewatch.app.tv.TvActivity.open(activity)
             }
         } else {
             option("Clean copy to TV", whyNot ?: "Not for this video: it streams in pieces rather than as one file, so it cannot be saved.", enabled = false) {
@@ -604,19 +590,6 @@ object Ui {
         }
         option("Your clean copies", "Play one on the TV, or see one being made.") { com.safewatch.app.tv.TvActivity.open(activity) }
         dialog = AlertDialog.Builder(activity).setTitle("Send to TV").setView(list).setNegativeButton("Cancel", null).show()
-    }
-
-    /** Asks whether a clean copy should also get a Deep clean with Claude, which costs a little. */
-    fun askDeepClean(activity: Activity, then: (Boolean) -> Unit) {
-        val model = com.safewatch.app.data.Prefs.claudeModel(activity)
-        val hour = com.safewatch.app.tv.DeepCleanRun.costText(3_600_000L, model)
-        AlertDialog.Builder(activity)
-            .setTitle("Deep clean with Claude too?")
-            .setMessage("Claude also looks at the pictures and reads the captions, for nudity, gore and cursing the phone missed. " +
-                "It takes longer, and costs $hour for each hour of video, billed to your Anthropic account.")
-            .setPositiveButton("Deep clean") { _, _ -> then(true) }
-            .setNegativeButton("Just the usual") { _, _ -> then(false) }
-            .show()
     }
 
     /** Opens the phone's screen casting (Smart View on Samsung phones). */

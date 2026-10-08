@@ -119,7 +119,7 @@ class TitleActivity : AppCompatActivity() {
             Services.byId(title.serviceId)?.takeIf { it.protectedVideo }?.let { service ->
                 addView(Ui.caption(context,
                     "Cursing is muted from the captions, so switch captions on in the ${service.name} player. " +
-                        "${service.name} hides its picture from other software, so nudity is only hidden in scenes that have been marked."))
+                        "${service.name} hides its picture from other software, so nudity cannot be found while it plays."))
             }
         })
 

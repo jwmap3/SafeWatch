@@ -14,6 +14,7 @@ import com.safewatch.app.data.Services
 import com.safewatch.app.detect.ModelSetup
 import com.safewatch.app.ui.Palette
 import com.safewatch.app.ui.Sounds
+import com.safewatch.app.ui.SupercleanChoices
 import com.safewatch.app.ui.Ui
 import com.safewatch.core.Action
 import com.safewatch.core.FilterSettings
@@ -66,7 +67,7 @@ class FiltersScreen(private val activity: MainActivity) {
         })
         column.addView(Ui.caption(ctx,
             "Sign in once on each service's own page. The sign-in is kept on this phone, the way a browser keeps it, " +
-                "so titles open straight into that service. EdenOS never sees your password."))
+                "so titles open straight into that service. edenOS never sees your password."))
 
         // Language
         column.addView(Ui.sectionHeader(ctx, "Language"))
@@ -227,30 +228,48 @@ class FiltersScreen(private val activity: MainActivity) {
         column.addView(Ui.caption(ctx,
             "Put the tabs along the bottom in any order and hide the ones you do not use. Settings always stays, so this can be changed back."))
 
-        // Deep clean with Claude
+        // Superclean: a clean copy for the TV that Claude has also been through
         val claudeKey = Prefs.claudeKey(ctx)
-        column.addView(Ui.sectionHeader(ctx, "Deep clean with Claude"))
+        val claudeModel = Prefs.claudeModel(ctx)
+        column.addView(Ui.sectionHeader(ctx, "Superclean"))
         column.addView(Ui.card(ctx).apply {
             addView(Ui.row(ctx, "Claude API key", if (claudeKey.isEmpty()) "Not added" else "Added") { editClaudeKey() })
             if (claudeKey.isNotEmpty()) {
                 addView(Ui.divider(ctx))
                 addView(Ui.row(ctx, "Model", chevron = false).apply {
                     val models = listOf(com.safewatch.core.ClaudeApi.SONNET to "Sonnet 5.5", com.safewatch.core.ClaudeApi.HAIKU to "Haiku 5.5")
-                    addView(Ui.segmented(ctx, models.map { it.second }, models.indexOfFirst { it.first == Prefs.claudeModel(ctx) }.coerceAtLeast(0)) {
+                    addView(Ui.segmented(ctx, models.map { it.second }, models.indexOfFirst { it.first == claudeModel }.coerceAtLeast(0)) {
                         Prefs.setClaudeModel(ctx, models[it].first)
                         rebuild()
                     }, LinearLayout.LayoutParams(Ui.dp(ctx, 220), -2))
                 })
             }
+            addView(Ui.divider(ctx))
+            addView(Ui.row(ctx, "What it takes out", SupercleanChoices.summary(Prefs.supercleanChoices(ctx))) {
+                SupercleanChoices.edit(activity, "What Superclean takes out", Prefs.supercleanChoices(ctx)) {
+                    Prefs.setSupercleanChoices(ctx, it)
+                    rebuild()
+                }
+            })
+            addView(Ui.divider(ctx))
+            addView(Ui.row(ctx, "Scenes", chevron = false).apply {
+                addView(Ui.segmented(ctx, listOf("Cut out", "Blur"), if (Prefs.supercleanCut(ctx)) 0 else 1) {
+                    Prefs.setSupercleanCut(ctx, it == 0)
+                }, LinearLayout.LayoutParams(Ui.dp(ctx, 180), -2))
+            })
+            addView(Ui.divider(ctx))
+            addView(Ui.switchRow(ctx, "Look up the IMDb Parents Guide", Prefs.supercleanGuide(ctx)) { Prefs.setSupercleanGuide(ctx, it) })
         })
-        val claudeModel = Prefs.claudeModel(ctx)
         column.addView(Ui.caption(ctx,
-            "Optional, and only when you choose it. With your own key from console.anthropic.com, a clean copy can also go to " +
-                "Claude, who looks at its pictures and reads its captions for nudity, gore and cursing the phone missed. Small " +
-                "pictures (two seconds apart) and the caption text are sent to Anthropic. It costs " +
-                "${com.safewatch.app.tv.DeepCleanRun.costText(3_600_000L, claudeModel)} for each hour of video with " +
+            "Superclean is a clean copy for the TV that Claude has been through too. Claude looks at small pictures from the " +
+                "video (two seconds apart) and reads its captions, and takes out what you chose here, from cursing and slurs to " +
+                "kissing, immodesty, violence, drinking and frightening scenes, modelled on VidAngel's filters. It first looks up " +
+                "the title's IMDb Parents Guide, so you can also tick the scenes it warns of. Start one from Send to TV while a " +
+                "video plays.\n\nWith your own key from console.anthropic.com; it stays on this phone, and the pictures and caption " +
+                "text go only to Anthropic. It costs ${com.safewatch.app.tv.SupercleanRun.costText(3_600_000L, claudeModel)} for each " +
+                "hour of video with " +
                 (if (claudeModel == com.safewatch.core.ClaudeApi.HAIKU) "Haiku" else "Sonnet (Haiku is cheaper but less careful)") +
-                ", billed to your Anthropic account. The key stays on this phone."))
+                ", plus ${com.safewatch.app.tv.SupercleanRun.guideCostText(claudeModel)} for the Parents Guide, billed to your Anthropic account."))
 
         // Catalog
         val hasKey = Prefs.catalogKey(ctx).isNotEmpty()
@@ -281,11 +300,6 @@ class FiltersScreen(private val activity: MainActivity) {
             addView(Ui.divider(ctx))
             addView(Ui.fieldLabel(ctx, "Card colour"))
             addView(Ui.swatches(ctx, Palette.cardChoices(ctx), Prefs.customColor(ctx, Prefs.COLOR_CARD)) { pickColor(Prefs.COLOR_CARD, it) })
-            addView(Ui.divider(ctx))
-            addView(Ui.switchRow(ctx, "Turn the fire around the logo", Prefs.turningLogo(ctx)) {
-                Prefs.setTurningLogo(ctx, it)
-                activity.recreate()
-            })
             addView(Ui.divider(ctx))
             addView(Ui.switchRow(ctx, "Opening animation", Prefs.openingAnimation(ctx)) { Prefs.setOpeningAnimation(ctx, it) })
         })
@@ -335,7 +349,7 @@ class FiltersScreen(private val activity: MainActivity) {
     private fun setUpDetection() {
         AlertDialog.Builder(activity)
             .setTitle("Set up nudity detection")
-            .setMessage("EdenOS needs to download its detection file, about 11 MB. It is only downloaded once.")
+            .setMessage("edenOS needs to download its detection file, about 11 MB. It is only downloaded once.")
             .setPositiveButton("Download") { _, _ ->
                 ModelSetup.ensure(activity)
                 rebuild()
@@ -418,7 +432,7 @@ class FiltersScreen(private val activity: MainActivity) {
             .setView(scroll)
             .setPositiveButton("Copy") { _, _ ->
                 val board = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                board.setPrimaryClip(android.content.ClipData.newPlainText("EdenOS filter report", report))
+                board.setPrimaryClip(android.content.ClipData.newPlainText("edenOS filter report", report))
                 Ui.toast(activity, "Report copied")
             }
             .setNeutralButton("Clear") { _, _ -> FilterLog.clear(activity) }

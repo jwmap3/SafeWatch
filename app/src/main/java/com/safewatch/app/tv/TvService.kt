@@ -109,7 +109,7 @@ class TvService : Service() {
         worker.execute {
             val result = try {
                 val made = maker.make(source)
-                // Made again (with a Deep clean): the new copy takes the old one's place.
+                // Made again (with a Superclean): the new copy takes the old one's place.
                 replaces?.let { CleanCopy.delete(File(it)) }
                 FilterLog.add("clean copy made: ${made.summary}")
                 Log.i("SafeWatch", "clean copy made: ${made.summary}")
@@ -138,7 +138,7 @@ class TvService : Service() {
         val address = TvFinder.phoneAddress(this)
         if (address == null) {
             // Started as a foreground service, it has to show itself before it may stop.
-            val note = Notification.Builder(this, channel(this)).setSmallIcon(R.drawable.ic_cast).setContentTitle("EdenOS").build()
+            val note = Notification.Builder(this, channel(this)).setSmallIcon(R.drawable.ic_cast).setContentTitle("edenOS").build()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTE_ID, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK) else startForeground(NOTE_ID, note)
             TvState.job = TvState.Job(title, "Not sent", -1, error = "The phone is not on Wi-Fi")
             TvState.changed()
@@ -267,7 +267,7 @@ class TvService : Service() {
                 Log.i("SafeWatch", "YouTube on TV stopped", e)
                 ui.post { if (round == remoteRound) endYouTube("Stopped: ${e.message}") }
             }
-        }, "EdenOS YouTube on TV").start()
+        }, "edenOS YouTube on TV").start()
     }
 
     private fun stopYouTube(reason: String?) {
@@ -340,7 +340,7 @@ class TvService : Service() {
             else -> TvState.job?.let { it.step + if (it.percent >= 0) " ${it.percent}%" else "" } ?: "Working"
         }
         val title = when {
-            server != null -> TvState.playingTitle ?: "EdenOS"
+            server != null -> TvState.playingTitle ?: "edenOS"
             making == null && remote != null -> TvState.youtubeTitle ?: "YouTube on TV"
             else -> "Clean copy: ${TvState.job?.title ?: ""}"
         }

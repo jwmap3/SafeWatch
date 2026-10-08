@@ -60,7 +60,6 @@ import com.safewatch.app.data.Service
 import com.safewatch.app.data.Services
 import com.safewatch.app.data.TagStore
 import com.safewatch.app.detect.NudityDetector
-import com.safewatch.app.ui.SceneDialog
 import com.safewatch.app.ui.Ui
 import com.safewatch.core.Action
 import com.safewatch.core.CaptionFormats
@@ -76,7 +75,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * The built-in browser. Every page gets the EdenOS page script (assets/safewatch.js),
+ * The built-in browser. Every page gets the edenOS page script (assets/safewatch.js),
  * which mutes, skips and blurs the page's own video player. The script asks this
  * activity what to filter through [Bridge].
  *
@@ -105,11 +104,9 @@ open class BrowserActivity : AppCompatActivity() {
     private var barDivider: View? = null
     private var revealButton: View? = null
     private var quickLinks: QuickLinks? = null
-    private var markingPill: TextView? = null
     private var barHidden = false
     private var barHiddenByChoice = false
     private var currentUrl = ""
-    private val markButtons = ArrayList<TextView>()
     private var playerBar: View? = null
     private var label = ""
     private var playerView = false
@@ -149,7 +146,6 @@ open class BrowserActivity : AppCompatActivity() {
     @Volatile private var lastBeatAt = 0L
     @Volatile private var lastPositionMs = 0L
 
-    private var markStartMs: Long? = null
     private var detector: NudityDetector? = null
     private var checking = false
     private var copying = false
@@ -284,7 +280,7 @@ open class BrowserActivity : AppCompatActivity() {
 
     /**
      * The page an intent asks for: one chosen inside the app, a link opened
-     * from another app, or a link shared to EdenOS from another browser.
+     * from another app, or a link shared to edenOS from another browser.
      */
     private fun requestedUrl(intent: Intent): String? {
         signingInTo = Services.byId(intent.getStringExtra(EXTRA_SIGN_IN))
@@ -339,7 +335,7 @@ open class BrowserActivity : AppCompatActivity() {
 
         // Whenever a video fills the screen (the player, or any page's own full-screen video in the
         // browser), the controls sit in a layer of their own over the picture, above the blur, so they
-        // can always be seen: back, the title, Mark scene and Send to TV.
+        // can always be seen: back, the title and Send to TV.
         val layer = PlayerLayer(this, below = { fullscreenView ?: web }, onTouched = {
             // Any touch on the picture brings the controls back for a moment.
             // (With the app's own controls up, the layer over the picture decides that itself.)
@@ -366,12 +362,6 @@ open class BrowserActivity : AppCompatActivity() {
         val links = QuickLinks(this) { url -> go(url) }.apply { visibility = View.GONE }
         quickLinks = links
         stage.addView(links, FrameLayout.LayoutParams(-1, -1))
-        val pill = Ui.pill(this, MARK_END, filled = true) { onMarkTapped() }.apply { visibility = View.GONE }
-        markButtons += pill
-        markingPill = pill
-        stage.addView(pill, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = Ui.dp(this@BrowserActivity, 16)
-        })
         val reveal = FrameLayout(this).apply {
             contentDescription = "Show the bar"
             background = Ui.rounded(Color.argb(150, 30, 30, 34), Ui.dp(context, 22).toFloat())
@@ -450,7 +440,7 @@ open class BrowserActivity : AppCompatActivity() {
         links.visibility = if (show) View.VISIBLE else View.GONE
     }
 
-    /** Back, the title, Mark scene and Send to TV: everything the player shows besides the picture. */
+    /** Back, the title and Send to TV: everything the player shows besides the picture. */
     private fun watchControls(overPicture: Boolean): LinearLayout = LinearLayout(this).apply {
         gravity = Gravity.CENTER_VERTICAL
         val tint = if (overPicture) R.color.on_accent else R.color.text
@@ -479,13 +469,6 @@ open class BrowserActivity : AppCompatActivity() {
         }
         statusLabels += status
         addView(status)
-        val mark = Ui.pill(context, MARK_START, filled = false) { onMarkTapped() }
-        if (overPicture) {
-            mark.setTextColor(Color.WHITE)
-            mark.background = Ui.rounded(Color.argb(70, 255, 255, 255), Ui.dp(context, 18).toFloat())
-        }
-        markButtons += mark
-        addView(mark)
         addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV", tint) { sendToTv() })
     }
 
@@ -699,12 +682,6 @@ open class BrowserActivity : AppCompatActivity() {
         if (ownControls && videoPaused && playerView) return@Runnable
         playerBar?.visibility = View.GONE
         controlViews.forEach { it.visibility = View.GONE }
-    }
-
-    private fun setMarkLabel(text: String) {
-        markButtons.forEach { it.text = text }
-        // In the Browser tab, Mark scene lives in the menu; while a scene is being marked, a pill ends it.
-        markingPill?.visibility = if (markStartMs != null && !playerView) View.VISIBLE else View.GONE
     }
 
     override fun onResume() {
@@ -1027,18 +1004,15 @@ open class BrowserActivity : AppCompatActivity() {
         PopupMenu(this, anchor).apply {
             if (web.canGoForward()) menu.add(0, 1, 0, "Forward")
             menu.add(0, 2, 1, "Reload")
-            menu.add(0, 3, 2, if (markStartMs == null) "Mark scene" else "End scene")
             menu.add(0, 4, 3, "Send to TV")
             menu.add(0, 5, 4, "Quick links")
             menu.add(0, 6, 5, "Hide this bar")
             menu.add(0, 7, 6, if (desktop) "Mobile site" else "Desktop site")
-            menu.add(0, 8, 7, "EdenOS home")
-            menu.add(0, 9, 8, "Clear marked scenes on this page")
+            menu.add(0, 8, 7, "edenOS home")
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> web.goForward()
                     2 -> web.reload()
-                    3 -> onMarkTapped()
                     4 -> sendToTv()
                     5 -> load(START_PAGE)
                     6 -> {
@@ -1051,11 +1025,6 @@ open class BrowserActivity : AppCompatActivity() {
                         web.url?.let { load(it) }
                     }
                     8 -> MainActivity.open(this@BrowserActivity)
-                    9 -> {
-                        TagStore.save(this@BrowserActivity, pageKey, pageTitle, emptyList())
-                        version.incrementAndGet()
-                        Ui.toast(this@BrowserActivity, "Marked scenes cleared")
-                    }
                 }
                 true
             }
@@ -1108,10 +1077,6 @@ open class BrowserActivity : AppCompatActivity() {
             currentUrl = url
             showAddress()
             showQuickLinks(url == START_PAGE || address.hasFocus())
-            if (markStartMs != null) {
-                markStartMs = null
-                setMarkLabel(MARK_START)
-            }
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
@@ -1259,7 +1224,7 @@ open class BrowserActivity : AppCompatActivity() {
         val strict = Prefs.silentWithoutCaptions(this)
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("No captions read yet")
-            .setMessage("EdenOS mutes cursing on the TV using the video's captions, and it has not read any for this video. " +
+            .setMessage("edenOS mutes cursing on the TV using the video's captions, and it has not read any for this video. " +
                 "Let it play here for a few seconds, then send it again." +
                 if (strict) "\n\nOr send it now with the TV's sound off throughout, as your \"No captions, no sound\" setting asks." else
                     "\n\nIf the video has no captions at all, nothing can be muted on the TV.")
@@ -1583,32 +1548,6 @@ open class BrowserActivity : AppCompatActivity() {
 
     private fun videoIsPlaying(): Boolean = SystemClock.elapsedRealtime() - lastBeatAt < 1000
 
-    // ---- Marking a scene by hand ----
-
-    private fun onMarkTapped() {
-        if (!videoIsPlaying()) {
-            Ui.toast(this, "Play a video first, then mark where the scene starts")
-            return
-        }
-        val start = markStartMs
-        if (start == null) {
-            markStartMs = lastPositionMs
-            setMarkLabel(MARK_END)
-            return
-        }
-        val end = lastPositionMs
-        markStartMs = null
-        setMarkLabel(MARK_START)
-        if (end <= start) {
-            Ui.toast(this, "The end has to come after the start")
-            return
-        }
-        SceneDialog.show(this, start, end) { tag ->
-            TagStore.add(this, pageKey, pageTitle, tag)
-            version.incrementAndGet()
-            Ui.toast(this, "Scene saved for this page")
-        }
-    }
 
     // ---- Nudity: looking ahead, and watching live ----
     //
@@ -1818,8 +1757,6 @@ open class BrowserActivity : AppCompatActivity() {
         const val START_PAGE = "file:///android_asset/start.html"
         /** Where typed words are searched; set from Settings. */
         @Volatile var searchPrefix = "https://www.google.com/search?q="
-        private const val MARK_START = "Mark scene"
-        private const val MARK_END = "End scene"
         private const val CHECK_EVERY_MS = 250L
         private const val HOLD_MS = 1500L
         private const val SECOND_OPINION_MS = 1500L

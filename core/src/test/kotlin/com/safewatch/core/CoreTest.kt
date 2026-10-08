@@ -796,70 +796,146 @@ class FakeLounge {
     }
 }
 
-class DeepCleanTest {
+class SupercleanTest {
+    private val family = Superclean.Wishes(setOf("nudity", "profanity", "gore", "sexual_talk"), cut = true)
+
     @Test fun readsClaudesAnswers() {
-        val flags = DeepClean.readFlags("Here you go:\n```json\n{\"flagged\":[{\"time\":\"0:01:04\",\"kind\":\"Nudity\",\"severity\":3},{\"time\":\"12:30\",\"kind\":\"gore\"}]}\n```")
+        val flags = Superclean.readFlags("Here you go {as asked}:\n```json\n{\"flagged\":[{\"time\":\"0:01:04\",\"what\":\"Nudity\",\"severity\":3}," +
+            "{\"time\":\"12:30\",\"kind\":\"gore\"}]}\n```")
         assertEquals(listOf(64_000L, 750_000L), flags.map { it.atMs })
-        assertEquals("nudity", flags[0].kind)
+        assertEquals("nudity", flags[0].what)
+        assertEquals("gore", flags[1].what)
         assertEquals(2, flags[1].severity)
-        assertEquals(emptyList(), DeepClean.readFlags("Nothing to report."))
-        assertEquals(listOf(3 to listOf("frick")), DeepClean.readWords("{\"mute\":[{\"line\":3,\"words\":[\"frick\",\" \"]}]}"))
-        assertEquals(3_723_500L, DeepClean.time("1:02:03.5"))
-        assertEquals("1:02:03", DeepClean.label(3_723_900L))
+        assertEquals(emptyList(), Superclean.readFlags("Nothing to report."))
+        assertEquals(listOf(Superclean.Mute(3, listOf("frick"), false), Superclean.Mute(4, emptyList(), true)),
+            Superclean.readMutes("{\"mute\":[{\"line\":3,\"words\":[\"frick\",\" \"]},{\"line\":4,\"whole\":true}]}"))
+        assertEquals(3_723_500L, Superclean.time("1:02:03.5"))
+        assertEquals("1:02:03", Superclean.label(3_723_900L))
+        assertEquals(Category.SCENE, Category.named("GORE")) // what Superclean scenes were called before
     }
 
-    @Test fun flaggedFramesBecomeScenesAndGoreIsAlwaysHidden() {
-        val scenes = DeepClean.scenes(listOf(DeepClean.Flag(10_000, "nudity", 3), DeepClean.Flag(12_000, "nudity", 2),
-            DeepClean.Flag(40_000, "gore", 3)), stepMs = 2000)
-        assertEquals(2, scenes.size)
-        assertEquals(8_000L, scenes[0].startMs)
+    @Test fun flaggedFramesBecomeScenesThatAreAlwaysTakenOut() {
+        val flags = listOf(Superclean.Flag(10_000, "nudity", 3), Superclean.Flag(12_000, "nudity", 2),
+            Superclean.Flag(40_000, "gore", 3), Superclean.Flag(60_000, "kissing", 1), Superclean.Flag(80_000, "guide", 2))
+        val scenes = Superclean.scenes(flags, 2000, family)
+        // Kissing was not chosen, so it stays; the Parents Guide moment goes.
+        assertEquals(listOf(8_000L, 38_000L, 78_000L), scenes.map { it.startMs })
         assertEquals(14_500L, scenes[0].endMs)
-        assertEquals(Category.GORE, scenes[1].category)
-        // Gore follows the blur or skip choice, whatever the nudity level is set to.
-        val skip = FilterSettings(nudity = Strictness.OFF, nudityAction = Action.SKIP)
-        val active = FilterEngine(scenes, skip).activeTags
-        assertEquals(listOf(Category.GORE), active.map { it.category })
-        assertEquals(Action.SKIP, active[0].action)
+        assertTrue(scenes.all { it.category == Category.SCENE && it.action == Action.SKIP && it.source == Tag.SOURCE_CLAUDE })
+        // Cut out whatever the everyday filters are set to.
+        val off = FilterSettings(language = Strictness.OFF, nudity = Strictness.OFF, nudityAction = Action.BLUR)
+        assertEquals(3, FilterEngine(scenes, off).activeTags.count { it.action == Action.SKIP })
+        val blurred = Superclean.scenes(flags, 2000, family.copy(cut = false))
+        assertTrue(FilterEngine(blurred, off).activeTags.all { it.action == Action.BLUR })
     }
 
-    @Test fun wordsClaudeFindsAreMutedLikeTheBuiltInOnes() {
-        val cues = listOf(Cue(0, 4000, "Oh frick, the car is gone"), Cue(5000, 7000, "You absolute dingbat"))
-        val tags = DeepClean.wordTags(cues, listOf(cues[0] to listOf("frick"), cues[1] to listOf("absolute dingbat")), FilterSettings())
-        assertEquals(2, tags.size)
+    @Test fun wordsAndLinesClaudeFindsAreMuted() {
+        val cues = listOf(Cue(0, 4000, "Oh frick, the car is gone"), Cue(5000, 7000, "You absolute dingbat"), Cue(8000, 9500, "Let's get wasted"))
+        val tags = Superclean.muteTags(listOf(cues[0] to Superclean.Mute(1, listOf("frick"), false),
+            cues[1] to Superclean.Mute(2, listOf("absolute dingbat"), false), cues[2] to Superclean.Mute(3, emptyList(), true)),
+            FilterSettings(language = Strictness.OFF))
+        assertEquals(3, tags.size)
         assertTrue(tags[0].endMs - tags[0].startMs < 4000) // just around the word, not the whole line
-        assertTrue(tags.all { it.source == Tag.SOURCE_CLAUDE && it.action == Action.MUTE })
+        assertEquals(8000L to 9500L, tags[2].startMs to tags[2].endMs) // a whole line
+        assertTrue(tags.all { it.source == Tag.SOURCE_CLAUDE && it.action == Action.MUTE && it.category == Category.SCENE })
         // A word that cannot be found again in its line mutes the line.
-        val whole = DeepClean.wordTags(cues, listOf(cues[1] to listOf("zzz")), FilterSettings())
-        assertEquals(5000L, whole.single().startMs)
-        assertEquals(7000L, whole.single().endMs)
+        val whole = Superclean.muteTags(listOf(cues[1] to Superclean.Mute(2, listOf("zzz"), false)), FilterSettings())
+        assertEquals(5000L to 7000L, whole.single().startMs to whole.single().endMs)
+        assertEquals(1, FilterEngine(tags, FilterSettings(language = Strictness.OFF)).activeTags.count { it.startMs == 8000L })
+    }
+
+    @Test fun wishesAndPromptsCarryWhatTheFamilyChose() {
+        val wishes = Superclean.Wishes(setOf("passionate", "profanity", "violence_talk"),
+            listOf("Sex & Nudity: A couple kiss in bed; implied sex"), cut = false)
+        assertEquals(wishes, Superclean.Wishes.fromJson(wishes.toJson()))
+        assertEquals(Superclean.Wishes(Superclean.DEFAULT), Superclean.Wishes.fromJson("not json"))
+        val pictures = Superclean.pictureSystem(wishes)
+        assertTrue(pictures.contains("passionate: Passionate kissing"))
+        assertTrue(pictures.contains("A couple kiss in bed"))
+        assertFalse(pictures.contains("Gore"))
+        val words = Superclean.wordsSystem(wishes)
+        assertTrue(words.contains("profanity: Profanity"), words)
+        assertTrue(words.contains("muted whole:\n- violence_talk"), words)
+        assertTrue(words.contains("Parents Guide") && words.contains("A couple kiss in bed"), words)
+        assertTrue(Superclean.pictureSystem(Superclean.Wishes(emptySet(), listOf("x: A fight"))).let { it.contains("A fight") && !it.contains("chose to take out:") })
+        assertFalse(Superclean.wordsSystem(Superclean.Wishes(setOf("violence_talk"))).contains("on its own"))
+        // Every choice belongs to a group, and the ready-made sets name real choices.
+        assertTrue(Superclean.CHOICES.all { it.group in Superclean.GROUPS && (it.pictures || it.words || it.talk) })
+        assertTrue(Superclean.PRESETS.all { (_, ids) -> ids.all { Superclean.choice(it) != null } })
+        assertEquals(Superclean.CHOICES.size, Superclean.CHOICES.map { it.id }.toSet().size)
+    }
+
+    @Test fun readsAParentsGuide() {
+        val answer = "I'll look up the guide {IMDb}.\nI found it.\n{\"title\":\"Up\",\"year\":\"2009\",\"source\":\"IMDb\",\"sections\":[" +
+            "{\"name\":\"Sex & Nudity\",\"severity\":\"None\",\"items\":[]}," +
+            "{\"name\":\"Violence & Gore\",\"severity\":\"Mild\",\"items\":[\"A man hits another with a cane.\",\"  \"]}]}"
+        val guide = Superclean.readGuide(answer)
+        assertEquals("Up", guide.title)
+        assertEquals("2009", guide.year)
+        assertEquals(listOf("Sex & Nudity", "Violence & Gore"), guide.sections.map { it.name })
+        assertEquals(listOf("A man hits another with a cane."), guide.sections[1].items)
+        assertFalse(guide.isEmpty)
+        assertTrue(Superclean.readGuide("{\"title\":\"\",\"sections\":[]}").isEmpty)
+        assertTrue(Superclean.sectionWanted("Violence & Gore", setOf("gore")))
+        assertFalse(Superclean.sectionWanted("Alcohol, Drugs & Smoking", setOf("gore")))
+        assertTrue(Superclean.sectionWanted("Frightening & Intense Scenes", setOf("scary")))
+    }
+
+    /** A pretend Anthropic: answers each request in turn with [replies], and keeps what it was sent. */
+    private fun anthropic(vararg replies: String): Pair<Int, java.util.concurrent.CopyOnWriteArrayList<String>> {
+        val server = java.net.ServerSocket(0)
+        val heard = java.util.concurrent.CopyOnWriteArrayList<String>()
+        Thread {
+            server.use {
+                for (reply in replies) server.accept().use { s ->
+                    val input = java.io.BufferedInputStream(s.getInputStream())
+                    val head = StringBuilder()
+                    while (!head.endsWith("\r\n\r\n")) { val b = input.read(); if (b < 0) break; head.append(b.toChar()) }
+                    val length = Regex("(?i)content-length: *(\\d+)").find(head)?.groupValues?.get(1)?.toInt() ?: 0
+                    heard += head.toString() + String(input.readNBytes(length))
+                    val bytes = reply.toByteArray()
+                    s.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${bytes.size}\r\n" +
+                        "Connection: close\r\n\r\n").toByteArray() + bytes)
+                }
+            }
+        }.start()
+        return server.localPort to heard
     }
 
     @Test fun asksClaudeWithTheKeyAndPictures() {
-        val server = java.net.ServerSocket(0)
-        val heard = java.util.concurrent.atomic.AtomicReference<String>()
-        Thread {
-            server.accept().use { s ->
-                val input = java.io.BufferedInputStream(s.getInputStream())
-                val head = StringBuilder()
-                while (!head.endsWith("\r\n\r\n")) { val b = input.read(); if (b < 0) break; head.append(b.toChar()) }
-                val length = Regex("(?i)content-length: *(\\d+)").find(head)?.groupValues?.get(1)?.toInt() ?: 0
-                heard.set(head.toString() + String(input.readNBytes(length)))
-                val reply = """{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"{\"flagged\":[]}"}]}"""
-                s.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${reply.length}\r\nConnection: close\r\n\r\n$reply".toByteArray())
-            }
-        }.start()
-        val api = ClaudeApi("sk-test", ClaudeApi.HAIKU, "http://127.0.0.1:${server.localPort}")
+        val (port, heard) = anthropic("""{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"{\"flagged\":[]}"}],"stop_reason":"end_turn"}""")
+        val api = ClaudeApi("sk-test", ClaudeApi.HAIKU, "http://127.0.0.1:$port")
         val answer = api.ask("Be careful \"here\"", listOf(ClaudeApi.Part.Jpeg(byteArrayOf(1, 2, 3)), ClaudeApi.Part.Text("Say\nit")))
-        server.close()
         assertEquals("{\"flagged\":[]}", answer)
-        val request = heard.get()
+        val request = heard.single()
         assertTrue(request.contains("x-api-key: sk-test"), request)
         assertTrue(request.contains("anthropic-version: 2023-06-01"))
         val body = com.safewatch.core.tv.MiniJson.parse(request.substringAfter("\r\n\r\n")) as Map<*, *>
         assertEquals("claude-haiku-5-5", body["model"])
         assertEquals("Be careful \"here\"", body["system"])
+        assertFalse(body.containsKey("tools"))
         val content = ((body["messages"] as List<*>)[0] as Map<*, *>)["content"] as List<*>
         assertEquals("AQID", ((content[0] as Map<*, *>)["source"] as Map<*, *>)["data"])
         assertEquals("Say\nit", (content[1] as Map<*, *>)["text"])
+    }
+
+    @Test fun searchesTheWebAndCarriesOnAfterAPause() {
+        val paused = """{"content":[{"type":"text","text":"Looking it up. "},{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search",""" +
+            """"input":{"query":"Up 2009 parents guide"}},{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[{"type":"web_search_result",""" +
+            """"url":"https://www.imdb.com/title/tt1049413/parentalguide/","title":"Parents guide","encrypted_content":"abc","page_age":null}]}],"stop_reason":"pause_turn"}"""
+        val done = """{"content":[{"type":"text","text":"{\"title\":\"Up\",\"sections\":[]}"}],"stop_reason":"end_turn"}"""
+        val (port, heard) = anthropic(paused, done)
+        val answer = ClaudeApi("sk-test", ClaudeApi.SONNET, "http://127.0.0.1:$port").ask(Superclean.guideSystem(),
+            listOf(ClaudeApi.Part.Text(Superclean.guideAsk("Up", ""))), tools = Superclean.GUIDE_TOOLS)
+        assertEquals("Up", Superclean.readGuide(answer).title)
+        assertEquals(2, heard.size)
+        val first = com.safewatch.core.tv.MiniJson.parse(heard[0].substringAfter("\r\n\r\n")) as Map<*, *>
+        assertEquals(listOf("web_search", "web_fetch"), (first["tools"] as List<*>).map { (it as Map<*, *>)["name"] })
+        val second = com.safewatch.core.tv.MiniJson.parse(heard[1].substringAfter("\r\n\r\n")) as Map<*, *>
+        val messages = second["messages"] as List<*>
+        assertEquals(listOf("user", "assistant"), messages.map { (it as Map<*, *>)["role"] })
+        val sentBack = (messages[1] as Map<*, *>)["content"] as List<*>
+        assertEquals("srvtoolu_1", (sentBack[1] as Map<*, *>)["id"])
+        assertEquals(null, ((((sentBack[2] as Map<*, *>)["content"] as List<*>)[0]) as Map<*, *>)["page_age"])
     }
 }

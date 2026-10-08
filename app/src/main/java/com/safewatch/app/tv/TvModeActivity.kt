@@ -38,8 +38,8 @@ import com.safewatch.app.ui.Sounds
 import com.safewatch.app.ui.Ui
 
 /**
- * TV Mode's home: EdenOS's own TV screen, shown on the TV, with the phone as its remote. Pick a service,
- * a YouTube video or a quick link and it opens on the TV, filtered as everywhere else in EdenOS.
+ * TV Mode's home: edenOS's own TV screen, shown on the TV, with the phone as its remote. Pick a service,
+ * a YouTube video or a quick link and it opens on the TV, filtered as everywhere else in edenOS.
  */
 class TvModeActivity : AppCompatActivity() {
     private var stage: TvStage? = null
@@ -113,7 +113,7 @@ class TvModeActivity : AppCompatActivity() {
         })
         addView(TextView(context).apply {
             text = "Swipe down twice from the top of the screen, tap Smart View (or Screen cast), and choose your TV. " +
-                "EdenOS appears on the TV as soon as it is connected, and this phone becomes the remote.\n\n" +
+                "edenOS appears on the TV as soon as it is connected, and this phone becomes the remote.\n\n" +
                 "Roku, Samsung and LG TVs all take Smart View. A USB-C to HDMI cable works too."
             textSize = 16f
             gravity = Gravity.CENTER
@@ -192,7 +192,7 @@ class TvModeActivity : AppCompatActivity() {
 }
 
 /**
- * What the TV shows in TV Mode: the EdenOS mark and the time, then rows of large tiles (the viewer's
+ * What the TV shows in TV Mode: the edenOS mark and the time, then rows of large tiles (the viewer's
  * services, YouTube, quick links). The phone's remote moves a highlight from tile to tile.
  */
 class TvHome(context: Context, private val accent: Int, private val onChoose: (Choice) -> Unit) : FrameLayout(context) {
@@ -215,12 +215,9 @@ class TvHome(context: Context, private val accent: Int, private val onChoose: (C
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(side, dp(34), side, dp(10))
-            addView(Ui.logo(context, 64))
-            addView(TextView(context).apply {
-                text = "EdenOS"
-                textSize = 34f
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                setTextColor(Color.WHITE)
+            addView(Ui.logo(context, 60))
+            addView(FrameLayout(context).apply {
+                addView(com.safewatch.app.ui.Brand.wordmark(context, 34f, onDark = true), LayoutParams(-2, -2, Gravity.CENTER_VERTICAL or Gravity.START))
                 setPadding(dp(16), 0, 0, 0)
             }, LinearLayout.LayoutParams(0, -2, 1f))
             addView(TextClock(context).apply {

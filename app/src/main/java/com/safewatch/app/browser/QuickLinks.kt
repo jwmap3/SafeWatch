@@ -36,7 +36,7 @@ class QuickLinks(context: Context, private val onOpen: (String) -> Unit) : Frame
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(Ui.dp(context, 20), 0, Ui.dp(context, 20), 0)
         }
-        // The EdenOS mark, as on Home.
+        // The edenOS mark, as on Home.
         column.addView(Ui.logo(context, 72), LinearLayout.LayoutParams(Ui.dp(context, 72), Ui.dp(context, 72)).apply { bottomMargin = Ui.dp(context, 26) })
         column.addView(grid, LinearLayout.LayoutParams(-1, -2))
         column.addView(TextView(context).apply {

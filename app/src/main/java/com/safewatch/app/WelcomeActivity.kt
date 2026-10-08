@@ -34,13 +34,13 @@ class WelcomeActivity : AppCompatActivity() {
         column.addView(Ui.logo(this, 84).apply {
             (layoutParams as android.widget.LinearLayout.LayoutParams).apply { topMargin = Ui.dp(context, 32); bottomMargin = Ui.dp(context, 4) }
         })
-        column.addView(Ui.largeTitle(this, "Welcome to EdenOS").apply { setPadding(0, Ui.dp(context, 12), 0, Ui.dp(context, 6)) })
+        column.addView(Ui.largeTitle(this, "Welcome to edenOS").apply { setPadding(0, Ui.dp(context, 12), 0, Ui.dp(context, 6)) })
         column.addView(Ui.subtitle(this, "Watch your own streaming services with cursing muted and nudity hidden."))
 
         column.addView(Ui.sectionHeader(this, "Your sign-ins stay on this phone"))
         column.addView(Ui.card(this).apply {
             addView(Ui.caption(context,
-                "EdenOS has no account and no server of its own. When you sign in below, you are on the service's " +
+                "edenOS has no account and no server of its own. When you sign in below, you are on the service's " +
                     "own page, and the sign-in is kept on this phone the way a browser keeps it. Your passwords, and " +
                     "what you watch, go to no one but the service itself.").apply {
                 textSize = 14f

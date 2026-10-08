@@ -1,15 +1,16 @@
-<p align="center"><img src="docs/edenos.svg" width="140" alt="EdenOS: a tree of life with a sword of fire turning around it"></p>
+<p align="center"><img src="docs/edenos.svg" width="140" alt="edenOS: two leaves, emerald and sunlit gold, that make a lowercase e"></p>
 
-# EdenOS
+# edenOS
 
 A personal Android app for watching your streaming services and YouTube with
 the parts you don't want removed. It mutes cursing and blurs or skips nudity,
 using filters you set once, and it keeps everything in one layout of its own.
 It can put all of that on the TV too.
 
-The mark is the tree of life with the flaming sword that "turned every way"
-to keep the garden: inside the app the fire turns slowly around the tree.
-(The app was first called SafeWatch; the code keeps that name inside.)
+The mark is two leaves from the garden that make a lowercase e: an emerald
+one, and a sunlit one that falls into place when the app opens. The name is
+set in Poppins Light, with "OS" in gold. (The app was first called SafeWatch;
+the code keeps that name inside.)
 
 ## Download
 
@@ -22,9 +23,15 @@ installs over the one already on the phone, keeping settings and sign-ins.
 
 ## How it works
 
+**Opening.** The app opens with a few seconds of animation and music made for
+it: on a dark ground the sunlit leaf drifts down, lands against the emerald
+one, and the e lights up with a small orchestra, a harp falling with the leaf
+and the strings and horns blooming as it lands. A tap skips it; it can be
+switched off under Settings > Appearance.
+
 **Welcome.** The first launch asks which services you use and lets you sign in
 to each. You sign in on the service's own page; the sign-in is kept on the
-phone the way a browser keeps it. EdenOS has no account or server of its
+phone the way a browser keeps it. edenOS has no account or server of its
 own and never sees a password.
 
 **Tabs.** Home, Browser, Search, YouTube and Settings run along the bottom.
@@ -54,7 +61,7 @@ picture is left, with controls that fade out.
 on six quick links of your choosing (press and hold one to change it). The
 page fills the screen, with one slim bar at the bottom: Back goes back a page,
 the address box searches or goes to a site, and the menu has Forward, Reload,
-Mark scene, Send to TV, Desktop site and more. The bar slides away while
+Send to TV, Desktop site and more. The bar slides away while
 reading down a page and comes back on the way up, or it can be hidden until
 the small button in the corner brings it back. Pop-ups, message boxes and
 pages that send you to another site by themselves are blocked; while a video
@@ -65,18 +72,19 @@ DuckDuckGo or Bing in Settings.
 
 - *YouTube on TV* plays a YouTube video in the TV's own YouTube app, with
   nothing downloaded. Link the TV once (on the TV, YouTube > Settings > Link
-  with TV code), then tap Play on TV on a video's page. EdenOS reads the
+  with TV code), then tap Play on TV on a video's page. edenOS reads the
   video's captions on the phone, starts it on the TV where you were, and works
   the TV like YouTube's own remote: it mutes the TV for each curse word,
-  jumps past scenes you marked, and turns the TV's captions off. The phone can
+  jumps past any scenes saved for the video, and turns the TV's captions off. The phone can
   be locked; it has to stay on the internet.
-- *TV Mode* fills the TV with EdenOS's own home screen and turns the phone
+- *TV Mode* fills the TV with edenOS's own home screen and turns the phone
   into its remote (see below).
 - *Mirror to TV* opens the phone's screen casting and shows the already
   filtered picture. It works for everything, but the phone has to stay on.
+- *Superclean to TV* is a clean copy that Claude has been through as well,
+  taking out what you choose (see below).
 - *Clean copy to TV* makes a copy of the video with the filtering built in:
-  the cursing silent and nudity blurred (or cut out, with Skip), plus any
-  scenes marked by hand. A Roku or a smart TV (Samsung, LG and others) then
+  the cursing silent and nudity blurred (or cut out, with Skip). A Roku or a smart TV (Samsung, LG and others) then
   plays it by itself, fetching it from the phone over the Wi-Fi, so the phone
   can be locked. Copies can be made of video files and of websites' videos,
   whether they come as one file or stream in pieces (HLS or DASH), as long as
@@ -87,24 +95,49 @@ DuckDuckGo or Bing in Settings.
 
 **TV Mode.** With the phone connected to the TV as a second screen (Smart
 View on a Samsung phone reaches Roku, Samsung and LG TVs; a USB-C to HDMI
-cable works with most phones), EdenOS shows its TV home there: the time, then
+cable works with most phones), edenOS shows its TV home there: the time, then
 rows of large tiles for your services, YouTube and your quick links. The
 phone becomes the remote: a big touchpad (swipe, or tap an edge, to move; tap
 the middle to choose; or switch it to a pointer, with two fingers to scroll,
 for web pages), Back, Home, typing, play/pause and skips. What you pick opens
 on the TV, with all the filtering, while the phone shows the remote. The
-phone dims itself when left alone. Connecting the phone to a TV while EdenOS
+phone dims itself when left alone. Connecting the phone to a TV while edenOS
 is open offers TV Mode straight away.
 
-**Deep clean with Claude** (optional). With your own Anthropic API key in
-Settings, Clean copy to TV can also send the video to Claude for a second
-look: sheets of small frames, two seconds apart with the time printed on each,
-and the caption lines. Claude names moments of nudity, sexual content or
-gore, and words to mute, including ones written to dodge a word list. Those
-are hidden or muted in the copy, and the phone's player remembers them for
-that video. It is only done when you choose it, each time, and costs about
-40 cents per hour of video with Claude Sonnet 5.5, or a few cents with the
-less careful Haiku 5.5, billed to your Anthropic account.
+**Superclean** (optional, with your own Anthropic API key). A clean copy for
+the TV that Claude has also been through, so far more can come out than the
+phone finds by itself. The list of what it can take out follows VidAngel's
+filter categories:
+
+- *Language:* profanity, God's name in vain (never sincere prayer), slurs,
+  sexual references, crude talk, childish words, and swearing written on
+  screen.
+- *Sex and nudity:* suggestive moments, implied sex, sex scenes, sexual
+  assault, nudity, implied nudity, and nude statues and paintings.
+- *Kissing and immodesty:* kissing, passionate kissing, revealing clothing.
+  Romance is treated alike for every couple.
+- *Violence:* violent talk and threats, fighting, graphic violence, gore,
+  disturbing images, animals being hurt.
+- *Alcohol and drugs:* drinking, smoking and vaping, drug use, and talk that
+  makes light of them.
+- *Other:* vulgar gestures, self-harm and suicide, frightening scenes, bodily
+  functions, graphic medical scenes, death and dying, and credits and recaps.
+
+Your usual choices are set under Settings > Superclean, starting from
+ready-made sets (Young children, Family, Teens). Choosing Superclean to TV
+for a title opens its own page: Claude first finds the title's IMDb Parents
+Guide on the web and reads it, and its warnings are listed by section (Sex &
+Nudity, Violence & Gore, Profanity, Alcohol, Drugs & Smoking, Frightening &
+Intense Scenes) with IMDb's strength for each, to tick the scenes you want
+out. The usual choices can be changed there for that title, and scenes can be
+cut out or blurred. Claude then looks at small frames from the whole video,
+two seconds apart with the time printed on each, and reads the caption
+lines: scenes come out (or are blurred), and words or whole lines are muted.
+The phone's own player remembers what was found for that video. Superclean
+is only done when you choose it, and costs about 40 cents per hour of video
+with Claude Sonnet 5.5 (a few cents with the less careful Haiku 5.5), plus
+about 10 cents to look up a Parents Guide, billed to your Anthropic account.
+The key stays on the phone and is sent only to Anthropic.
 
 **Settings** holds your accounts, the filters, the tabs, colours and sounds,
 and can be locked with a PIN so children cannot switch the filters off.
@@ -123,9 +156,10 @@ and can be locked with a PIN so children cannot switch the filters off.
 - **Browser, Player, App, Tabs:** the search engine, hiding the bar while
   scrolling, pop-up blocking, the skip buttons (10, 15 or 30 seconds), hidden
   pictures blurred or black, which tab opens first, and the PIN.
-- **Deep clean with Claude:** the key and the model.
+- **Superclean:** the key, the model, what it takes out, cut or blur, and
+  whether to look up the Parents Guide first.
 - **Appearance:** dark, light or automatic, three colours to choose (primary,
-  background and cards), and whether the fire around the logo turns.
+  background and cards), and the opening animation.
 - **Sounds:** a few sets of tap and play sounds, all made for this app, and
   their volume. A fourth set unlocks when the logo on Home is tapped seven
   times.
@@ -137,8 +171,11 @@ and can be locked with a PIN so children cannot switch the filters off.
 | YouTube | Yes, from captions, read ahead of time (on the TV too) | Yes, looked at ahead of time, and live |
 | Ordinary websites and video links | Yes, where the video has captions | Yes, looked at ahead of time where a second copy will play, and live |
 | Video files on the phone | Yes, with the film's subtitle file | Yes, live or by scanning the whole film first |
-| Netflix, HBO Max, Prime Video, Disney+, Hulu and similar | Yes, from captions (switch captions on in the player) | Only scenes that have been marked |
-| Gore | | Only with a Deep clean with Claude |
+| Netflix, HBO Max, Prime Video, Disney+, Hulu and similar | Yes, from captions (switch captions on in the player) | No: their pictures are locked (see below) |
+
+Superclean goes further, for anything a clean copy can be made of: violence,
+kissing, drinking, frightening scenes and the rest of its list, and the scenes
+you tick from a title's Parents Guide.
 
 ### Knowing before it happens
 
@@ -161,20 +198,20 @@ captions as they appear on screen. The player's bar says which the filter has:
 
 The paid services scramble their picture so that only the screen can show it.
 No app on the phone can look at the frames, so nothing can detect what is in
-them, and their videos cannot be saved. For those services "Mark scene" in the
-player lets you mark a scene once, and the app remembers it for that title.
-They can be watched on the TV with Mirror to TV or TV Mode.
+them, and their videos cannot be saved or Supercleaned. Their cursing is
+still muted from the captions. They can be watched on the TV with Mirror to
+TV or TV Mode.
 
 ## Other limits
 
 - **YouTube on TV** uses YouTube's own remote-control connection, the one its
   phone app uses. YouTube does not document it for other apps, so a YouTube
-  update could break it until EdenOS is updated. Muting goes from the phone
+  update could break it until edenOS is updated. Muting goes from the phone
   through YouTube to the TV, which takes a moment, so it starts early and lasts
-  a little longer than on the phone. EdenOS stops filtering if another video
+  a little longer than on the phone. edenOS stops filtering if another video
   is started on the TV, since it has not read that video's captions. It cannot
-  see the TV's picture, so only scenes you marked are skipped there; the
-  YouTube Kids TV app does not take commands at all.
+  see the TV's picture, so nudity is not hidden there; the YouTube Kids TV app
+  does not take commands at all.
 - **TV Mode** needs the TV as a second screen. Samsung phones' Smart View
   gives that over Wi-Fi; Google Pixels can only cast to Chromecast, so they
   need a cable. The phone does all the work and stays on. The paid services
@@ -185,11 +222,15 @@ They can be watched on the TV with Mirror to TV or TV Mode.
   mirroring. Rokus are sent copies through "Play on Roku", which Roku does not
   document for other apps; smart TVs use the standard home-media protocol and
   may ask once whether to allow the phone.
-- **Deep clean with Claude** sends small pictures and the caption text to
-  Anthropic under your key. Claude can miss things or flag too much, like any
-  detector, and the price depends on Anthropic's published rates.
+- **Superclean** sends small pictures and the caption text to Anthropic under
+  your key. Claude can miss things or take out too much, like any detector;
+  it finds a scene from its pictures and lines, not from the plot. Parents
+  Guides are written by IMDb's users and are missing for some titles, and the
+  web search that finds them has to be allowed for your Anthropic account
+  (it is unless an organisation turned it off). The price depends on
+  Anthropic's published rates.
 - **Playing a service inside the app.** Services want phone users in their own
-  apps. EdenOS asks them for their computer website instead, which plays in a
+  apps. edenOS asks them for their computer website instead, which plays in a
   browser. Whether each service then plays after you sign in has not been
   tested, because that needs a subscription.
 - **YouTube's lists** are read from the same requests YouTube's website makes,
@@ -209,39 +250,49 @@ They can be watched on the TV with Mirror to TV or TV Mode.
   day by `tools/build-catalog.py` into `catalog.json`, which the app downloads.
 - **Nudity detection:** the NudeNet model, which the app downloads by itself
   the first time it runs (about 11 MB). Frames are checked on the phone and
-  never leave it, except in a Deep clean you ask for.
+  never leave it, except in a Superclean you ask for.
+- **Parents Guides:** [IMDb](https://www.imdb.com/), found and read by Claude
+  when you Superclean a title.
+- **The name's typeface:** [Poppins](https://github.com/itfoundry/Poppins),
+  under the SIL Open Font License (`docs/fonts/Poppins-OFL.txt`).
 
 ## Status
 
 Checked on an automatic test phone (an Android 14 emulator that GitHub runs
 after every change, see `.github/workflows/device-check.yml`): every screen
-opens and displays correctly, with the new name and logo; arranging the tabs;
-the Browser tab's quick links, bottom bar, hiding it and its menu; clean
-copies made from a video file and from an HLS stream, with the test curse word
-silent and a blurred scene; the TV screen; the blur and the look-ahead copy.
+opens and displays correctly, with the opening animation recorded; arranging
+the tabs; the Browser tab's quick links, bottom bar, hiding it and its menu;
+clean copies made from a video file and from an HLS stream, with the test
+curse word silent and a blurred scene; a whole Superclean, against a stand-in
+for Anthropic on the test computer (`tools/test-site.py`): the Parents Guide
+looked up and listed, the copy made with the chosen scene cut and the chosen
+line muted; TV Mode on a pretend second screen; the blur and the look-ahead
+copy.
 
-Checked on a computer: the filter logic passes its 57 tests, including talking
+Checked on a computer: the filter logic passes its 60 tests, including talking
 to a stand-in YouTube TV (linking with a code, renewing the link, muting ahead
-of a curse word, jumping past a marked scene) and to a stand-in Claude; the page
-script passes its test in desktop Chromium.
+of a curse word, jumping past a saved scene) and to a stand-in Claude (pictures,
+captions, and a web search that pauses part way); the page script passes its
+test in desktop Chromium.
 
 Not yet checked anywhere: a real TV (Roku, Samsung or LG) for clean copies,
 YouTube on TV and TV Mode over Smart View; YouTube playback and the signed-in
 YouTube tab (YouTube turns the test phone away as a data-centre visitor);
-muting on a real paid service's captions; a Deep clean with a real key.
+muting on a real paid service's captions; Superclean with a real key and the
+real IMDb.
 
 ## Layout
 
 | Path | What is in it |
 |---|---|
-| `core/` | Logic with no Android in it: the word list, word matching, subtitle parsing, mute/skip/blur decisions, clean-copy plans, stream checks, the Claude call. Has the tests. |
+| `core/` | Logic with no Android in it: the word list, word matching, subtitle parsing, mute/skip/blur decisions, clean-copy plans, stream checks, the Claude call (`Claude.kt`) and Superclean's list of choices, Parents Guide and questions for Claude (`Superclean.kt`). Has the tests. |
 | `core/.../tv/` | Talking to TVs: finding them, Roku's and smart TVs' protocols, the file server the TV fetches a copy from, and YouTube's TV remote connection (`YouTubeLounge.kt`). |
 | `app/` | The Android app. `MainActivity.kt` holds the tabs; `HomeScreen.kt`, `SearchScreen.kt`, `YouTubeScreen.kt` and `FiltersScreen.kt` are the tabs. |
 | `app/.../browser/` | The built-in browser (`BrowserActivity`), its quick links, the player built on it (`WatchActivity`), live detection, the hidden look-ahead copy (`Scout`) and the blur and controls layers. |
 | `app/src/main/assets/safewatch.js` | The script added to every page to control its video. |
-| `app/.../tv/` | Clean copies (`CleanCopy`, `CleanEffects`), Deep clean (`DeepCleanRun`), YouTube on TV (`YouTubeTv`), TV Mode (`TvMode`, `TvModeActivity`, `RemotePad`), finding TVs, the service that keeps it all going with the screen off (`TvService`) and the TV screen (`TvActivity`). |
-| `app/.../data/`, `detect/`, `ui/` | Saved settings and marked scenes; the nudity detector; the design kit, logo and sounds. |
-| `tools/` | The test-phone script, the catalog builder and the page script's test. `docs/edenos.svg` is the logo. |
+| `app/.../tv/` | Clean copies (`CleanCopy`, `CleanEffects`), Superclean (`SupercleanActivity`, `SupercleanRun`), YouTube on TV (`YouTubeTv`), TV Mode (`TvMode`, `TvModeActivity`, `RemotePad`), finding TVs, the service that keeps it all going with the screen off (`TvService`) and the TV screen (`TvActivity`). |
+| `app/.../data/`, `detect/`, `ui/` | Saved settings and found scenes; the nudity detector; the design kit, logo and name (`Brand`), the opening (`Intro`) and sounds. |
+| `tools/` | The test-phone script and its test site (`test-site.py`), the catalog builder, the opening's music (`make-intro-sound.py`) and the page script's test. `docs/edenos.svg` is the logo. |
 
 ## Building
 
@@ -262,8 +313,7 @@ To run the page script's test (needs Node, Playwright and ffmpeg):
 
 ## Not built yet
 
-- Gore filtering without a Deep clean.
-- Shared scene lists, so a title marked once does not need marking again by anyone else.
+- Shared scene lists for the paid services, whose pictures cannot be checked.
 - Listening to the sound itself, for cursing in videos that have no captions.
 - Blurring only the detected area instead of the whole picture.
 - A Windows version.

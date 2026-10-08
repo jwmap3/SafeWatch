@@ -206,7 +206,7 @@ class TvMuteTimeline(stretches: List<LongRange>, private val leadMs: Long = 400)
     }
 }
 
-/** A TV whose YouTube app was linked to EdenOS with the TV's code. */
+/** A TV whose YouTube app was linked to edenOS with the TV's code. */
 data class LoungeScreen(val screenId: String, val token: String, val name: String)
 
 /** Why YouTube turned a request down; [status] is the HTTP status, 0 when YouTube could not be reached. */
@@ -220,12 +220,12 @@ class LoungeException(message: String, val status: Int = 0, val unlinked: Boolea
 
 /**
  * YouTube's own way for a phone to work a TV's YouTube app: the "Link with TV code" remote, which the
- * YouTube phone app uses too. The TV plays the video itself, from YouTube; EdenOS only sends it the
+ * YouTube phone app uses too. The TV plays the video itself, from YouTube; edenOS only sends it the
  * same commands a remote would (play this, mute, unmute, jump ahead).
  */
 class LoungeClient(
     private val base: String = "https://www.youtube.com/api/lounge",
-    val name: String = "EdenOS",
+    val name: String = "edenOS",
 ) {
     /** Links a TV from the code its YouTube app shows under Settings > Link with TV code. */
     fun pair(code: String): LoungeScreen {
@@ -415,7 +415,7 @@ class TvYouTubeFollower(
         private set
     @Volatile var advert = false
         private set
-    /** Set when the TV has moved on to a different video, which EdenOS has no captions for. */
+    /** Set when the TV has moved on to a different video, which edenOS has no captions for. */
     @Volatile var otherVideo: String? = null
         private set
     @Volatile var volume = 100
@@ -673,7 +673,7 @@ class TvYouTubeRemote(
         if (stopped) return
         val s = session
         if (follower.otherVideo != null) {
-            finish("A different video started on ${screen.name}, so EdenOS stopped filtering. Send it from EdenOS to filter it.")
+            finish("A different video started on ${screen.name}, so edenOS stopped filtering. Send it from edenOS to filter it.")
             return
         }
         val now = clock()

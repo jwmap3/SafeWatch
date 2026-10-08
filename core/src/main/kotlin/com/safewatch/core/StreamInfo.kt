@@ -4,7 +4,7 @@ package com.safewatch.core
  * What a streaming manifest says about a video, read before anything is downloaded.
  *
  * Websites that stream a video in pieces hand the player a manifest: HLS (".m3u8") or
- * DASH (".mpd"). It lists the pieces, and says whether they are encrypted. EdenOS only
+ * DASH (".mpd"). It lists the pieces, and says whether they are encrypted. edenOS only
  * ever saves a stream whose pieces are not encrypted: it never unlocks anything.
  */
 object StreamInfo {

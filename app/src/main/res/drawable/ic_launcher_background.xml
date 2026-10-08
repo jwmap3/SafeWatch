@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Behind the launcher mark: a deep garden green, lighter in the middle. -->
+<!-- Behind the launcher mark: soft white, a touch of green at the edges. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -8,9 +8,9 @@
     android:viewportHeight="108">
     <path android:pathData="M0,0 L108,0 L108,108 L0,108 Z">
         <aapt:attr name="android:fillColor">
-            <gradient android:type="radial" android:centerX="54" android:centerY="48" android:gradientRadius="76">
-                <item android:offset="0" android:color="#FF1A4029" />
-                <item android:offset="1" android:color="#FF06110B" />
+            <gradient android:type="radial" android:centerX="54" android:centerY="40" android:gradientRadius="86">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#FFE6F1E8" />
             </gradient>
         </aapt:attr>
     </path>

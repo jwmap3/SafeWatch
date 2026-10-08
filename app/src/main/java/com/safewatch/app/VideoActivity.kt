@@ -26,7 +26,7 @@ import com.safewatch.app.ui.Ui
 import org.json.JSONObject
 
 /**
- * One YouTube video's page in EdenOS's layout: the picture with a play
+ * One YouTube video's page in edenOS's layout: the picture with a play
  * button, the channel with a Follow button, the description, what to watch
  * next, and comments. Playing opens the app's player.
  */

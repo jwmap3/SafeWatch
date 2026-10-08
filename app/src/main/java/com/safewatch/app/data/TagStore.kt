@@ -22,7 +22,7 @@ object TagStore {
             val arr = JSONObject(f.readText()).getJSONArray("tags")
             (0 until arr.length()).mapNotNull { i ->
                 val o = arr.getJSONObject(i)
-                val category = Category.entries.firstOrNull { it.name == o.optString("category") }
+                val category = Category.named(o.optString("category"))
                 val action = Action.entries.firstOrNull { it.name == o.optString("action") }
                 if (category == null || action == null) null
                 else Tag(o.getLong("start"), o.getLong("end"), category, action, o.optInt("level", 3),

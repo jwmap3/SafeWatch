@@ -40,7 +40,7 @@ class TvActivity : AppCompatActivity() {
         })
         column.addView(Ui.largeTitle(this, "TV"))
         column.addView(Ui.subtitle(this,
-            "Two ways to watch on the TV with your phone locked: YouTube plays in the TV's own YouTube app with EdenOS muting " +
+            "Two ways to watch on the TV with your phone locked: YouTube plays in the TV's own YouTube app with edenOS muting " +
                 "it from the phone, and other videos go as a clean copy, the video with the filtering built in."))
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(body)
@@ -121,7 +121,7 @@ class TvActivity : AppCompatActivity() {
                 "Each copy is for one viewing: it deletes itself once it has played through, or after a day."))
         if (copies.isEmpty()) {
             body.addView(Ui.caption(this,
-                "None yet. While watching a video file or a website's video, tap Send to TV, then Clean copy to TV. " +
+                "None yet. While watching a video file or a website's video, tap Send to TV, then Clean copy to TV or Superclean to TV. " +
                     "Netflix, HBO Max and the other paid services lock their videos, so use Mirror to TV for those."))
             return
         }
@@ -174,7 +174,7 @@ class TvActivity : AppCompatActivity() {
             })
             body.addView(Ui.caption(this,
                 "Use the TV's own remote to pause, rewind or change the volume. If a different video is started on the TV, " +
-                    "EdenOS stops filtering, since it has not read that video's captions."))
+                    "edenOS stops filtering, since it has not read that video's captions."))
         } else TvState.youtubeEnded?.let { reason ->
             body.addView(Ui.sectionHeader(this, "YouTube on the TV"))
             body.addView(Ui.card(this).apply {
@@ -206,31 +206,21 @@ class TvActivity : AppCompatActivity() {
             }
         })
         body.addView(Ui.caption(this,
-            "On the TV, open YouTube, then Settings > Link with TV code. Then, while a YouTube video plays in EdenOS, tap " +
+            "On the TV, open YouTube, then Settings > Link with TV code. Then, while a YouTube video plays in edenOS, tap " +
                 "Send to TV > YouTube on TV, or tap Play on TV on a video's page."))
     }
 
     private fun choose(copy: CleanCopyFile) {
         val last = lastTv(this)
         val busy = TvState.job?.let { it.made == null && it.error == null } == true
-        val again = copy.source?.takeIf { com.safewatch.app.data.Prefs.claudeKey(this).isNotEmpty() && !busy }
-        val options = listOfNotNull(last?.let { "Play on ${it.name}" }, "Play on a TV…", again?.let { "Make again with a Deep clean" }, "Delete")
+        val again = copy.source?.takeIf { !busy }
+        val options = listOfNotNull(last?.let { "Play on ${it.name}" }, "Play on a TV…", again?.let { "Superclean this" }, "Delete")
         AlertDialog.Builder(this)
             .setTitle(copy.title)
             .setItems(options.toTypedArray()) { _, which ->
                 when (options[which]) {
                     "Play on a TV…" -> pickTv(copy)
-                    "Make again with a Deep clean" -> again?.let { source ->
-                        AlertDialog.Builder(this).setTitle("Deep clean ${copy.title}?")
-                            .setMessage("The video is fetched and checked again, and Claude looks at its pictures and reads its captions too. " +
-                                "It costs ${DeepCleanRun.costText(copy.durationMs, com.safewatch.app.data.Prefs.claudeModel(this))}, billed to your " +
-                                "Anthropic account. The new copy replaces this one when it is ready.")
-                            .setPositiveButton("Deep clean") { _, _ ->
-                                TvService.prepare(this, source.copy(deep = true), replaces = copy.file.absolutePath)
-                                show()
-                            }
-                            .setNegativeButton("Cancel", null).show()
-                    }
+                    "Superclean this" -> again?.let { SupercleanActivity.open(this, it, replaces = copy.file.absolutePath) }
                     "Delete" -> AlertDialog.Builder(this).setMessage("Delete the clean copy of ${copy.title}?")
                         .setPositiveButton("Delete") { _, _ -> CleanCopy.delete(copy); show() }
                         .setNegativeButton("Cancel", null).show()
@@ -274,7 +264,7 @@ class TvActivity : AppCompatActivity() {
 
     /**
      * Some phones stop apps that work with the screen off to save battery, which would cut the TV off
-     * mid-film. Asked once: the viewer can let EdenOS run without that limit.
+     * mid-film. Asked once: the viewer can let edenOS run without that limit.
      */
     private fun askToRunWithScreenOff() {
         val power = getSystemService(android.os.PowerManager::class.java)
@@ -282,7 +272,7 @@ class TvActivity : AppCompatActivity() {
         prefs(this).edit().putBoolean("askedBattery", true).apply()
         AlertDialog.Builder(this)
             .setTitle("Keep playing with the screen off")
-            .setMessage("So the TV is not cut off mid-film when your phone locks, let EdenOS run without battery limits.")
+            .setMessage("So the TV is not cut off mid-film when your phone locks, let edenOS run without battery limits.")
             .setPositiveButton("Allow") { _, _ ->
                 try {
                     @Suppress("BatteryLife")

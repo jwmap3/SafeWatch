@@ -46,7 +46,7 @@
 
         <!--
           The built-in browser. It is also offered by the phone as a browser, so a
-          link in any other app can be opened in EdenOS, and a page in another
+          link in any other app can be opened in edenOS, and a page in another
           browser can be sent here with that browser's Share button.
         -->
         <activity
@@ -87,8 +87,9 @@
             </intent-filter>
         </activity>
         <activity android:name=".tv.TvActivity" />
+        <activity android:name=".tv.SupercleanActivity" />
 
-        <!-- TV Mode: EdenOS on the TV as a second screen, with this screen as the remote. -->
+        <!-- TV Mode: edenOS on the TV as a second screen, with this screen as the remote. -->
         <activity android:name=".tv.TvModeActivity" android:screenOrientation="portrait" />
 
         <!-- Makes clean copies and hands them to the TV, with the screen off. -->

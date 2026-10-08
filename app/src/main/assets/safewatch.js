@@ -1,4 +1,4 @@
-// EdenOS page script (the file keeps its first name, safewatch.js). Runs inside every page (and every frame) the built-in
+// edenOS page script (the file keeps its first name, safewatch.js). Runs inside every page (and every frame) the built-in
 // browser opens. It never decides what is objectionable itself: it asks the app
 // through SafeWatchBridge, then mutes, skips or blurs the page's own <video>.
 //
@@ -1027,7 +1027,7 @@
         if (t < tag.s || t >= tag.e) continue;
         if (tag.a === 'skip') skipTo = Math.max(skipTo, tag.e);
         else if (tag.a === 'blur') blur = true;
-        else why = 'marked scene';
+        else why = 'saved scene';
       }
       // Captions on screen are acted on until better data has proved itself for this part of the video.
       if (!why && S.language) why = muteReason(video, st, t, advert, video === watching && !trustedHere(video, st, t, advert));

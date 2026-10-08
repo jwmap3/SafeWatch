@@ -8,7 +8,7 @@ import android.webkit.CookieManager
  *
  * Sign-ins are kept by the browser itself, the same way Chrome keeps them:
  * the service's website stores a sign-in cookie, and it stays until the viewer
- * signs out there. EdenOS never sees or stores a password. This only works
+ * signs out there. edenOS never sees or stores a password. This only works
  * out, for display, whether a sign-in is in place.
  */
 object Accounts {

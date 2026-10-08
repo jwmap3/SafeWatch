@@ -38,6 +38,7 @@ import com.safewatch.core.ProfanityMatcher
 import com.safewatch.core.Ranges
 import com.safewatch.core.StreamInfo
 import com.safewatch.core.Strictness
+import com.safewatch.core.Superclean
 import com.safewatch.core.Tag
 import org.json.JSONArray
 import org.json.JSONObject
@@ -61,11 +62,11 @@ data class CleanSource(
     val captions: List<String> = emptyList(),
     val referrer: String = "",
     val stream: String = "",
-    /** Also a Deep clean with Claude, which the viewer asked for. */
-    val deep: Boolean = false,
+    /** A Superclean the viewer asked for: what Claude is to take out, as [Superclean.Wishes] JSON; empty for none. */
+    val superclean: String = "",
 ) {
     fun toJson(): String = JSONObject().put("title", title).put("key", key).put("address", address)
-        .put("captions", JSONArray(captions)).put("referrer", referrer).put("stream", stream).put("deep", deep).toString()
+        .put("captions", JSONArray(captions)).put("referrer", referrer).put("stream", stream).put("superclean", superclean).toString()
 
     companion object {
         const val HLS = "hls"
@@ -74,8 +75,10 @@ data class CleanSource(
         fun fromJson(text: String): CleanSource {
             val o = JSONObject(text)
             val caps = o.optJSONArray("captions") ?: JSONArray()
+            // Copies made before Superclean had "deep" for what is now a Superclean with the usual choices.
+            val superclean = o.optString("superclean").ifEmpty { if (o.optBoolean("deep")) Superclean.Wishes(Superclean.DEFAULT).toJson() else "" }
             return CleanSource(o.getString("title"), o.getString("key"), o.getString("address"),
-                (0 until caps.length()).map { caps.getString(it) }, o.optString("referrer"), o.optString("stream"), o.optBoolean("deep"))
+                (0 until caps.length()).map { caps.getString(it) }, o.optString("referrer"), o.optString("stream"), superclean)
         }
 
         /** Whether an address is a stream's manifest, and which kind. */
@@ -125,7 +128,8 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         if (durationMs <= 0) throw IOException("This file does not look like a video the phone can read")
 
         val settings = Prefs.settings(context)
-        val tags = ArrayList(TagStore.load(context, source.key))
+        // A new Superclean replaces what an earlier one found, since the family may have chosen differently.
+        val tags = ArrayList(TagStore.load(context, source.key).filter { source.superclean.isEmpty() || it.source != Tag.SOURCE_CLAUDE })
         val notes = ArrayList<String>()
 
         // Cursing, from the captions.
@@ -148,18 +152,19 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         }
         check()
 
-        // A Deep clean, if asked for: Claude looks at the pictures and reads the captions too.
-        if (source.deep) {
+        // A Superclean, if asked for: Claude looks at the pictures and reads the captions for what the family chose.
+        if (source.superclean.isNotEmpty()) {
             if (Prefs.claudeKey(context).isEmpty()) {
-                notes += "Deep clean was skipped: there is no Claude key in Settings"
+                notes += "Superclean was skipped: there is no Claude key in Settings"
             } else {
-                val deep = DeepCleanRun(context, settings, report, ::check).run(input, durationMs, cues)
-                tags += deep.tags
-                notes += deep.note
-                if (deep.tags.isNotEmpty()) {
+                val wishes = Superclean.Wishes.fromJson(source.superclean)
+                val found = SupercleanRun(context, settings, wishes, report, ::check).run(input, durationMs, cues)
+                tags += found.tags
+                notes += found.note
+                if (found.finished) {
                     // The phone's own player uses them too, next time this video plays.
                     val kept = TagStore.load(context, source.key).filter { it.source != Tag.SOURCE_CLAUDE }
-                    TagStore.save(context, source.key, source.title, kept + deep.tags)
+                    TagStore.save(context, source.key, source.title, kept + found.tags)
                 }
             }
         }

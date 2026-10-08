@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The edenOS mark: an emerald leaf and a sunlit leaf that together make a lowercase e. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <path android:pathData="M26,66 C14,52 18,29 36,22 C52,16 71,21 81,34 C72,42 60,45 48,46 C38,47 30,54 26,66 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="25.33" android:startY="21.81" android:endX="74.81" android:endY="63.67">
+                <item android:offset="0" android:color="#FF7FE3A9" />
+                <item android:offset="0.55" android:color="#FF22B573" />
+                <item android:offset="1" android:color="#FF0C7F57" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M33,72 C39,60 50,55 63,55 C70,55 76,56 81,58 C77,73 64,82 51,82 C43,82 36,78 33,72 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="35.40" android:startY="61.75" android:endX="78.60" android:endY="77.95">
+                <item android:offset="0" android:color="#FFFFE07A" />
+                <item android:offset="0.5" android:color="#FFFFC145" />
+                <item android:offset="1" android:color="#FF7CCB4E" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M26,66 C14,52 18,29 36,22 C52,16 71,21 81,34 C72,42 60,45 48,46 C38,47 30,54 26,66 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="50.07" android:startY="19.48" android:endX="50.07" android:endY="40.42">
+                <item android:offset="0" android:color="#61FFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M33,72 C39,60 50,55 63,55 C70,55 76,56 81,58 C77,73 64,82 51,82 C43,82 36,78 33,72 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="57.00" android:startY="55.00" android:endX="57.00" android:endY="67.15">
+                <item android:offset="0" android:color="#61FFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

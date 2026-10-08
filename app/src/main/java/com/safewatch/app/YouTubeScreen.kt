@@ -20,7 +20,7 @@ import com.safewatch.app.ui.Ui
 import java.util.concurrent.Executors
 
 /**
- * The YouTube tab: YouTube's videos in EdenOS's own layout.
+ * The YouTube tab: YouTube's videos in edenOS's own layout.
  *
  * Signed in to YouTube (once, on Google's own page), it shows the viewer's own
  * YouTube: their subscriptions, their home feed and their searches, read from
@@ -172,7 +172,7 @@ class YouTubeScreen(private val activity: MainActivity) {
         }.let { card -> FrameLayout(activity).apply { setPadding(Ui.dp(context, 20), Ui.dp(context, 16), Ui.dp(context, 20), 0); addView(card) } })
         body.addView(Ui.caption(activity,
             "Sign in on Google's own page and this tab shows your own YouTube: your home feed, your subscriptions and " +
-                "your searches. The sign-in stays on this phone, the way a browser keeps it; EdenOS never sees your password.").apply {
+                "your searches. The sign-in stays on this phone, the way a browser keeps it; edenOS never sees your password.").apply {
             setPadding(Ui.dp(context, 20), Ui.dp(context, 8), Ui.dp(context, 20), 0)
         })
         val following = Prefs.followedChannels(activity)

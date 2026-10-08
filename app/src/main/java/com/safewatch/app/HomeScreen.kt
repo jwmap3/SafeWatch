@@ -75,11 +75,16 @@ class HomeScreen(private val activity: MainActivity) {
         }.start()
     }
 
-    /** The top of Home: the EdenOS mark in the middle, its sword of fire turning, and Send to TV at the side. */
+    /** The top of Home: the edenOS mark and name in the middle, TV Mode at one side and Send to TV at the other. */
     private fun header(): View = FrameLayout(activity).apply {
         setPadding(Ui.dp(context, 8), Ui.dp(context, 8), Ui.dp(context, 8), Ui.dp(context, 6))
-        addView(Ui.logo(context, 48).apply { setOnClickListener { onNameTapped() } },
-            FrameLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48), Gravity.CENTER))
+        addView(LinearLayout(context).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            contentDescription = "edenOS"
+            addView(Ui.logo(context, 34))
+            addView(com.safewatch.app.ui.Brand.wordmark(context, 23f), LinearLayout.LayoutParams(-2, -2).apply { marginStart = Ui.dp(context, 8) })
+            setOnClickListener { onNameTapped() }
+        }, FrameLayout.LayoutParams(-2, Ui.dp(context, 46), Gravity.CENTER))
         addView(Ui.iconButton(context, R.drawable.ic_tv, "TV Mode") { com.safewatch.app.tv.TvModeActivity.open(activity) },
             FrameLayout.LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46), Gravity.START or Gravity.CENTER_VERTICAL))
         addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV") { Ui.sendToTv(activity) },
