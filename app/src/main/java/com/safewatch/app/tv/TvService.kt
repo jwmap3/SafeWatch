@@ -36,6 +36,8 @@ object TvState {
     data class Job(val title: String, val step: String, val percent: Int, val error: String? = null, val made: CleanCopyFile? = null)
 
     @Volatile var job: Job? = null
+    /** Copies waiting their turn, by title, after the one being made. */
+    @Volatile var queued: List<String> = emptyList()
     @Volatile var playingTitle: String? = null
     @Volatile var playingOn: TvDevice? = null
     @Volatile var paused = false
@@ -65,6 +67,7 @@ class TvService : Service() {
     private val control = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
     private var making: CleanCopy? = null
+    private val waiting = ArrayDeque<Pair<CleanSource, String?>>()
     private var server: FileServer? = null
     private var awake: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -80,6 +83,12 @@ class TvService : Service() {
         when (intent?.action) {
             ACTION_PREPARE -> prepare(CleanSource.fromJson(intent.getStringExtra(EXTRA_SOURCE) ?: return START_NOT_STICKY), intent.getStringExtra(EXTRA_REPLACES))
             ACTION_CANCEL -> making?.cancelled = true
+            ACTION_DROP -> intent.getStringExtra(EXTRA_TITLE)?.let { title ->
+                waiting.removeAll { it.first.title == title }
+                TvState.queued = waiting.map { it.first.title }
+                TvState.changed()
+                finishIfIdle()
+            }
             ACTION_PLAY -> play(File(intent.getStringExtra(EXTRA_FILE) ?: return START_NOT_STICKY), intent.getStringExtra(EXTRA_TITLE).orEmpty(),
                 TvDevice(TvDevice.Kind.valueOf(intent.getStringExtra(EXTRA_KIND) ?: "DLNA"), intent.getStringExtra(EXTRA_NAME).orEmpty(),
                     intent.getStringExtra(EXTRA_LOCATION).orEmpty(), intent.getStringExtra(EXTRA_CONTROL).orEmpty()))
@@ -94,7 +103,13 @@ class TvService : Service() {
     // ---- Making a clean copy ----
 
     private fun prepare(source: CleanSource, replaces: String? = null) {
-        if (making != null) return
+        if (making != null) {
+            // One copy is made at a time; the rest wait their turn.
+            if (waiting.none { it.first.address == source.address && it.first.superclean == source.superclean }) waiting += source to replaces
+            TvState.queued = waiting.map { it.first.title }
+            TvState.changed()
+            return
+        }
         val maker = CleanCopy(applicationContext) { step, percent ->
             TvState.job = TvState.Job(source.title, step, percent)
             TvState.changed()
@@ -126,7 +141,9 @@ class TvService : Service() {
                 TvState.changed()
                 refresh()
                 if (result.made != null) notifyDone(result)
-                finishIfIdle()
+                val next = waiting.removeFirstOrNull()
+                TvState.queued = waiting.map { it.first.title }
+                if (next != null) prepare(next.first, next.second) else finishIfIdle()
             }
         }
     }
@@ -398,6 +415,7 @@ class TvService : Service() {
     companion object {
         private const val ACTION_PREPARE = "prepare"
         private const val ACTION_CANCEL = "cancel"
+        private const val ACTION_DROP = "drop"
         private const val ACTION_PLAY = "play"
         private const val ACTION_PAUSE = "pause"
         private const val ACTION_STOP = "stop"
@@ -440,6 +458,9 @@ class TvService : Service() {
                 .putExtra(EXTRA_REPLACES, replaces))
 
         fun cancel(ctx: Context) = ctx.startService(Intent(ctx, TvService::class.java).setAction(ACTION_CANCEL))
+
+        /** Takes a copy that is waiting its turn off the list. */
+        fun drop(ctx: Context, title: String) = ctx.startService(Intent(ctx, TvService::class.java).setAction(ACTION_DROP).putExtra(EXTRA_TITLE, title))
 
         fun play(ctx: Context, copy: CleanCopyFile, device: TvDevice) = start(ctx, Intent(ctx, TvService::class.java).setAction(ACTION_PLAY)
             .putExtra(EXTRA_FILE, copy.file.absolutePath).putExtra(EXTRA_TITLE, copy.title).putExtra(EXTRA_KIND, device.kind.name)

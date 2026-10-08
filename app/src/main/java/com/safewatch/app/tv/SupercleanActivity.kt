@@ -414,16 +414,44 @@ class SupercleanActivity : AppCompatActivity() {
          * key, says where to add one instead.
          */
         fun open(ctx: Context, source: CleanSource, replaces: String? = null) {
-            if (Prefs.claudeKey(ctx).isEmpty()) {
-                AlertDialog.Builder(ctx).setTitle("Superclean needs a Claude key")
-                    .setMessage("Superclean sends the video's pictures and captions to Claude, with your own Anthropic API key, so " +
-                        "Claude can take out what you choose. Add a key from console.anthropic.com in Settings > Superclean.")
-                    .setPositiveButton("Open Settings") { _, _ -> MainActivity.open(ctx, MainActivity.TAB_FILTERS) }
-                    .setNegativeButton("Cancel", null).show()
-                return
-            }
+            if (Prefs.claudeKey(ctx).isEmpty()) return askForKey(ctx)
             ctx.startActivity(Intent(ctx, SupercleanActivity::class.java).putExtra(EXTRA_SOURCE, source.toJson())
                 .putExtra(EXTRA_REPLACES, replaces))
+        }
+
+        private fun askForKey(ctx: Context) {
+            AlertDialog.Builder(ctx).setTitle("Superclean needs a Claude key")
+                .setMessage("Superclean sends the video's pictures and captions to Claude, with your own Anthropic API key, so " +
+                    "Claude can take out what you choose. Add a key in Settings > Superclean.")
+                .setPositiveButton("Open Settings") { _, _ -> MainActivity.open(ctx, MainActivity.TAB_FILTERS) }
+                .setNegativeButton("Cancel", null).show()
+        }
+
+        /**
+         * One tap: Superclean what is playing with the choices already made in Settings, straight away, in the
+         * background. The video is downloaded and Claude goes through it while the viewer carries on; Home shows how
+         * far it has got, under Your Scrubbed Movies. [whyNot] says why there is nothing here that can be saved.
+         */
+        fun start(ctx: Context, source: CleanSource?, whyNot: String? = null) {
+            if (source == null) {
+                AlertDialog.Builder(ctx).setTitle("Superclean")
+                    .setMessage((whyNot ?: "There is no video here that can be saved.") +
+                        "\n\nSuperclean works with video files and websites' own videos. Netflix-style services lock theirs; " +
+                        "watch those with Mirror to TV or TV Mode.")
+                    .setPositiveButton("OK", null).show()
+                return
+            }
+            if (Prefs.claudeKey(ctx).isEmpty()) return askForKey(ctx)
+            if (Prefs.supercleanReview(ctx)) return open(ctx, source)
+            val wishes = Superclean.Wishes(Prefs.supercleanChoices(ctx), cut = Prefs.supercleanCut(ctx), autoGuide = Prefs.supercleanGuide(ctx))
+            if (wishes.remove.isEmpty() && !wishes.autoGuide) {
+                Ui.toast(ctx, "Choose what Superclean takes out in Settings > Superclean")
+                return
+            }
+            val waiting = TvState.job?.let { it.made == null && it.error == null } == true
+            TvService.prepare(ctx, source.copy(superclean = wishes.toJson()))
+            Ui.toast(ctx, (if (waiting) "${source.title} is next in line to be Supercleaned." else "Supercleaning ${source.title}.") +
+                " Follow it on Home, under Your Scrubbed Movies.")
         }
     }
 }

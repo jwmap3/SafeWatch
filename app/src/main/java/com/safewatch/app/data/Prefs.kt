@@ -169,6 +169,11 @@ object Prefs {
 
     fun setSupercleanCut(ctx: Context, cut: Boolean) = prefs(ctx).edit().putBoolean("supercleanCut", cut).apply()
 
+    /** Whether tapping Superclean first opens the title's page to review everything, instead of starting at once. */
+    fun supercleanReview(ctx: Context): Boolean = prefs(ctx).getBoolean("supercleanReview", false)
+
+    fun setSupercleanReview(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("supercleanReview", on).apply()
+
     /** Whether Claude looks up each title's IMDb Parents Guide first, so its scenes can be chosen too. */
     fun supercleanGuide(ctx: Context): Boolean = prefs(ctx).getBoolean("supercleanGuide", true)
 

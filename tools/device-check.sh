@@ -176,24 +176,18 @@ if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   sleep 10
   tap "More";             sleep 1
   tap "Send to TV";       shot 22c-send-superclean 3
-  tap "Superclean to TV"; shot 22d-superclean-looking 1
-  shot 22e-superclean-guide 8
-  swipe_up;               shot 22f-superclean-guide-lower 2
-  swipe_up; swipe_up;     shot 22g-superclean-start 2
-  tap_scrolling "Review and Superclean"; shot 22g2-superclean-review 2
-  swipe_up;               shot 22g3-superclean-review-lower 2
-  tap "APPROVE AND START"; sleep 3
-  timeout 60 python3 tools/tap.py "Allow" > /dev/null
-  shot 22h-superclean-making 4
+  tap "Superclean to TV"; shot 22d-superclean-started 1   # one tap: it starts in the background
+  start;                  sleep 4; shot 22e-home-scrubbing 1
+  sleep 20;               shot 22f-home-scrubbing-later 1
   for i in $(seq 1 60); do
     if adb logcat -d -s SafeWatch:I | grep -q "clean copy made\|clean copy not made"; then break; fi
     sleep 10
   done
   adb logcat -d -s SafeWatch:I | grep -i "clean copy\|superclean\|parents guide" | tee -a "$OUT/summary.txt"
-  shot 22i-superclean-copies 3
+  start;                  sleep 4; shot 22i-home-scrubbed 1
   timeout 60 adb exec-out run-as $PKG sh -c 'cat "$(ls -t files/clean/*.mp4 | head -1)"' > "$OUT/22-superclean-copy.mp4"
   [ -s "$OUT/22-superclean-copy.mp4" ] || rm -f "$OUT/22-superclean-copy.mp4"
-  tap "Test clip";        shot 22j-copy-options 2
+  tap "Test clip";        shot 22j-copy-options 3
   back
   adb logcat -d -s SafeWatch:I > "$OUT/22-superclean-log.txt"
   cp /tmp/tvsite/anthropic-requests.txt "$OUT/22-anthropic-requests.txt" 2>/dev/null || echo "the stand-in for Anthropic was sent nothing" | tee -a "$OUT/summary.txt"

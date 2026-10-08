@@ -141,6 +141,10 @@ class PlayerActivity : AppCompatActivity() {
         bar.addView(Ui.barButton(this, "Subtitles") { pickSubtitles.launch(arrayOf("*/*")) })
         bar.addView(Ui.spacer(this))
         bar.addView(scanButton)
+        bar.addView(Ui.barButton(this, "Superclean") {
+            val captions = listOfNotNull(subtitleFile().takeIf { it.exists() }?.absolutePath)
+            com.safewatch.app.tv.SupercleanActivity.start(this, com.safewatch.app.tv.CleanSource(title, key, uri.toString(), captions))
+        })
         bar.addView(Ui.iconButton(this, R.drawable.ic_cast, "Send to TV", R.color.text) {
             val captions = listOfNotNull(subtitleFile().takeIf { it.exists() }?.absolutePath)
             Ui.sendToTv(this, com.safewatch.app.tv.CleanSource(title, key, uri.toString(), captions))

@@ -573,7 +573,7 @@ object Ui {
         } else if (source != null) {
             option("Superclean to TV", "Claude takes out what you choose, including scenes from the title's IMDb Parents Guide, " +
                 "and the copy goes to your TV. Uses your Claude key.") {
-                com.safewatch.app.tv.SupercleanActivity.open(activity, source)
+                com.safewatch.app.tv.SupercleanActivity.start(activity, source)
             }
             option("Clean copy to TV", "Makes a copy with the cursing muted and nudity blurred, for your Roku or smart TV to play by itself. " +
                 "Your phone can be locked while it plays.") {

@@ -471,6 +471,10 @@ open class BrowserActivity : AppCompatActivity() {
         }
         statusLabels += status
         addView(status)
+        addView(Ui.pill(context, "Superclean", filled = true) { superclean() }.apply {
+            textSize = 13f
+            setPadding(Ui.dp(context, 12), Ui.dp(context, 6), Ui.dp(context, 12), Ui.dp(context, 6))
+        })
         addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV", tint) { sendToTv() })
     }
 
@@ -1006,6 +1010,7 @@ open class BrowserActivity : AppCompatActivity() {
         PopupMenu(this, anchor).apply {
             if (web.canGoForward()) menu.add(0, 1, 0, "Forward")
             menu.add(0, 2, 1, "Reload")
+            menu.add(0, 9, 2, "Superclean")
             menu.add(0, 4, 3, "Send to TV")
             menu.add(0, 5, 4, "Quick links")
             menu.add(0, 6, 5, "Hide this bar")
@@ -1016,6 +1021,7 @@ open class BrowserActivity : AppCompatActivity() {
                     1 -> web.goForward()
                     2 -> web.reload()
                     4 -> sendToTv()
+                    9 -> superclean()
                     5 -> load(START_PAGE)
                     6 -> {
                         barHiddenByChoice = true
@@ -1192,6 +1198,12 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     // ---- Send to TV ----
+
+    /** One tap: what is playing is downloaded and scrubbed in the background with the choices in Settings. */
+    private fun superclean() {
+        val (source, whyNot) = cleanSource()
+        com.safewatch.app.tv.SupercleanActivity.start(this, source, whyNot)
+    }
 
     private fun sendToTv() {
         val (source, whyNot) = cleanSource()

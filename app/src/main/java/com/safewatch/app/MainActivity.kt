@@ -228,6 +228,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        if (::home.isInitialized) home.release()
         if (::youtube.isInitialized) youtube.close()
         super.onDestroy()
     }

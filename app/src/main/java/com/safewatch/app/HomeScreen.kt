@@ -23,9 +23,13 @@ import java.time.LocalDate
  * is new on each one. Saved shelves show at once; fresh ones replace them
  * every time the app is opened.
  */
+@androidx.media3.common.util.UnstableApi
 class HomeScreen(private val activity: MainActivity) {
 
     private val column: LinearLayout
+    /** Your Scrubbed Movies: Supercleans and clean copies being made, waiting, and ready. Updated as they go. */
+    private val scrubbed = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+    private val onTvChange: () -> Unit = { if (!activity.isDestroyed) showScrubbed() }
     val view: View
     private var shown: List<Shelf>? = null
     private var shownFor = ""
@@ -36,6 +40,13 @@ class HomeScreen(private val activity: MainActivity) {
         val (page, col) = Ui.page(activity, padded = false)
         view = page
         column = col
+        com.safewatch.app.tv.TvState.listeners += onTvChange
+        showScrubbed()
+    }
+
+    /** Called when the app closes, so the progress updates stop. */
+    fun release() {
+        com.safewatch.app.tv.TvState.listeners -= onTvChange
     }
 
     /** Called whenever the home tab comes back into view. */
@@ -53,6 +64,97 @@ class HomeScreen(private val activity: MainActivity) {
             if (saved != null) render(saved) else renderMessage("Loading titles…", retry = false)
         }
         if (!loading && System.currentTimeMillis() - loadedAt > REFRESH_AFTER_MS) load()
+        showScrubbed()
+    }
+
+    private fun showScrubbed() {
+        val ctx = activity
+        scrubbed.removeAllViews()
+        val tv = com.safewatch.app.tv.TvState
+        val job = tv.job
+        val making = job?.takeIf { it.made == null && it.error == null }
+        val failed = job?.takeIf { it.error != null }
+        val queued = tv.queued
+        val ready = com.safewatch.app.tv.CleanCopy.all(ctx).take(8)
+        if (making == null && failed == null && queued.isEmpty() && ready.isEmpty()) {
+            scrubbed.visibility = View.GONE
+            return
+        }
+        scrubbed.visibility = View.VISIBLE
+        scrubbed.addView(Ui.shelfTitle(ctx, "Your Scrubbed Movies"))
+        val card = Ui.card(ctx)
+        fun gap() { if (card.childCount > 0) card.addView(Ui.divider(ctx)) }
+        if (making != null) {
+            card.addView(LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(Ui.dp(ctx, 16), Ui.dp(ctx, 14), Ui.dp(ctx, 16), Ui.dp(ctx, 12))
+                addView(LinearLayout(ctx).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(TextView(ctx).apply {
+                        text = making.title
+                        textSize = 17f
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                        setTextColor(Ui.color(ctx, R.color.text))
+                    }, LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(TextView(ctx).apply {
+                        text = if (making.percent >= 0) "${making.percent}%" else ""
+                        textSize = 17f
+                        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                        setTextColor(Ui.color(ctx, R.color.accent))
+                    })
+                })
+                addView(android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    isIndeterminate = making.percent < 0
+                    max = 100
+                    progress = making.percent.coerceAtLeast(0)
+                    progressTintList = android.content.res.ColorStateList.valueOf(Ui.color(ctx, R.color.accent))
+                    indeterminateTintList = progressTintList
+                }, LinearLayout.LayoutParams(-1, Ui.dp(ctx, 14)).apply { topMargin = Ui.dp(ctx, 6) })
+                addView(TextView(ctx).apply {
+                    text = making.step
+                    textSize = 13f
+                    setTextColor(Ui.color(ctx, R.color.text_secondary))
+                })
+            })
+            card.addView(Ui.divider(ctx))
+            card.addView(Ui.row(ctx, "Stop", chevron = false) {
+                android.app.AlertDialog.Builder(ctx).setMessage("Stop scrubbing ${making.title}?")
+                    .setPositiveButton("Stop") { _, _ -> com.safewatch.app.tv.TvService.cancel(ctx) }
+                    .setNegativeButton("Keep going", null).show()
+            })
+        }
+        for (title in queued) {
+            gap()
+            card.addView(Ui.row(ctx, title, "Waiting") {
+                android.app.AlertDialog.Builder(ctx).setMessage("Take $title off the list?")
+                    .setPositiveButton("Take off") { _, _ -> com.safewatch.app.tv.TvService.drop(ctx, title) }
+                    .setNegativeButton("Keep", null).show()
+            })
+        }
+        if (failed != null) {
+            gap()
+            card.addView(Ui.row(ctx, failed.title, "Not made") {
+                android.app.AlertDialog.Builder(ctx).setTitle(failed.title).setMessage(failed.error)
+                    .setPositiveButton("Dismiss") { _, _ -> tv.job = null; showScrubbed() }
+                    .setNegativeButton("Close", null).show()
+            })
+        }
+        for (copy in ready) {
+            gap()
+            card.addView(Ui.row(ctx, copy.title, "Ready") { com.safewatch.app.tv.TvActivity.open(ctx) })
+        }
+        scrubbed.addView(FrameLayout(ctx).apply {
+            setPadding(Ui.dp(ctx, 20), 0, Ui.dp(ctx, 20), 0)
+            addView(card)
+        })
+    }
+
+    /** Puts Your Scrubbed Movies near the top of Home, wherever the page is drawn from. */
+    private fun addScrubbed() {
+        (scrubbed.parent as? android.view.ViewGroup)?.removeView(scrubbed)
+        column.addView(scrubbed)
     }
 
     private fun load() {
@@ -128,6 +230,7 @@ class HomeScreen(private val activity: MainActivity) {
     private fun renderMessage(text: String, retry: Boolean) {
         column.removeAllViews()
         column.addView(header())
+        addScrubbed()
         column.addView(services())
         column.addView(TextView(activity).apply {
             this.text = text
@@ -153,6 +256,7 @@ class HomeScreen(private val activity: MainActivity) {
         // A different featured title each day, taken from the first shelf.
         val candidates = shelves.first().titles.filter { it.poster != null }.take(7)
         if (candidates.isNotEmpty()) column.addView(hero(candidates[(LocalDate.now().toEpochDay() % candidates.size).toInt()]))
+        addScrubbed()
         column.addView(services())
         for (shelf in shelves) {
             column.addView(Ui.shelfTitle(activity, shelf.name))

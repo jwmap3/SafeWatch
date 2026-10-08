@@ -73,10 +73,18 @@ object Superclean {
 
     val DEFAULT: Set<String> = CHOICES.filter { it.onByDefault }.map { it.id }.toSet()
 
-    /** What a family asked a Superclean to take out of one title. [cut]: cut scenes out rather than blur them. */
-    data class Wishes(val remove: Set<String>, val guide: List<String> = emptyList(), val cut: Boolean = true) {
+    /**
+     * What a family asked a Superclean to take out of one title. [cut]: cut scenes out rather than blur them.
+     * [autoGuide]: look up the title's Parents Guide while the video downloads, and take out the scenes it lists in
+     * the sections the family's choices cover, without asking.
+     */
+    data class Wishes(val remove: Set<String>, val guide: List<String> = emptyList(), val cut: Boolean = true, val autoGuide: Boolean = false) {
         fun toJson(): String = "{\"remove\":[" + remove.joinToString(",") { Json.str(it) } + "],\"guide\":[" +
-            guide.joinToString(",") { Json.str(it) } + "],\"cut\":" + cut + "}"
+            guide.joinToString(",") { Json.str(it) } + "],\"cut\":" + cut + ",\"autoGuide\":" + autoGuide + "}"
+
+        /** The Parents Guide's scenes in the sections these choices cover, as "Section: what happens". */
+        fun scenesFrom(found: Guide): List<String> =
+            found.sections.filter { sectionWanted(it.name, remove) }.flatMap { s -> s.items.map { "${s.name}: $it" } }
 
         val pictureChoices: List<Choice> get() = CHOICES.filter { it.pictures && it.id in remove }
         val wordChoices: List<Choice> get() = CHOICES.filter { (it.words || it.talk) && it.id in remove }
@@ -86,7 +94,7 @@ object Superclean {
                 val o = try { MiniJson.parse(text ?: "") as? Map<*, *> } catch (e: Exception) { null } ?: return Wishes(DEFAULT)
                 val remove = (o["remove"] as? List<*>)?.mapNotNull { it as? String }?.toSet() ?: DEFAULT
                 val guide = (o["guide"] as? List<*>)?.mapNotNull { it as? String }.orEmpty()
-                return Wishes(remove, guide, o["cut"] != false)
+                return Wishes(remove, guide, o["cut"] != false, o["autoGuide"] == true)
             }
         }
     }

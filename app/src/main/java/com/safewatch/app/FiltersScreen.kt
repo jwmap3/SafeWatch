@@ -260,14 +260,16 @@ class FiltersScreen(private val activity: MainActivity) {
                 }, LinearLayout.LayoutParams(Ui.dp(ctx, 180), -2))
             })
             addView(Ui.divider(ctx))
-            addView(Ui.switchRow(ctx, "Look up the IMDb Parents Guide", Prefs.supercleanGuide(ctx)) { Prefs.setSupercleanGuide(ctx, it) })
+            addView(Ui.switchRow(ctx, "Use the IMDb Parents Guide", Prefs.supercleanGuide(ctx)) { Prefs.setSupercleanGuide(ctx, it) })
+            addView(Ui.divider(ctx))
+            addView(Ui.switchRow(ctx, "Review before each one", Prefs.supercleanReview(ctx)) { Prefs.setSupercleanReview(ctx, it) })
         })
         column.addView(Ui.caption(ctx,
-            "Superclean is a clean copy for the TV that Claude has been through too. Claude looks at small pictures from the " +
+            "One tap on Superclean while a video plays and it is downloaded and scrubbed in the background, with these choices; Home shows its progress under Your Scrubbed Movies. Superclean is a clean copy for the TV that Claude has been through too. Claude looks at small pictures from the " +
                 "video (two seconds apart) and reads its captions, and takes out what you chose here, from cursing and slurs to " +
-                "kissing, immodesty, violence, drinking and frightening scenes, modelled on VidAngel's filters. It first looks up " +
-                "the title's IMDb Parents Guide, so you can also tick the scenes it warns of. Start one from Send to TV while a " +
-                "video plays.\n\nWith your own key from console.anthropic.com; it stays on this phone, and the pictures and caption " +
+                "kissing, immodesty, violence, drinking and frightening scenes, modelled on VidAngel's filters. With the Parents Guide on, Claude also " +
+                "reads the title's IMDb Parents Guide and takes out the scenes it lists for the kinds of things you chose. Turn on " +
+                "Review before each one to see and change everything for each title first.\n\nWith your own key from console.anthropic.com; it stays on this phone, and the pictures and caption " +
                 "text go only to Anthropic. It costs ${com.safewatch.app.tv.SupercleanRun.costText(3_600_000L, claudeModel)} for each " +
                 "hour of video with " +
                 (if (claudeModel == com.safewatch.core.ClaudeApi.HAIKU) "Haiku" else "Sonnet (Haiku is cheaper but less careful)") +

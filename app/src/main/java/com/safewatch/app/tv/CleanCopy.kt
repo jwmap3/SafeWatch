@@ -119,13 +119,32 @@ data class CleanCopyFile(val file: File, val title: String, val summary: String,
  * included. All of it happens on the phone.
  */
 @UnstableApi
-class CleanCopy(private val context: Context, private val report: (step: String, percent: Int) -> Unit) {
+class CleanCopy(private val context: Context, private val tell: (step: String, percent: Int) -> Unit) {
     @Volatile var cancelled = false
+
+    // Each step reports its own 0 to 100; the viewer sees one bar for the whole copy, each step taking its share.
+    private var shareFrom = 0
+    private var shareTo = 100
+
+    private fun share(from: Int, to: Int) {
+        shareFrom = from
+        shareTo = to
+    }
+
+    private fun report(step: String, percent: Int) =
+        tell(step, if (percent < 0) -1 else shareFrom + (shareTo - shareFrom) * percent.coerceIn(0, 100) / 100)
 
     /** Runs every step. Call off the main thread. Returns the copy, or throws with a reason a person can read. */
     fun make(source: CleanSource): CleanCopyFile {
         val work = File(context.cacheDir, "clean-work").apply { mkdirs() }
         work.listFiles()?.forEach { it.delete() }
+        val superclean = source.superclean.isNotEmpty() && Prefs.claudeKey(context).isNotEmpty()
+        // A one-tap Superclean looks up the title's Parents Guide while the video downloads.
+        val asked = if (source.superclean.isNotEmpty()) Superclean.Wishes.fromJson(source.superclean) else null
+        val guide = if (superclean && asked?.autoGuide == true) java.util.concurrent.FutureTask {
+            try { SupercleanRun.lookUpGuide(context, source.title, source.referrer) to null } catch (e: Exception) { null to (e.message ?: "it could not be reached") }
+        }.also { Thread(it).start() } else null
+        share(0, if (superclean) 25 else 35)
         val input = fetch(source, File(work, "original"))
         check()
         val durationMs = durationOf(input)
@@ -146,6 +165,7 @@ class CleanCopy(private val context: Context, private val report: (step: String,
 
         // Nudity, from checking the pictures, unless this video was checked before.
         if (settings.nudity != Strictness.OFF && tags.none { it.source == Tag.SOURCE_SCAN }) {
+            share(if (superclean) 25 else 35, if (superclean) 35 else 55)
             val found = scan(input, durationMs)
             if (found == null) notes += "nudity detection is not set up, so nothing was blurred"
             else {
@@ -161,8 +181,23 @@ class CleanCopy(private val context: Context, private val report: (step: String,
             if (Prefs.claudeKey(context).isEmpty()) {
                 notes += "Superclean was skipped: there is no Claude key in Settings"
             } else {
-                val wishes = Superclean.Wishes.fromJson(source.superclean)
-                val found = SupercleanRun(context, settings, wishes, report, ::check).run(input, durationMs, cues)
+                var wishes = asked ?: Superclean.Wishes(Superclean.DEFAULT)
+                guide?.let { lookup ->
+                    report("Superclean: reading the IMDb Parents Guide", 100)
+                    val (found, failed) = lookup.get()
+                    when {
+                        found != null && !found.isEmpty -> {
+                            val scenes = wishes.scenesFrom(found)
+                            wishes = wishes.copy(guide = wishes.guide + scenes)
+                            notes += "the IMDb Parents Guide" + (if (found.title.isNotEmpty()) " for ${found.title}" else "") +
+                                " added ${scenes.size} ${if (scenes.size == 1) "scene" else "scenes"} to look for"
+                        }
+                        failed != null -> notes += "the Parents Guide could not be read ($failed)"
+                        else -> notes += "no Parents Guide was found for this title"
+                    }
+                }
+                share(35, 75)
+                val found = SupercleanRun(context, settings, wishes, { step, percent -> report(step, percent) }, ::check).run(input, durationMs, cues)
                 tags += found.tags
                 notes += found.note
                 if (found.finished) {
@@ -392,6 +427,8 @@ class CleanCopy(private val context: Context, private val report: (step: String,
         // Every video is first written once as an ordinary MP4, whatever it came as, so the cuts, blurs and mutes are
         // always made from a file that can be jumped about in (some downloads have no index for that).
         val plain = File(input.parentFile, "plain.mp4")
+        val ready = shareTo
+        share(ready, ready + (100 - ready) / 2)
         export(Composition.Builder(EditedMediaItemSequence(listOf(EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(input))).build())))
             .build(), plain, "Getting the video ready", null)
         check()
@@ -399,6 +436,7 @@ class CleanCopy(private val context: Context, private val report: (step: String,
     }
 
     private fun transformPieces(input: File, output: File, plan: CleanPlan) {
+        share(shareTo, 100)
         report("Making the clean copy", 0)
         val pieces = plan.keep.map { piece ->
             val clipped = piece.first > 0 || piece.last < plan.durationMs
