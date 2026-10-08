@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.content.pm.ActivityInfo
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.net.Uri
@@ -127,6 +128,10 @@ open class BrowserActivity : AppCompatActivity() {
     private var timeTotal: TextView? = null
     private var scrubbing = false
     @Volatile private var pendingCommand = ""
+    /** The TV, while this screen shows its page there in TV Mode; the phone then shows a remote instead. */
+    private var tv: com.safewatch.app.tv.TvStage? = null
+    private var remote: View? = null
+    private var stopWatchingTv: (() -> Unit)? = null
     @Volatile private var videoPositionMs = 0L
     @Volatile private var videoLengthMs = 0L
     @Volatile private var videoPaused = true
@@ -345,7 +350,7 @@ open class BrowserActivity : AppCompatActivity() {
         layer.addView(floating, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
         playerBar = floating
         playerLayer = layer
-        stage.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (playerView) layer.showOver(stage) }
+        stage.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (playerView && tv == null) layer.showOver(stage) }
 
         if (watchMode) {
             // A slim bar while browsing to the video.
@@ -397,7 +402,7 @@ open class BrowserActivity : AppCompatActivity() {
         root.addView(bottom)
         chrome = listOf(divider, bottom)
         web.setOnScrollChangeListener { _, _, y, _, oldY ->
-            if (barHiddenByChoice || playerView || address.hasFocus() || !Prefs.hideBarWhileScrolling(this)) return@setOnScrollChangeListener
+            if (barHiddenByChoice || playerView || tv != null || address.hasFocus() || !Prefs.hideBarWhileScrolling(this)) return@setOnScrollChangeListener
             if (y > oldY + 10 && y > Ui.dp(this, 80)) setBarHidden(true)
             else if (y < oldY - 10) setBarHidden(false)
         }
@@ -647,6 +652,12 @@ open class BrowserActivity : AppCompatActivity() {
         if (playerView == on) return
         playerView = on
         wantsFullPicture = on
+        if (tv != null) return
+        showPlayerOnPhone(on)
+    }
+
+    /** The phone's own player view: the picture sideways across the whole screen, with controls that fade. */
+    private fun showPlayerOnPhone(on: Boolean) {
         ViewCompat.requestApplyInsets(root)
         chrome.forEach { it.visibility = if (on || barHidden) View.GONE else View.VISIBLE }
         if (!on) bottomBar?.translationY = 0f
@@ -713,7 +724,153 @@ open class BrowserActivity : AppCompatActivity() {
         ui.post(watch)
         resumed = true
         scout?.wake()
-        if (playerView) stage.post { playerLayer?.showOver(stage) }
+        if (playerView && tv == null) stage.post { playerLayer?.showOver(stage) }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (com.safewatch.app.tv.TvMode.active) {
+            stopWatchingTv = com.safewatch.app.tv.TvMode.watch(this) { display -> if (display == null) leaveTv() else goOnTv(display) }
+            com.safewatch.app.tv.TvMode.display(this)?.let { goOnTv(it) }
+        }
+    }
+
+    override fun onStop() {
+        stopWatchingTv?.invoke()
+        stopWatchingTv = null
+        leaveTv(stopping = true)
+        super.onStop()
+    }
+
+    // ---- TV Mode: the page on the TV, the phone as its remote ----
+
+    /** Moves the page (and its blur) onto the TV, and puts the remote where the page was on the phone. */
+    private fun goOnTv(display: android.view.Display) {
+        if (tv != null || isFinishing || !::stage.isInitialized) return
+        val parent = stage.parent as? ViewGroup ?: return
+        val index = parent.indexOfChild(stage)
+        val params = stage.layoutParams
+        curtain.drop()
+        if (playerView) showPlayerOnPhone(false)
+        parent.removeView(stage)
+        val screen = com.safewatch.app.tv.TvStage(this, display)
+        screen.show()
+        screen.root.addView(stage, FrameLayout.LayoutParams(-1, -1))
+        screen.setOnDismissListener { if (tv === screen) leaveTv() }
+        tv = screen
+        val pad = com.safewatch.app.tv.RemotePad(this, tvTarget, display.name) {
+            com.safewatch.app.tv.TvMode.active = false
+            leaveTv()
+        }
+        parent.addView(pad, index, params)
+        remote = pad
+        chrome.forEach { it.visibility = View.VISIBLE }
+        note("TV Mode: showing the page on ${display.name}")
+    }
+
+    /** Brings the page back from the TV to the phone; [stopping] when this screen is going out of sight anyway. */
+    private fun leaveTv(stopping: Boolean = false) {
+        val screen = tv ?: return
+        tv = null
+        curtain.drop()
+        (stage.parent as? ViewGroup)?.removeView(stage)
+        val pad = remote
+        remote = null
+        val parent = pad?.parent as? ViewGroup
+        if (pad != null && parent != null) {
+            val index = parent.indexOfChild(pad)
+            val params = pad.layoutParams
+            parent.removeView(pad)
+            parent.addView(stage, index, params)
+        }
+        try { if (screen.isShowing) screen.dismiss() } catch (e: Exception) { /* the TV went away first */ }
+        if (playerView && !isFinishing && !stopping) showPlayerOnPhone(true)
+    }
+
+    private val tvTarget = object : com.safewatch.app.tv.TvTarget {
+        override val prefersPointer: Boolean get() = !ownControls
+        override fun arrow(keyCode: Int) {
+            when {
+                playerView && keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> send("skip:-10")
+                playerView && keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> send("skip:10")
+                else -> key(keyCode)
+            }
+        }
+        override fun ok() { if (playerView) send(if (videoPaused) "play" else "pause") else key(KeyEvent.KEYCODE_ENTER) }
+        override fun back() = goBack()
+        override fun home() = com.safewatch.app.tv.TvModeActivity.open(this@BrowserActivity)
+        override fun type() = askToType()
+        override fun media(command: String) = send(if (command == "toggle") (if (videoPaused) "play" else "pause") else command)
+        override fun pointer(dx: Float, dy: Float) { tv?.movePointer(dx, dy) }
+        override fun click() = tapOnTv()
+        override fun scroll(dy: Float) = wheel(dy)
+    }
+
+    private fun key(code: Int) {
+        val target = fullscreenView ?: web
+        target.requestFocus()
+        target.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        target.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+    }
+
+    /** Where the pointer is, over the page on the TV, or the middle of the page when it is not showing. */
+    private fun pointerOnPage(target: View): Pair<Float, Float> {
+        val screen = tv ?: return target.width / 2f to target.height / 2f
+        val at = IntArray(2)
+        target.getLocationInWindow(at)
+        return if (screen.pointerShown()) (screen.pointerX - at[0]) to (screen.pointerY - at[1]) else target.width / 2f to target.height / 2f
+    }
+
+    /** A click where the pointer is, as a tap on the page. The first tap only shows the pointer. */
+    private fun tapOnTv() {
+        val screen = tv ?: return
+        if (!screen.pointerShown()) { screen.movePointer(0f, 0f); return }
+        screen.movePointer(0f, 0f)
+        val target = fullscreenView ?: web
+        val (x, y) = pointerOnPage(target)
+        val down = SystemClock.uptimeMillis()
+        for ((action, time) in listOf(MotionEvent.ACTION_DOWN to down, MotionEvent.ACTION_UP to down + 50)) {
+            val e = MotionEvent.obtain(down, time, action, x, y, 0)
+            e.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+            target.dispatchTouchEvent(e)
+            e.recycle()
+        }
+    }
+
+    /** Scrolls whatever is under the pointer, as a mouse wheel would. */
+    private fun wheel(dy: Float) {
+        val target = fullscreenView ?: web
+        val (x, y) = pointerOnPage(target)
+        val props = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE })
+        val coords = arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y; setAxisValue(MotionEvent.AXIS_VSCROLL, -dy / 60f) })
+        val now = SystemClock.uptimeMillis()
+        val e = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1, props, coords, 0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_MOUSE, 0)
+        target.dispatchGenericMotionEvent(e)
+        e.recycle()
+    }
+
+    /** Typing from the phone: into the page's box that was clicked on, or as a search or an address. */
+    private fun askToType() {
+        val field = EditText(this).apply {
+            hint = "Type here"
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        val box = FrameLayout(this).apply {
+            setPadding(Ui.dp(context, 22), Ui.dp(context, 8), Ui.dp(context, 22), 0)
+            addView(field)
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Type on the TV")
+            .setMessage("Click a box on the page with the pointer first to type into it.")
+            .setView(box)
+            .setPositiveButton("Type into the page") { _, _ ->
+                val keys = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD).getEvents(field.text.toString().toCharArray())
+                keys?.forEach { web.dispatchKeyEvent(it) }
+            }
+            .setNeutralButton("Search or go") { _, _ -> go(field.text.toString()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+        field.requestFocus()
     }
 
     override fun onPause() {
@@ -771,6 +928,7 @@ open class BrowserActivity : AppCompatActivity() {
             }
             web.canGoBack() -> web.goBack()
             watchMode -> finish()
+            com.safewatch.app.tv.TvMode.active -> com.safewatch.app.tv.TvModeActivity.open(this)
             else -> MainActivity.open(this)
         }
     }
@@ -790,7 +948,7 @@ open class BrowserActivity : AppCompatActivity() {
 
     /** Whether a page should be asked for as a computer would: always if the viewer chose so, and for services that need it. */
     private fun wantsDesktop(url: String): Boolean =
-        Prefs.desktopSite(this) || Services.forUrl(url)?.needsDesktopSite == true
+        Prefs.desktopSite(this) || Services.forUrl(url)?.needsDesktopSite == true || com.safewatch.app.tv.TvMode.active
 
     private fun agentFor(url: String): String {
         if (!wantsDesktop(url)) return mobileAgent
@@ -1571,7 +1729,7 @@ open class BrowserActivity : AppCompatActivity() {
         val copiedAt = videoPositionMs
         val curtainWasUp = hidden || aheadHidden
         try {
-            PixelCopy.request(window, area, frame, { result ->
+            PixelCopy.request(tv?.window ?: window, area, frame, { result ->
                 copying = false
                 if (result != PixelCopy.SUCCESS || background.isShutdown) {
                     if (testing) Log.i("SafeWatch", "blur test: the screen could not be read (code $result)")

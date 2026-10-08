@@ -102,6 +102,15 @@ class MainActivity : AppCompatActivity() {
         if (tab == TAB_FILTERS) filters.onShown()
     }
 
+    private var stopWatchingTv: (() -> Unit)? = null
+
+    override fun onStart() {
+        super.onStart()
+        // Connecting the phone to a TV (Smart View, or a cable) offers TV Mode straight away.
+        stopWatchingTv = com.safewatch.app.tv.TvMode.watch(this) { com.safewatch.app.tv.TvMode.offer(this, it) }
+        com.safewatch.app.tv.TvMode.offer(this, com.safewatch.app.tv.TvMode.display(this))
+    }
+
     /** Lets the viewer tick which streaming services they use. */
     fun editServices(onDone: () -> Unit) {
         val chosen = Prefs.connectedServices(this).toMutableSet()
@@ -211,6 +220,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
+        stopWatchingTv?.invoke()
+        stopWatchingTv = null
         super.onStop()
         // Leaving the app locks Settings again.
         if (!isChangingConfigurations) settingsUnlocked = false

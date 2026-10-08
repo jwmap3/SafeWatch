@@ -80,6 +80,8 @@ class HomeScreen(private val activity: MainActivity) {
         setPadding(Ui.dp(context, 8), Ui.dp(context, 8), Ui.dp(context, 8), Ui.dp(context, 6))
         addView(Ui.logo(context, 48).apply { setOnClickListener { onNameTapped() } },
             FrameLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48), Gravity.CENTER))
+        addView(Ui.iconButton(context, R.drawable.ic_tv, "TV Mode") { com.safewatch.app.tv.TvModeActivity.open(activity) },
+            FrameLayout.LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46), Gravity.START or Gravity.CENTER_VERTICAL))
         addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV") { Ui.sendToTv(activity) },
             FrameLayout.LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46), Gravity.END or Gravity.CENTER_VERTICAL))
     }

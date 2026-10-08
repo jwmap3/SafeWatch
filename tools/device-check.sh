@@ -170,6 +170,23 @@ tap "Icons and names";    sleep 1
 tap "Arrange tabs";       sleep 1
 tap "RESET";              shot 20e-tabs-reset 2
 
+# ---- TV Mode, on a pretend TV (a second screen drawn over this phone's own) ----
+adb shell settings put global overlay_display_devices 720x405/160; sleep 4
+adb shell input swipe 540 1200 540 260 700; sleep 1   # moves the pretend TV out of the remote's way
+start;                    shot 21-tv-offer 6
+timeout 60 python3 tools/tap.py "TV MODE" | tee -a "$OUT/summary.txt" | grep -q " at " || adb shell am start -n $PKG/.tv.TvModeActivity > /dev/null
+shot 21b-tv-home 8
+tap "Home";               sleep 1
+pad() { timeout 60 python3 tools/tap.py Touchpad exact "$1" | tee -a "$OUT/summary.txt"; sleep 1; }
+pad 0.5,0.9; pad 0.5,0.9; shot 21c-tv-moved 1
+pad 0.9,0.5; pad 0.9,0.5; shot 21d-tv-moved 1
+pad 0.5,0.5;              shot 21e-tv-page 12
+adb shell input swipe 400 1500 700 1300 300; shot 21f-tv-pointer 2
+tap "Back";               shot 21g-tv-back 4
+tap "Exit TV Mode";       shot 21h-tv-exit 3
+adb shell settings delete global overlay_display_devices; sleep 2
+adb logcat -d -s SafeWatch:I | grep -i "TV Mode" | tee -a "$OUT/summary.txt"
+
 start;                    sleep 5
 tap "Settings";           sleep 2
 tap_scrolling "Light";    shot 17-light 5

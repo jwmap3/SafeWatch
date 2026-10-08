@@ -46,7 +46,7 @@ object Ui {
     fun rounded(color: Int, radius: Float): GradientDrawable =
         GradientDrawable().apply { setColor(color); cornerRadius = radius }
 
-    private fun ripple(ctx: Context): Drawable? {
+    fun ripple(ctx: Context): Drawable? {
         val value = TypedValue()
         ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)
         return ctx.getDrawable(value.resourceId)
@@ -570,6 +570,9 @@ object Ui {
             option("YouTube on TV", "Plays in your TV's own YouTube app, with the cursing muted from your phone. Nothing to download; " +
                 "your phone can be locked.") { youtube() }
         }
+        option("TV Mode", "EdenOS fills the TV with its own home screen and your phone becomes the remote. Connects with Smart View.") {
+            com.safewatch.app.tv.TvModeActivity.open(activity)
+        }
         option("Mirror to TV", "Shows this screen on the TV, filters included. Works with everything; keep the phone on.") {
             AlertDialog.Builder(activity)
                 .setTitle("Mirror to TV")
@@ -599,6 +602,9 @@ object Ui {
         option("Your clean copies", "Play one on the TV, or see one being made.") { com.safewatch.app.tv.TvActivity.open(activity) }
         dialog = AlertDialog.Builder(activity).setTitle("Send to TV").setView(list).setNegativeButton("Cancel", null).show()
     }
+
+    /** Opens the phone's screen casting (Smart View on Samsung phones). */
+    fun openScreenCasting(activity: Activity) = openCastPanel(activity)
 
     private fun openCastPanel(activity: Activity) {
         for (action in listOf(Settings.ACTION_CAST_SETTINGS, Settings.ACTION_WIRELESS_SETTINGS)) {

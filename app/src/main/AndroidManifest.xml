@@ -88,6 +88,9 @@
         </activity>
         <activity android:name=".tv.TvActivity" />
 
+        <!-- TV Mode: EdenOS on the TV as a second screen, with this screen as the remote. -->
+        <activity android:name=".tv.TvModeActivity" android:screenOrientation="portrait" />
+
         <!-- Makes clean copies and hands them to the TV, with the screen off. -->
         <service
             android:name=".tv.TvService"
