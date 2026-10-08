@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The halo of the app's mark, drawn in white so it can be given any colour. Sits over ic_logo_eye. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="60"
+    android:viewportHeight="60">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.4"
+        android:pathData="M16,10 a14,4.6 0 1,0 28,0 a14,4.6 0 1,0 -28,0" />
+</vector>

@@ -75,23 +75,18 @@ class HomeScreen(private val activity: MainActivity) {
         }.start()
     }
 
-    private fun header(): View = LinearLayout(activity).apply {
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(Ui.dp(context, 18), Ui.dp(context, 10), Ui.dp(context, 8), Ui.dp(context, 6))
-        addView(ImageView(context).apply {
-            setImageResource(if (Ui.isNight(context)) R.drawable.ic_logo else R.drawable.ic_logo_dark)
+    /** The top of Home: the eye-and-halo mark in the middle, in the theme's colours, and Send to TV at the side. */
+    private fun header(): View = FrameLayout(activity).apply {
+        setPadding(Ui.dp(context, 8), Ui.dp(context, 8), Ui.dp(context, 8), Ui.dp(context, 6))
+        addView(FrameLayout(context).apply {
             contentDescription = "SafeWatch"
+            // The eye takes the text colour and the halo the primary colour, so the mark follows the theme.
+            addView(Ui.icon(context, R.drawable.ic_logo_eye, R.color.text, 44))
+            addView(Ui.icon(context, R.drawable.ic_logo_halo, R.color.accent, 44))
             setOnClickListener { onNameTapped() }
-        }, LinearLayout.LayoutParams(Ui.dp(context, 34), Ui.dp(context, 34)).apply { marginEnd = Ui.dp(context, 8) })
-        addView(TextView(context).apply {
-            text = "SafeWatch"
-            setOnClickListener { onNameTapped() }
-            textSize = 24f
-            typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            letterSpacing = -0.02f
-            setTextColor(Ui.color(context, R.color.text))
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(Ui.iconButton(context, R.drawable.ic_tv, "Send to TV") { Ui.sendToTv(activity) })
+        }, FrameLayout.LayoutParams(Ui.dp(context, 44), Ui.dp(context, 44), Gravity.CENTER))
+        addView(Ui.iconButton(context, R.drawable.ic_tv, "Send to TV") { Ui.sendToTv(activity) },
+            FrameLayout.LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46), Gravity.END or Gravity.CENTER_VERTICAL))
     }
 
     private var nameTaps = 0
