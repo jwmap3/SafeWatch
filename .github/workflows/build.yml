@@ -30,6 +30,9 @@ jobs:
         run: ./gradlew :core:test
 
       - name: Build the APK
+        env:
+          # Set this in the repo's Settings > Secrets to build the family Claude key into the download.
+          CLAUDE_KEY: ${{ secrets.CLAUDE_KEY }}
         run: ./gradlew :app:assembleEdenosDebug :app:assembleCleanchromeDebug
 
       - name: Publish the APK

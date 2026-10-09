@@ -149,7 +149,9 @@ object Prefs {
      * The viewer's own Anthropic API key, for Superclean. Kept only on this phone, in the app's private
      * storage, and sent only to Anthropic.
      */
-    fun claudeKey(ctx: Context): String = prefs(ctx).getString("claudeKey", "")!!
+    // The key saved on this phone, or the one built into the download (BuildConfig.CLAUDE_KEY) until one is entered.
+    fun claudeKey(ctx: Context): String =
+        prefs(ctx).getString("claudeKey", null)?.takeIf { it.isNotEmpty() } ?: com.safewatch.app.BuildConfig.CLAUDE_KEY
 
     fun setClaudeKey(ctx: Context, key: String) = prefs(ctx).edit().putString("claudeKey", key.trim()).apply()
 
@@ -196,6 +198,19 @@ object Prefs {
         "bing" -> "https://www.bing.com/search?adlt=strict&q="
         else -> "https://www.google.com/search?safe=active&q="
     }
+
+    /** A running estimate, in US cents, of what Superclean has spent on this phone's Anthropic key. */
+    fun supercleanSpentCents(ctx: Context): Long = prefs(ctx).getLong("supercleanSpentCents", 0L)
+
+    fun addSupercleanSpent(ctx: Context, cents: Long) =
+        prefs(ctx).edit().putLong("supercleanSpentCents", supercleanSpentCents(ctx) + cents).apply()
+
+    fun resetSupercleanSpent(ctx: Context) = prefs(ctx).edit().putLong("supercleanSpentCents", 0L).apply()
+
+    /** How many days scrubbed copies are kept before being deleted to save space; 0 keeps them until deleted by hand. */
+    fun keepCopiesDays(ctx: Context): Int = prefs(ctx).getInt("keepCopiesDays", 7)
+
+    fun setKeepCopiesDays(ctx: Context, days: Int) = prefs(ctx).edit().putInt("keepCopiesDays", days).apply()
 
     /** Whether the browser refuses adult websites. */
     fun blockAdult(ctx: Context): Boolean = prefs(ctx).getBoolean("blockAdult", true)

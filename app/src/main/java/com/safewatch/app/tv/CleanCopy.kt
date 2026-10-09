@@ -126,6 +126,9 @@ data class CleanCopyFile(val file: File, val title: String, val summary: String,
         val mb = file.length() / (1024.0 * 1024.0)
         return if (mb >= 1024) String.format("%.1f GB", mb / 1024) else String.format("%.0f MB", mb)
     }
+
+    /** The cover picture made from the video, or null if there is none. */
+    val thumb: File? get() = File(file.parentFile, file.nameWithoutExtension + ".jpg").takeIf { it.exists() }
 }
 
 /**
@@ -226,6 +229,11 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
                 val found = SupercleanRun(context, settings, wishes, { step, percent -> report(step, percent) }, ::check).run(input, durationMs, cues)
                 tags += found.tags
                 notes += found.note
+                // Keep a running estimate of what has been spent on the key.
+                val model = Prefs.claudeModel(context)
+                var spent = SupercleanRun.costEstimate(durationMs, model)
+                if (wishes.autoGuide || wishes.guide.isNotEmpty()) spent += if (model == com.safewatch.core.ClaudeApi.HAIKU) 0.01 else 0.10
+                Prefs.addSupercleanSpent(context, Math.round(spent * 100))
                 if (found.finished) {
                     // The phone's own player uses them too, next time this video plays.
                     val kept = TagStore.load(context, source.key).filter { it.source != Tag.SOURCE_CLAUDE }
@@ -240,6 +248,8 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
         val output = File(folder(context), "$id.mp4")
         transform(input, output, plan)
         check()
+        // A cover picture, taken a little way into the finished copy.
+        saveThumb(output, File(folder(context), "$id.jpg"))
         val summary = (listOf(plan.summary()) + notes).joinToString("; ")
         File(folder(context), "$id.json").writeText(JSONObject()
             .put("title", source.title).put("summary", summary).put("madeAt", System.currentTimeMillis())
@@ -250,6 +260,24 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
 
     private fun check() {
         if (cancelled) throw IOException("Stopped")
+    }
+
+    /** Takes one frame from the finished copy and writes it as the cover picture. Quietly does nothing if it cannot. */
+    private fun saveThumb(video: File, into: File) {
+        val r = MediaMetadataRetriever()
+        try {
+            r.setDataSource(video.absolutePath)
+            val durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            // A little way in, so it is not a black opening frame.
+            val at = (if (durationMs > 60_000) 20_000L else durationMs / 4) * 1000
+            val frame = r.getScaledFrameAtTime(at, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 640, 360) ?: return
+            into.outputStream().use { frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
+            frame.recycle()
+        } catch (e: Exception) {
+            // No cover; the title's name is shown instead.
+        } finally {
+            try { r.release() } catch (e: Exception) { /* already released */ }
+        }
     }
 
     // ---- Getting the file ----
@@ -566,13 +594,20 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
 
         fun delete(video: File) {
             video.delete()
-            File(video.parentFile, video.name.removeSuffix(".mp4") + ".json").delete()
+            val base = video.name.removeSuffix(".mp4")
+            File(video.parentFile, "$base.json").delete()
+            File(video.parentFile, "$base.jpg").delete()
         }
 
-        /** A clean copy is for one viewing: anything a day old is deleted, whether or not it was played. */
+        /** Clean copies are kept for as long as Settings says (a week by default), then deleted to save space. */
         fun deleteOld(context: Context) {
+            val days = Prefs.keepCopiesDays(context)
+            if (days > 0) {
+                val cutoff = System.currentTimeMillis() - days * 24L * 60 * 60_000L
+                folder(context).listFiles { f -> f.name.endsWith(".mp4") }.orEmpty().filter { it.lastModified() < cutoff }.forEach { delete(it) }
+            }
+            // Half-finished work is always cleared after a day.
             val dayAgo = System.currentTimeMillis() - 24 * 60 * 60_000L
-            folder(context).listFiles().orEmpty().filter { it.lastModified() < dayAgo }.forEach { it.delete() }
             File(context.cacheDir, "clean-work").listFiles().orEmpty().filter { it.lastModified() < dayAgo }.forEach { it.delete() }
         }
     }

@@ -46,22 +46,31 @@ object Images {
     }
 
     private fun fetch(url: String, minWidth: Int, clear: Boolean): Bitmap? {
+        // A picture on this phone (a scrubbed copy's cover), rather than from the web.
+        if (url.startsWith("/") || url.startsWith("file:")) {
+            val bytes = java.io.File(url.removePrefix("file://")).readBytes()
+            return decode(bytes, minWidth, clear)
+        }
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 10_000
             connection.readTimeout = 20_000
             val bytes = connection.inputStream.use { it.readBytes() }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            var sample = 1
-            while (bounds.outWidth / (sample * 2) >= minWidth) sample *= 2
-            val options = BitmapFactory.Options().apply {
-                inSampleSize = sample
-                inPreferredConfig = if (clear) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
-            }
-            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            return decode(bytes, minWidth, clear)
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun decode(bytes: ByteArray, minWidth: Int, clear: Boolean): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= minWidth) sample *= 2
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = if (clear) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
+        }
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
     }
 }

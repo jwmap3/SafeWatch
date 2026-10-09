@@ -329,5 +329,9 @@ class PlayerActivity : AppCompatActivity() {
         private const val CHECK_EVERY_MS = 200L
         private const val LIVE_HOLD_MS = 1500L
         private const val SCAN_STEP_MS = 1000L
+
+        /** Plays a scrubbed copy, already cleaned, full-screen on this phone. */
+        fun openCopy(ctx: android.content.Context, file: java.io.File, title: String) = ctx.startActivity(
+            android.content.Intent(ctx, PlayerActivity::class.java).setData(Uri.fromFile(file)).putExtra("title", title))
     }
 }

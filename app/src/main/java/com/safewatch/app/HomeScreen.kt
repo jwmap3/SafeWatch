@@ -87,8 +87,8 @@ class HomeScreen(private val activity: MainActivity) {
             background = Ui.rounded(colour, Ui.dp(ctx, 6).toFloat())
             setPadding(Ui.dp(ctx, 6), Ui.dp(ctx, 2), Ui.dp(ctx, 6), Ui.dp(ctx, 2))
         }
-        fun tile(title: String, status: String, colour: Int, under: String?, progress: Int? = null, onClick: () -> Unit) {
-            val poster = Ui.poster(ctx, title, null, 118, onClick)
+        fun tile(title: String, status: String, colour: Int, under: String?, progress: Int? = null, thumb: String? = null, onClick: () -> Unit) {
+            val poster = Ui.poster(ctx, title, thumb, 118, onClick)
             poster.addView(badge(status, colour), FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
                 leftMargin = Ui.dp(ctx, 6); topMargin = Ui.dp(ctx, 6)
             })
@@ -138,7 +138,7 @@ class HomeScreen(private val activity: MainActivity) {
             }
         }
         for (copy in ready) {
-            tile(copy.title, "Ready", accent, "Tap to play on the TV") { com.safewatch.app.tv.TvActivity.open(ctx) }
+            tile(copy.title, "Ready", accent, "Tap to play", thumb = copy.thumb?.absolutePath) { com.safewatch.app.tv.TvActivity.open(ctx) }
         }
         if (strip.childCount == 0) {
             tile("Tap Superclean while a movie plays", "Empty", android.graphics.Color.rgb(110, 110, 118), null) {

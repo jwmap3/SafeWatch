@@ -204,9 +204,12 @@ class TvService : Service() {
                 FilterLog.add("sent to ${device.name}: $title")
             } catch (e: Exception) {
                 FilterLog.add("could not send to ${device.name}: ${e.message}")
+                val why = "${device.name} did not accept the video (${e.message}). Make sure the phone and TV are on the same " +
+                    "Wi-Fi, that the router does not separate devices (AP isolation / guest network), and allow edenOS on the TV if it asks."
                 ui.post {
                     stopPlaying(tellTv = false)
-                    TvState.job = TvState.Job(title, "Not sent", -1, error = "${device.name} did not accept the video: ${e.message}")
+                    TvState.rememberFailure(applicationContext, title, why)
+                    TvState.job = TvState.Job(title, "Not sent", -1, error = why)
                     TvState.changed()
                 }
             }
@@ -373,16 +376,10 @@ class TvService : Service() {
         castRound++
         proxy?.stop()
         proxy = null
-        val finished = server
         server?.stop()
         server = null
-        // A clean copy is for one viewing: once the TV has played it through, it is deleted.
-        val file = servingFile
+        // Copies are kept now (Settings decides for how long), so playing one through no longer deletes it.
         servingFile = null
-        if (finished != null && file != null && finished.readShare > 0.9) {
-            CleanCopy.delete(file)
-            FilterLog.add("clean copy played through and deleted")
-        }
         TvState.playingTitle = null
         TvState.playingOn = null
         TvState.paused = false

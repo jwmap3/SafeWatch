@@ -13,6 +13,11 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
+
+        // The Claude key built into the download, so family phones have it without typing it. It is read from the
+        // CLAUDE_KEY build secret (never kept in the code); when the secret is unset the field is empty.
+        val claudeKey = System.getenv("CLAUDE_KEY") ?: (project.findProperty("CLAUDE_KEY") as String?) ?: ""
+        buildConfigField("String", "CLAUDE_KEY", "\"$claudeKey\"")
     }
 
     // The test build is always signed with the key kept in this folder, so a

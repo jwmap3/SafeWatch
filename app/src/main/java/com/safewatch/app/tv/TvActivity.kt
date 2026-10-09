@@ -8,6 +8,7 @@ import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.text.format.DateUtils
+import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -129,26 +130,39 @@ class TvActivity : AppCompatActivity() {
             copies.forEachIndexed { i, copy ->
                 if (i > 0) addView(Ui.divider(this@TvActivity))
                 addView(LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
                     setPadding(Ui.dp(context, 16), Ui.dp(context, 12), Ui.dp(context, 16), Ui.dp(context, 12))
-                    addView(TextView(context).apply {
-                        text = copy.title
-                        textSize = 17f
-                        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                        setTextColor(Ui.color(context, R.color.text))
-                    })
-                    addView(TextView(context).apply {
-                        text = copy.summary
-                        textSize = 13f
-                        setTextColor(Ui.color(context, R.color.text_secondary))
-                        setPadding(0, Ui.dp(context, 2), 0, 0)
-                    })
-                    addView(TextView(context).apply {
-                        text = Ui.time(copy.durationMs) + "  ·  " + copy.sizeText + "  ·  " +
-                            DateUtils.getRelativeTimeSpanString(copy.madeAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
-                        textSize = 13f
-                        setTextColor(Ui.color(context, R.color.text_secondary))
-                    })
+                    // The cover picture made from the video.
+                    addView(android.widget.ImageView(context).apply {
+                        scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                        clipToOutline = true
+                        background = Ui.rounded(Ui.color(context, R.color.fill), Ui.dp(context, 8).toFloat())
+                        copy.thumb?.let { com.safewatch.app.ui.Images.load(it.absolutePath, this) }
+                    }, LinearLayout.LayoutParams(Ui.dp(context, 96), Ui.dp(context, 54)).apply { marginEnd = Ui.dp(context, 12) })
+                    addView(LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        addView(TextView(context).apply {
+                            text = copy.title
+                            textSize = 17f
+                            maxLines = 2
+                            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                            setTextColor(Ui.color(context, R.color.text))
+                        })
+                        addView(TextView(context).apply {
+                            text = copy.summary
+                            textSize = 13f
+                            maxLines = 2
+                            setTextColor(Ui.color(context, R.color.text_secondary))
+                            setPadding(0, Ui.dp(context, 2), 0, 0)
+                        })
+                        addView(TextView(context).apply {
+                            text = Ui.time(copy.durationMs) + "  ·  " + copy.sizeText + "  ·  " +
+                                DateUtils.getRelativeTimeSpanString(copy.madeAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
+                            textSize = 13f
+                            setTextColor(Ui.color(context, R.color.text_secondary))
+                        })
+                    }, LinearLayout.LayoutParams(0, -2, 1f))
                     setOnClickListener { choose(copy) }
                 })
             }
@@ -214,12 +228,14 @@ class TvActivity : AppCompatActivity() {
         val last = lastTv(this)
         val busy = TvState.job?.let { it.made == null && it.error == null } == true
         val again = copy.source?.takeIf { !busy }
-        val options = listOfNotNull(last?.let { "Play on ${it.name}" }, "Play on a TV…", again?.let { "Superclean this" }, "Delete")
+        val options = listOfNotNull(last?.let { "Play on ${it.name}" }, "Play on a TV…", "Watch on this phone",
+            again?.let { "Superclean this" }, "Delete")
         AlertDialog.Builder(this)
             .setTitle(copy.title)
             .setItems(options.toTypedArray()) { _, which ->
                 when (options[which]) {
                     "Play on a TV…" -> pickTv(copy)
+                    "Watch on this phone" -> com.safewatch.app.player.PlayerActivity.openCopy(this, copy.file, copy.title)
                     "Superclean this" -> again?.let { SupercleanActivity.open(this, it, replaces = copy.file.absolutePath) }
                     "Delete" -> AlertDialog.Builder(this).setMessage("Delete the clean copy of ${copy.title}?")
                         .setPositiveButton("Delete") { _, _ -> CleanCopy.delete(copy); show() }

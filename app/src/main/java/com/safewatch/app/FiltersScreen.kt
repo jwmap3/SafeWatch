@@ -239,7 +239,21 @@ class FiltersScreen(private val activity: MainActivity) {
         val claudeModel = Prefs.claudeModel(ctx)
         column.addView(Ui.sectionHeader(ctx, "Superclean"))
         column.addView(Ui.card(ctx).apply {
-            addView(Ui.row(ctx, "Claude API key", if (claudeKey.isEmpty()) "Not added" else "Added") { editClaudeKey() })
+            val builtIn = com.safewatch.app.BuildConfig.CLAUDE_KEY.isNotEmpty() &&
+                Prefs.claudeKey(ctx) == com.safewatch.app.BuildConfig.CLAUDE_KEY
+            addView(Ui.row(ctx, "Claude API key", if (claudeKey.isEmpty()) "Not added" else if (builtIn) "Built in" else "Added") { editClaudeKey() })
+            if (claudeKey.isNotEmpty()) {
+                addView(Ui.divider(ctx))
+                val spent = Prefs.supercleanSpentCents(ctx)
+                addView(Ui.row(ctx, "Estimated spent so far", "$" + String.format(java.util.Locale.US, "%.2f", spent / 100.0)) {
+                    AlertDialog.Builder(activity).setTitle("Estimated spend")
+                        .setMessage("About $" + String.format(java.util.Locale.US, "%.2f", spent / 100.0) + " of Anthropic credit used by " +
+                            "Superclean on this phone, worked out from each clean. Anthropic does not let an app read the real balance left " +
+                            "on a key, so this is only an estimate. Your true balance and limits are at console.anthropic.com.")
+                        .setPositiveButton("Reset the count") { _, _ -> Prefs.resetSupercleanSpent(activity); rebuild() }
+                        .setNegativeButton("Close", null).show()
+                })
+            }
             if (claudeKey.isNotEmpty()) {
                 addView(Ui.divider(ctx))
                 addView(Ui.row(ctx, "Model", chevron = false).apply {
@@ -269,6 +283,14 @@ class FiltersScreen(private val activity: MainActivity) {
             addView(Ui.switchRow(ctx, "Use the IMDb Parents Guide", Prefs.supercleanGuide(ctx)) { Prefs.setSupercleanGuide(ctx, it) })
             addView(Ui.divider(ctx))
             addView(Ui.switchRow(ctx, "Review before each one", Prefs.supercleanReview(ctx)) { Prefs.setSupercleanReview(ctx, it) })
+            addView(Ui.divider(ctx))
+            addView(Ui.row(ctx, "Keep scrubbed movies", chevron = false).apply {
+                val days = listOf(1, 7, 30, 0)
+                addView(Ui.segmented(ctx, listOf("1 day", "1 week", "1 month", "Always"),
+                    days.indexOf(Prefs.keepCopiesDays(ctx)).coerceAtLeast(0)) {
+                    Prefs.setKeepCopiesDays(ctx, days[it])
+                }, LinearLayout.LayoutParams(Ui.dp(ctx, 250), -2))
+            })
         })
         column.addView(Ui.caption(ctx,
             "One tap on Superclean while a video plays and it is downloaded and scrubbed in the background, with these choices; Home shows its progress under Your Scrubbed Movies. Superclean is a clean copy for the TV that Claude has been through too. Claude looks at small pictures from the " +
