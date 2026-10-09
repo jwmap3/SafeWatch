@@ -44,6 +44,9 @@ android {
 
     buildFeatures { buildConfig = true }
 
+    // The video-checking engine's library is stored compressed, so the download is much smaller.
+    packaging { jniLibs { useLegacyPackaging = true } }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
