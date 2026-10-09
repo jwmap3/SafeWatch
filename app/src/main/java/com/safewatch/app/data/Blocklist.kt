@@ -2,7 +2,6 @@ package com.safewatch.app.data
 
 import android.content.Context
 import com.safewatch.core.SiteBlock
-import java.util.zip.GZIPInputStream
 
 /** The websites the browser will not open: adult sites, and Twitter (X), Reddit and Instagram, as chosen in Settings. */
 object Blocklist {
@@ -18,7 +17,8 @@ object Blocklist {
 
     private fun adultSites(ctx: Context): Set<String> = adult ?: synchronized(this) {
         adult ?: try {
-            GZIPInputStream(ctx.assets.open("blocklist-adult.txt.gz")).bufferedReader().useLines { lines ->
+            // Stored plain: the build tools would otherwise unpack a .gz file and leave it under another name.
+            ctx.assets.open("blocklist-adult.txt").bufferedReader().useLines { lines ->
                 lines.filter { it.isNotBlank() }.toHashSet()
             }
         } catch (e: Exception) {

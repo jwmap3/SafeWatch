@@ -37,6 +37,8 @@ android {
         create("cleanchrome") {
             dimension = "app"
             applicationId = "com.safewatch.cleanchrome"
+            // Phones only (64-bit ARM, as every recent phone is), so the download is a third the size.
+            ndk { abiFilters += listOf("arm64-v8a") }
         }
     }
 

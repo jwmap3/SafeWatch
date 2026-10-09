@@ -3,11 +3,10 @@
 
 Sources (each under its own licence, see docs/blocklists.md): the adult-site extensions of Steven Black's
 unified hosts lists (MIT), with the lists by Sinfonietta, Clefspeare13 and Tiuxo. The domains are merged,
-cleaned, sorted and written gzipped to app/src/main/assets/blocklist-adult.txt.gz, one per line.
+cleaned, sorted and written to app/src/main/assets/blocklist-adult.txt, one per line (the APK compresses it).
 
 Usage: python3 tools/build-blocklist.py
 """
-import gzip
 import re
 import urllib.request
 
@@ -33,6 +32,6 @@ for url in SOURCES:
         if NAME.match(host) and host not in ("localhost",):
             domains.add(host)
 
-with gzip.open("app/src/main/assets/blocklist-adult.txt.gz", "wt", encoding="utf-8") as out:
+with open("app/src/main/assets/blocklist-adult.txt", "w", encoding="utf-8") as out:
     out.write("\n".join(sorted(domains)) + "\n")
 print(len(domains), "domains")
