@@ -190,11 +190,22 @@ object Prefs {
 
     fun setSearchEngine(ctx: Context, id: String) = prefs(ctx).edit().putString("searchEngine", id).apply()
 
+    // Searches always ask for each engine's safe search, so explicit results are left out.
     fun searchPrefix(ctx: Context): String = when (searchEngine(ctx)) {
-        "duckduckgo" -> "https://duckduckgo.com/?q="
-        "bing" -> "https://www.bing.com/search?q="
-        else -> "https://www.google.com/search?q="
+        "duckduckgo" -> "https://duckduckgo.com/?kp=1&q="
+        "bing" -> "https://www.bing.com/search?adlt=strict&q="
+        else -> "https://www.google.com/search?safe=active&q="
     }
+
+    /** Whether the browser refuses adult websites. */
+    fun blockAdult(ctx: Context): Boolean = prefs(ctx).getBoolean("blockAdult", true)
+
+    fun setBlockAdult(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("blockAdult", on).apply()
+
+    /** Whether the browser refuses Twitter (X), Reddit and Instagram. */
+    fun blockSocial(ctx: Context): Boolean = prefs(ctx).getBoolean("blockSocial", true)
+
+    fun setBlockSocial(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("blockSocial", on).apply()
 
     /** Whether the browser's bar slides away while reading down a page. */
     fun hideBarWhileScrolling(ctx: Context): Boolean = prefs(ctx).getBoolean("autoHideBar", true)

@@ -205,6 +205,8 @@ open class BrowserActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // CleanChrome has no welcome screen of its own: its Settings open without one.
+        if (CLEAN_CHROME && !Prefs.welcomed(this)) Prefs.setWelcomed(this)
         if (handOffToPlayer(intent)) {
             finish()
             return
@@ -1020,7 +1022,7 @@ open class BrowserActivity : AppCompatActivity() {
             menu.add(0, 5, 4, "Quick links")
             menu.add(0, 6, 5, "Hide this bar")
             menu.add(0, 7, 6, if (desktop) "Mobile site" else "Desktop site")
-            menu.add(0, 8, 7, "edenOS home")
+            menu.add(0, 8, 7, if (CLEAN_CHROME) "Settings" else "edenOS home")
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> web.goForward()
@@ -1037,7 +1039,7 @@ open class BrowserActivity : AppCompatActivity() {
                         Prefs.setDesktopSite(this@BrowserActivity, !desktop)
                         web.url?.let { load(it) }
                     }
-                    8 -> MainActivity.open(this@BrowserActivity)
+                    8 -> if (CLEAN_CHROME) MainActivity.open(this@BrowserActivity, MainActivity.TAB_FILTERS) else MainActivity.open(this@BrowserActivity)
                 }
                 true
             }
@@ -1047,7 +1049,14 @@ open class BrowserActivity : AppCompatActivity() {
 
     private inner class Client : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
-            // Only watched, never changed: the request goes on to the site as it is.
+            // Blocked sites never load, as a page or as anything inside another page.
+            com.safewatch.app.data.Blocklist.reason(applicationContext, request.url.host)?.let { why ->
+                val host = request.url.host.orEmpty()
+                if (request.isForMainFrame) FilterLog.add("blocked $host ($why)")
+                val body = if (request.isForMainFrame) com.safewatch.app.data.Blocklist.page(host, why) else ""
+                return android.webkit.WebResourceResponse("text/html", "utf-8", 200, "OK", emptyMap(), body.byteInputStream())
+            }
+            // Otherwise only watched, never changed: the request goes on to the site as it is.
             val url = request.url.toString()
             if (MEDIA_REQUEST.containsMatchIn(url)) {
                 if (mediaHeaders.size > 60) mediaHeaders.clear()
@@ -1790,6 +1799,9 @@ open class BrowserActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** Whether this is CleanChrome, the browser as an app of its own, rather than edenOS. */
+        val CLEAN_CHROME: Boolean = com.safewatch.app.BuildConfig.FLAVOR == "cleanchrome"
+
         /** Addresses that are video, or a stream's list of pieces, or one of its pieces. */
         private val MEDIA_REQUEST = Regex("\\.(m3u8|mpd|mp4|m4v|webm|mov|mkv|ts|m4s|m4a|aac)(\\?|#|$)|/manifest|/playlist|videoplayback", RegexOption.IGNORE_CASE)
         /** Stops the browser telling every site the app's package name, as WebView otherwise may. */

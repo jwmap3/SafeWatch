@@ -30,19 +30,21 @@ jobs:
         run: ./gradlew :core:test
 
       - name: Build the APK
-        run: ./gradlew :app:assembleDebug
+        run: ./gradlew :app:assembleEdenosDebug :app:assembleCleanchromeDebug
 
       - name: Publish the APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk EdenOS.apk
+          cp app/build/outputs/apk/edenos/debug/app-edenos-debug.apk EdenOS.apk
+          # CleanChrome: the browser on its own, as a separate app.
+          cp app/build/outputs/apk/cleanchrome/debug/app-cleanchrome-debug.apk CleanChrome.apk
           # The app was first called SafeWatch; the old file name keeps working for links saved before.
           cp EdenOS.apk SafeWatch.apk
-          notes="Test build from commit ${GITHUB_SHA::7}. Download EdenOS.apk below and open it on your Android phone. (SafeWatch.apk is the same file under the app's old name.)"
+          notes="Test build from commit ${GITHUB_SHA::7}. Download EdenOS.apk below and open it on your Android phone. CleanChrome.apk is its browser as an app of its own. (SafeWatch.apk is EdenOS.apk under the app's old name.)"
           if gh release view latest >/dev/null 2>&1; then
             gh release edit latest --title "EdenOS test build" --notes "$notes"
           else
             gh release create latest --title "EdenOS test build" --notes "$notes"
           fi
-          gh release upload latest EdenOS.apk SafeWatch.apk --clobber
+          gh release upload latest EdenOS.apk SafeWatch.apk CleanChrome.apk --clobber

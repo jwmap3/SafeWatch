@@ -1001,3 +1001,21 @@ class CastTest {
         }
     }
 }
+
+class SiteBlockTest {
+    @Test fun blocksSitesAndEverythingUnderThem() {
+        val block = SiteBlock(setOf("badsite.example"))
+        assertEquals("adult", block.reason("www.badsite.example"))
+        assertEquals("adult", block.reason("cdn.video.badsite.example"))
+        assertEquals("adult", block.reason("pornhub.com"))
+        assertEquals("social", block.reason("mobile.twitter.com"))
+        assertEquals("social", block.reason("x.com"))
+        assertEquals("social", block.reason("old.reddit.com"))
+        assertEquals("social", block.reason("www.instagram.com"))
+        assertEquals(null, block.reason("en.wikipedia.org"))
+        assertEquals(null, block.reason("example"))
+        assertEquals(null, block.reason("box.com")) // not x.com
+        assertEquals(null, SiteBlock(emptySet(), blockSocial = false).reason("twitter.com"))
+        assertEquals(null, SiteBlock(setOf("badsite.example"), blockAdult = false).reason("badsite.example"))
+    }
+}

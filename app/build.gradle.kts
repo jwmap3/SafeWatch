@@ -30,6 +30,18 @@ android {
         release { isMinifyEnabled = false }
     }
 
+    // Two apps from the same code: edenOS itself, and CleanChrome, its browser on its own.
+    flavorDimensions += "app"
+    productFlavors {
+        create("edenos") { dimension = "app" }
+        create("cleanchrome") {
+            dimension = "app"
+            applicationId = "com.safewatch.cleanchrome"
+        }
+    }
+
+    buildFeatures { buildConfig = true }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

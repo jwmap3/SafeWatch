@@ -171,9 +171,15 @@ class FiltersScreen(private val activity: MainActivity) {
             addView(Ui.switchRow(ctx, "Hide the bar while scrolling", Prefs.hideBarWhileScrolling(ctx)) { Prefs.setHideBarWhileScrolling(ctx, it) })
             addView(Ui.divider(ctx))
             addView(Ui.switchRow(ctx, "Block pop-ups and redirects", Prefs.blockPopups(ctx)) { Prefs.setBlockPopups(ctx, it) })
+            addView(Ui.divider(ctx))
+            addView(Ui.switchRow(ctx, "Block adult websites", Prefs.blockAdult(ctx)) { Prefs.setBlockAdult(ctx, it) })
+            addView(Ui.divider(ctx))
+            addView(Ui.switchRow(ctx, "Block Twitter, Reddit and Instagram", Prefs.blockSocial(ctx)) { Prefs.setBlockSocial(ctx, it) })
         })
         column.addView(Ui.caption(ctx,
-            "Pop-up blocking stops pages opening new windows or sending you to another site by themselves. While a video is " +
+            "Adult websites are blocked from a list of over 60,000, along with everything they load into other pages, and " +
+                "searches always use safe search. Lock Settings with a PIN so these stay on. " +
+                "Pop-up blocking stops pages opening new windows or sending you to another site by themselves. While a video is " +
                 "playing, nothing can take you off its page. The browser's quick links are changed by pressing and holding one."))
 
         // Player

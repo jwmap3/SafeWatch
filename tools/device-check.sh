@@ -28,7 +28,7 @@ for u in "https://cleanstream.elfhosted.com/api/filters" "https://cleanstream.el
   [ -s "$OUT/scene-lists-$name.txt" ] || echo "(nothing)" > "$OUT/scene-lists-$name.txt"
 done
 
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/edenos/debug/app-edenos-debug.apk
 adb logcat -c
 : > "$OUT/summary.txt"
 # Keeps a running copy of the phone's log, so there is a record even if the phone stops responding.
