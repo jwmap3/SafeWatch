@@ -72,6 +72,13 @@ class PlayerActivity : AppCompatActivity() {
     private var mutedByFilter = false
     @Volatile private var scanning = false
 
+    // A scrubbed movie, already cleaned: a simpler bar, and it can be shown on the TV with edenTV mode.
+    private var isCopy = false
+    private var wantsTv = false
+    private var tv: com.safewatch.app.tv.TvStage? = null
+    private var remote: View? = null
+    private var stopWatchingTv: (() -> Unit)? = null
+
     private val pickSubtitles = registerForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
         if (picked == null) return@registerForActivityResult
         try {
@@ -107,7 +114,10 @@ class PlayerActivity : AppCompatActivity() {
         status.background = Ui.rounded(Color.argb(170, 0, 0, 0), Ui.dp(this, 16).toFloat())
 
         describeFile()
-        buildBar(findViewById(R.id.bar))
+        isCopy = intent.hasExtra(EXTRA_TITLE)
+        if (isCopy) title = intent.getStringExtra(EXTRA_TITLE) ?: title
+        wantsTv = intent.getBooleanExtra(EXTRA_TV, false) || com.safewatch.app.tv.TvMode.active
+        if (isCopy) buildCopyBar(findViewById(R.id.bar)) else buildBar(findViewById(R.id.bar))
 
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
@@ -150,6 +160,133 @@ class PlayerActivity : AppCompatActivity() {
             Ui.sendToTv(this, com.safewatch.app.tv.CleanSource(title, key, uri.toString(), captions))
         })
         bar.addView(Ui.barButton(this, "Filters") { MainActivity.open(this, MainActivity.TAB_FILTERS) })
+    }
+
+    /** The bar for a scrubbed movie: it is already clean, so only Done, edenTV mode and Send to TV. */
+    private fun buildCopyBar(bar: LinearLayout) {
+        val pad = Ui.dp(this, 4)
+        bar.setPadding(pad, pad, pad, pad)
+        bar.addView(Ui.barButton(this, "Done") { finish() })
+        bar.addView(TextView(this).apply {
+            text = title
+            textSize = 15f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(Ui.color(context, R.color.text))
+            setPadding(Ui.dp(context, 6), 0, Ui.dp(context, 6), 0)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        bar.addView(Ui.iconButton(this, R.drawable.ic_tv, "edenTV mode", R.color.text) { startTv() })
+        bar.addView(Ui.iconButton(this, R.drawable.ic_cast, "Send to TV", R.color.text) {
+            val file = File(uri.path ?: return@iconButton)
+            val copy = com.safewatch.app.tv.CleanCopy.all(this).firstOrNull { it.file == file } ?: return@iconButton
+            com.safewatch.app.tv.TvActivity.findTv(this) { device ->
+                player.pause()
+                com.safewatch.app.tv.TvActivity.sendCopy(this, copy, device)
+            }
+        })
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (wantsTv) watchForTv()
+    }
+
+    override fun onStop() {
+        stopWatchingTv?.invoke()
+        stopWatchingTv = null
+        leaveTv()
+        super.onStop()
+    }
+
+    // ---- edenTV mode: the picture on the TV, the phone as its remote ----
+
+    private fun startTv() {
+        wantsTv = true
+        watchForTv()
+    }
+
+    private fun watchForTv() {
+        if (stopWatchingTv == null) stopWatchingTv = com.safewatch.app.tv.TvMode.watch(this) { d -> if (d == null) leaveTv() else goOnTv(d) }
+        val display = com.safewatch.app.tv.TvMode.display(this)
+        if (display != null) { goOnTv(display); return }
+        // Not connected yet: open Smart View, and the movie moves onto the TV as soon as it connects.
+        showStatus("Choose your TV in Smart View", 6000)
+        Ui.openScreenCasting(this)
+    }
+
+    private fun goOnTv(display: android.view.Display) {
+        if (tv != null || isFinishing) return
+        val screen = findViewById<View>(R.id.screen)
+        val parent = screen.parent as? android.view.ViewGroup ?: return
+        val index = parent.indexOfChild(screen)
+        val params = screen.layoutParams
+        parent.removeView(screen)
+        val stage = com.safewatch.app.tv.TvStage(this, display)
+        stage.show()
+        stage.root.addView(screen, android.widget.FrameLayout.LayoutParams(-1, -1))
+        stage.setOnDismissListener { if (tv === stage) leaveTv() }
+        tv = stage
+        val pad = com.safewatch.app.tv.RemotePad(this, tvTarget, display.name) { wantsTv = false; leaveTv() }
+        parent.addView(pad, index, params)
+        remote = pad
+        findViewById<View>(R.id.bar).visibility = View.GONE
+        player.play()
+        ui.postDelayed({ if (tv != null) playerView.showController() }, 600)
+    }
+
+    private fun leaveTv() {
+        val stage = tv ?: return
+        tv = null
+        val screen = findViewById<View>(R.id.screen)
+        (screen.parent as? android.view.ViewGroup)?.removeView(screen)
+        val pad = remote
+        remote = null
+        val parent = pad?.parent as? android.view.ViewGroup
+        if (pad != null && parent != null) {
+            val index = parent.indexOfChild(pad)
+            val params = pad.layoutParams
+            parent.removeView(pad)
+            parent.addView(screen, index, params)
+        }
+        try { if (stage.isShowing) stage.dismiss() } catch (e: Exception) { /* the TV went away first */ }
+        findViewById<View>(R.id.bar).visibility = View.VISIBLE
+    }
+
+    private fun seekBy(ms: Long) {
+        val to = (player.currentPosition + ms).coerceAtLeast(0)
+        player.seekTo(if (player.duration > 0) minOf(to, player.duration) else to)
+        playerView.showController()
+    }
+
+    private val tvTarget = object : com.safewatch.app.tv.TvTarget {
+        override val prefersPointer = false
+        override fun arrow(keyCode: Int) {
+            when (keyCode) {
+                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> seekBy(-10_000)
+                android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> seekBy(10_000)
+                else -> playerView.showController()
+            }
+        }
+        override fun ok() = media("toggle")
+        override fun back() { wantsTv = false; leaveTv() }
+        override fun home() { if (com.safewatch.app.tv.TvMode.active) com.safewatch.app.tv.TvModeActivity.open(this@PlayerActivity) else { wantsTv = false; leaveTv() } }
+        override fun type() = Ui.toast(this@PlayerActivity, "Nothing to type here")
+        override fun media(command: String) {
+            when {
+                command == "toggle" -> { if (player.isPlaying) player.pause() else player.play(); playerView.showController() }
+                command.startsWith("skip:") -> seekBy((command.removePrefix("skip:").toLongOrNull() ?: 0) * 1000)
+            }
+        }
+        override fun pointer(dx: Float, dy: Float) {}
+        override fun click() = media("toggle")
+        // The scroll strip: every so far along skips ten seconds.
+        private var carry = 0f
+        override fun scroll(dy: Float) {
+            carry += dy
+            val step = Ui.dp(this@PlayerActivity, 120)
+            while (carry > step) { carry -= step; seekBy(10_000) }
+            while (carry < -step) { carry += step; seekBy(-10_000) }
+        }
     }
 
     override fun onResume() {
@@ -330,8 +467,11 @@ class PlayerActivity : AppCompatActivity() {
         private const val LIVE_HOLD_MS = 1500L
         private const val SCAN_STEP_MS = 1000L
 
-        /** Plays a scrubbed copy, already cleaned, full-screen on this phone. */
-        fun openCopy(ctx: android.content.Context, file: java.io.File, title: String) = ctx.startActivity(
-            android.content.Intent(ctx, PlayerActivity::class.java).setData(Uri.fromFile(file)).putExtra("title", title))
+        private const val EXTRA_TITLE = "title"
+        private const val EXTRA_TV = "tv"
+
+        /** Plays a scrubbed copy, already cleaned: on this phone, or with [onTv], on the TV in edenTV mode with the phone as the remote. */
+        fun openCopy(ctx: android.content.Context, file: java.io.File, title: String, onTv: Boolean = false) = ctx.startActivity(
+            android.content.Intent(ctx, PlayerActivity::class.java).setData(Uri.fromFile(file)).putExtra(EXTRA_TITLE, title).putExtra(EXTRA_TV, onTv))
     }
 }

@@ -248,8 +248,10 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
         val output = File(folder(context), "$id.mp4")
         transform(input, output, plan)
         check()
-        // A cover picture, taken a little way into the finished copy.
-        saveThumb(output, File(folder(context), "$id.jpg"))
+        // A cover picture, taken a little way into the finished copy (or, failing that, from the original).
+        val cover = File(folder(context), "$id.jpg")
+        if (!makeThumb(output, cover)) makeThumb(input, cover)
+        com.safewatch.app.data.FilterLog.add("copy: cover picture " + if (cover.exists()) "made (${cover.length() / 1024} KB)" else "not made")
         val summary = (listOf(plan.summary()) + notes).joinToString("; ")
         File(folder(context), "$id.json").writeText(JSONObject()
             .put("title", source.title).put("summary", summary).put("madeAt", System.currentTimeMillis())
@@ -260,24 +262,6 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
 
     private fun check() {
         if (cancelled) throw IOException("Stopped")
-    }
-
-    /** Takes one frame from the finished copy and writes it as the cover picture. Quietly does nothing if it cannot. */
-    private fun saveThumb(video: File, into: File) {
-        val r = MediaMetadataRetriever()
-        try {
-            r.setDataSource(video.absolutePath)
-            val durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            // A little way in, so it is not a black opening frame.
-            val at = (if (durationMs > 60_000) 20_000L else durationMs / 4) * 1000
-            val frame = r.getScaledFrameAtTime(at, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 640, 360) ?: return
-            into.outputStream().use { frame.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
-            frame.recycle()
-        } catch (e: Exception) {
-            // No cover; the title's name is shown instead.
-        } finally {
-            try { r.release() } catch (e: Exception) { /* already released */ }
-        }
     }
 
     // ---- Getting the file ----
@@ -589,6 +573,80 @@ class CleanCopy(private val context: Context, private val tell: (step: String, p
                     o.optString("source").takeIf { it.isNotEmpty() }?.let { try { CleanSource.fromJson(it) } catch (e: Exception) { null } })
             } catch (e: Exception) { null }
         }.sortedByDescending { it.madeAt }
+
+        /**
+         * Takes a frame from [video] and writes it as a cover picture. Several places are tried, and the
+         * brightest is kept, so the cover is not a black fade or a blurred scene. Returns whether it worked.
+         */
+        fun makeThumb(video: File, into: File): Boolean {
+            val r = MediaMetadataRetriever()
+            try {
+                r.setDataSource(video.absolutePath)
+                val length = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                val places = (if (length > 0) listOf(minOf(20_000L, length / 3), length / 4, length / 2, length / 8, length * 2 / 3) else listOf(0L))
+                    .map { it.coerceIn(0, maxOf(0, length - 500)) }.distinct()
+                var best: android.graphics.Bitmap? = null
+                var bestLight = -1
+                for (at in places) {
+                    val frame = grab(r, at * 1000) ?: continue
+                    val light = brightness(frame)
+                    if (light > bestLight) { best?.recycle(); best = frame; bestLight = light } else frame.recycle()
+                    if (light >= 60) break // bright enough: no need to look further
+                }
+                val picture = best ?: r.embeddedPicture?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) } ?: return false
+                val part = File(into.parentFile, into.name + ".part")
+                part.outputStream().use { picture.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }
+                picture.recycle()
+                return part.length() > 0 && part.renameTo(into)
+            } catch (e: Throwable) {
+                return false
+            } finally {
+                try { r.release() } catch (e: Exception) { /* already released */ }
+            }
+        }
+
+        /** One frame near [atUs], at most 640 wide. Phones differ in which way of asking works, so each is tried in turn. */
+        private fun grab(r: MediaMetadataRetriever, atUs: Long): android.graphics.Bitmap? {
+            val frame = try { r.getScaledFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 640, 360) } catch (e: Throwable) { null }
+                ?: try { r.getFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) } catch (e: Throwable) { null }
+                ?: try { r.getFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST) } catch (e: Throwable) { null }
+                ?: try { r.frameAtTime } catch (e: Throwable) { null }
+                ?: return null
+            if (frame.width <= 640) return frame
+            val scaled = android.graphics.Bitmap.createScaledBitmap(frame, 640, maxOf(1, 640 * frame.height / frame.width), true)
+            if (scaled !== frame) frame.recycle()
+            return scaled
+        }
+
+        /** How light a picture is, 0 (black) to 255 (white), from a spread of points across it. */
+        private fun brightness(b: android.graphics.Bitmap): Int {
+            var sum = 0L
+            var n = 0
+            for (y in 1..8) for (x in 1..12) {
+                val c = b.getPixel(x * (b.width - 1) / 13, y * (b.height - 1) / 9)
+                sum += (299 * android.graphics.Color.red(c) + 587 * android.graphics.Color.green(c) + 114 * android.graphics.Color.blue(c)) / 1000
+                n++
+            }
+            return (sum / n).toInt()
+        }
+
+        private val coverTried = java.util.Collections.synchronizedSet(HashSet<String>())
+
+        /**
+         * Makes the cover pictures that are missing (copies made before covers, or whose cover failed), in the
+         * background, then calls [done] on the main thread if any were made. Each copy is tried once per run of the app.
+         */
+        fun makeMissingThumbs(context: Context, copies: List<CleanCopyFile>, done: () -> Unit) {
+            val missing = copies.filter { it.thumb == null && coverTried.add(it.file.absolutePath) }
+            if (missing.isEmpty()) return
+            Thread {
+                var made = 0
+                for (copy in missing) {
+                    if (makeThumb(copy.file, File(copy.file.parentFile, copy.file.nameWithoutExtension + ".jpg"))) made++
+                }
+                if (made > 0) android.os.Handler(android.os.Looper.getMainLooper()).post(done)
+            }.start()
+        }
 
         fun delete(copy: CleanCopyFile) = delete(copy.file)
 

@@ -59,10 +59,9 @@ object TvMode {
         if (active || askedFor == display.displayId || activity.isFinishing) return
         askedFor = display.displayId
         AlertDialog.Builder(activity)
-            .setTitle("Show edenOS on ${display.name}?")
-            .setMessage("Your phone is connected to ${display.name}. edenOS can fill the TV with its own home screen, " +
-                "and your phone becomes the remote.")
-            .setPositiveButton("TV Mode") { _, _ -> TvModeActivity.open(activity) }
+            .setTitle("Open edenTV on ${display.name}?")
+            .setMessage("Your phone becomes the remote.")
+            .setPositiveButton("edenTV") { _, _ -> TvModeActivity.open(activity) }
             .setNegativeButton("Not now", null)
             .show()
     }

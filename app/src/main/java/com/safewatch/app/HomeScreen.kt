@@ -138,8 +138,12 @@ class HomeScreen(private val activity: MainActivity) {
             }
         }
         for (copy in ready) {
-            tile(copy.title, "Ready", accent, "Tap to play", thumb = copy.thumb?.absolutePath) { com.safewatch.app.tv.TvActivity.open(ctx) }
+            tile(copy.title, "Ready", accent, copy.title, thumb = copy.thumb?.absolutePath) {
+                com.safewatch.app.tv.ScrubbedSheet.show(ctx, copy) { showScrubbed() }
+            }
         }
+        // Covers for copies that do not have one yet; the shelf is drawn again once they are made.
+        com.safewatch.app.tv.CleanCopy.makeMissingThumbs(ctx, ready) { if (!ctx.isDestroyed) showScrubbed() }
         if (strip.childCount == 0) {
             tile("Tap Superclean while a movie plays", "Empty", android.graphics.Color.rgb(110, 110, 118), null) {
                 Ui.toast(ctx, "While a movie plays, tap Superclean at the top of the player")
@@ -187,7 +191,7 @@ class HomeScreen(private val activity: MainActivity) {
             addView(com.safewatch.app.ui.Brand.wordmark(context, 23f), LinearLayout.LayoutParams(-2, -2).apply { marginStart = Ui.dp(context, 8) })
             setOnClickListener { onNameTapped() }
         }, FrameLayout.LayoutParams(-2, Ui.dp(context, 46), Gravity.CENTER))
-        addView(Ui.iconButton(context, R.drawable.ic_tv, "TV Mode") { com.safewatch.app.tv.TvModeActivity.open(activity) },
+        addView(Ui.iconButton(context, R.drawable.ic_tv, "edenTV") { com.safewatch.app.tv.TvModeActivity.open(activity) },
             FrameLayout.LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46), Gravity.START or Gravity.CENTER_VERTICAL))
         addView(Ui.iconButton(context, R.drawable.ic_cast, "Send to TV") { Ui.sendToTv(activity) },
             FrameLayout.LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46), Gravity.END or Gravity.CENTER_VERTICAL))

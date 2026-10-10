@@ -40,9 +40,6 @@ class TvActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46)).apply { topMargin = Ui.dp(context, 8) }
         })
         column.addView(Ui.largeTitle(this, "TV"))
-        column.addView(Ui.subtitle(this,
-            "Two ways to watch on the TV with your phone locked: YouTube plays in the TV's own YouTube app with edenOS muting " +
-                "it from the phone, and other videos go as a clean copy, the video with the filtering built in."))
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(body)
         setContentView(page)
@@ -76,7 +73,6 @@ class TvActivity : AppCompatActivity() {
                 addView(Ui.divider(this@TvActivity))
                 addView(Ui.row(this@TvActivity, "Stop", chevron = false) { TvService.stop(this@TvActivity) })
             })
-            body.addView(Ui.caption(this, "Pause, rewind and skip with the TV's own remote too."))
         }
 
         val job = TvState.job
@@ -111,21 +107,16 @@ class TvActivity : AppCompatActivity() {
                     addView(Ui.row(this@TvActivity, "Dismiss", chevron = false) { TvState.job = null; show() })
                 }
             })
-            if (job.error == null) body.addView(Ui.caption(this,
-                "This carries on with the screen off. A full film can take an hour or more: every picture is checked, and the video is written again."))
+            if (job.error == null) body.addView(Ui.caption(this, "Keeps going with the screen off."))
         }
 
         val copies = CleanCopy.all(this)
-        body.addView(Ui.sectionHeader(this, "Clean copies"))
-        body.addView(Ui.caption(this,
-            "Your Roku or smart TV plays a clean copy by itself. Keep the phone on the Wi-Fi: the TV fetches the video from it. " +
-                "Each copy is for one viewing: it deletes itself once it has played through, or after a day."))
+        body.addView(Ui.sectionHeader(this, "Your Scrubbed Movies"))
         if (copies.isEmpty()) {
-            body.addView(Ui.caption(this,
-                "None yet. While watching a video file or a website's video, tap Send to TV, then Clean copy to TV or Superclean to TV. " +
-                    "Netflix, HBO Max and the other paid services lock their videos, so use Mirror to TV for those."))
+            body.addView(Ui.caption(this, "None yet. Tap Superclean while a movie plays."))
             return
         }
+        CleanCopy.makeMissingThumbs(this, copies) { if (!isDestroyed) show() }
         body.addView(Ui.card(this).apply {
             copies.forEachIndexed { i, copy ->
                 if (i > 0) addView(Ui.divider(this@TvActivity))
@@ -150,20 +141,14 @@ class TvActivity : AppCompatActivity() {
                             setTextColor(Ui.color(context, R.color.text))
                         })
                         addView(TextView(context).apply {
-                            text = copy.summary
-                            textSize = 13f
-                            maxLines = 2
-                            setTextColor(Ui.color(context, R.color.text_secondary))
-                            setPadding(0, Ui.dp(context, 2), 0, 0)
-                        })
-                        addView(TextView(context).apply {
                             text = Ui.time(copy.durationMs) + "  ·  " + copy.sizeText + "  ·  " +
                                 DateUtils.getRelativeTimeSpanString(copy.madeAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
                             textSize = 13f
                             setTextColor(Ui.color(context, R.color.text_secondary))
                         })
                     }, LinearLayout.LayoutParams(0, -2, 1f))
-                    setOnClickListener { choose(copy) }
+                    foreground = Ui.ripple(context)
+                    setOnClickListener { ScrubbedSheet.show(this@TvActivity, copy) { show() } }
                 })
             }
         })
@@ -186,9 +171,6 @@ class TvActivity : AppCompatActivity() {
                 addView(Ui.divider(this@TvActivity))
                 addView(Ui.row(this@TvActivity, "Stop filtering", chevron = false) { TvService.stopYouTube(this@TvActivity) })
             })
-            body.addView(Ui.caption(this,
-                "Use the TV's own remote to pause, rewind or change the volume. If a different video is started on the TV, " +
-                    "edenOS stops filtering, since it has not read that video's captions."))
         } else TvState.youtubeEnded?.let { reason ->
             body.addView(Ui.sectionHeader(this, "YouTube on the TV"))
             body.addView(Ui.card(this).apply {
@@ -219,67 +201,42 @@ class TvActivity : AppCompatActivity() {
                 })
             }
         })
-        body.addView(Ui.caption(this,
-            "On the TV, open YouTube, then Settings > Link with TV code. Then, while a YouTube video plays in edenOS, tap " +
-                "Send to TV > YouTube on TV, or tap Play on TV on a video's page."))
-    }
-
-    private fun choose(copy: CleanCopyFile) {
-        val last = lastTv(this)
-        val busy = TvState.job?.let { it.made == null && it.error == null } == true
-        val again = copy.source?.takeIf { !busy }
-        val options = listOfNotNull(last?.let { "Play on ${it.name}" }, "Play on a TV…", "Watch on this phone",
-            again?.let { "Superclean this" }, "Delete")
-        AlertDialog.Builder(this)
-            .setTitle(copy.title)
-            .setItems(options.toTypedArray()) { _, which ->
-                when (options[which]) {
-                    "Play on a TV…" -> pickTv(copy)
-                    "Watch on this phone" -> com.safewatch.app.player.PlayerActivity.openCopy(this, copy.file, copy.title)
-                    "Superclean this" -> again?.let { SupercleanActivity.open(this, it, replaces = copy.file.absolutePath) }
-                    "Delete" -> AlertDialog.Builder(this).setMessage("Delete the clean copy of ${copy.title}?")
-                        .setPositiveButton("Delete") { _, _ -> CleanCopy.delete(copy); show() }
-                        .setNegativeButton("Cancel", null).show()
-                    else -> last?.let { send(copy, it) }
-                }
-            }
-            .show()
-    }
-
-    private fun pickTv(copy: CleanCopyFile) = findTv(this) { send(copy, it) }
-
-    private fun send(copy: CleanCopyFile, device: TvDevice) {
-        rememberTv(this, device)
-        TvService.play(this, copy, device)
-        Ui.toast(this, "Sending to ${device.name}. A Samsung or LG TV may ask you to allow it.")
-        askToRunWithScreenOff()
-    }
-
-    /**
-     * Some phones stop apps that work with the screen off to save battery, which would cut the TV off
-     * mid-film. Asked once: the viewer can let edenOS run without that limit.
-     */
-    private fun askToRunWithScreenOff() {
-        val power = getSystemService(android.os.PowerManager::class.java)
-        if (power.isIgnoringBatteryOptimizations(packageName) || prefs(this).getBoolean("askedBattery", false)) return
-        prefs(this).edit().putBoolean("askedBattery", true).apply()
-        AlertDialog.Builder(this)
-            .setTitle("Keep playing with the screen off")
-            .setMessage("So the TV is not cut off mid-film when your phone locks, let edenOS run without battery limits.")
-            .setPositiveButton("Allow") { _, _ ->
-                try {
-                    @Suppress("BatteryLife")
-                    startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:$packageName")))
-                } catch (e: Exception) {
-                    startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                }
-            }
-            .setNegativeButton("Not now", null)
-            .show()
+        if (linked == null) body.addView(Ui.caption(this, "On the TV: YouTube › Settings › Link with TV code."))
     }
 
     companion object {
         fun open(ctx: Context) = ctx.startActivity(Intent(ctx, TvActivity::class.java))
+
+        /** Sends a scrubbed movie to [device], which plays it in its own player. */
+        fun sendCopy(activity: android.app.Activity, copy: CleanCopyFile, device: TvDevice) {
+            rememberTv(activity, device)
+            TvService.play(activity, copy, device)
+            Ui.toast(activity, "Sending to ${device.name}")
+            askToRunWithScreenOff(activity)
+        }
+
+        /**
+         * Some phones stop apps that work with the screen off to save battery, which would cut the TV off
+         * mid-film. Asked once: the viewer can let edenOS run without that limit.
+         */
+        private fun askToRunWithScreenOff(activity: android.app.Activity) {
+            val power = activity.getSystemService(android.os.PowerManager::class.java)
+            if (power.isIgnoringBatteryOptimizations(activity.packageName) || prefs(activity).getBoolean("askedBattery", false)) return
+            prefs(activity).edit().putBoolean("askedBattery", true).apply()
+            AlertDialog.Builder(activity)
+                .setTitle("Keep playing with the screen off?")
+                .setMessage("Lets the TV keep going when your phone locks.")
+                .setPositiveButton("Allow") { _, _ ->
+                    try {
+                        @Suppress("BatteryLife")
+                        activity.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:${activity.packageName}")))
+                    } catch (e: Exception) {
+                        activity.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }
+                }
+                .setNegativeButton("Not now", null)
+                .show()
+        }
 
         private fun prefs(ctx: Context) = ctx.getSharedPreferences("tv", Context.MODE_PRIVATE)
 
@@ -287,10 +244,9 @@ class TvActivity : AppCompatActivity() {
             .put("kind", d.kind.name).put("name", d.name).put("location", d.location).put("control", d.controlUrl)
             .put("rendering", d.renderingUrl).toString()).apply()
 
-        /** Looks for Rokus and smart TVs on the Wi-Fi and lets the viewer pick one. */
+        /** Looks for smart TVs on the Wi-Fi and lets the viewer pick one. */
         fun findTv(activity: android.app.Activity, then: (TvDevice) -> Unit) {
-            val wait = AlertDialog.Builder(activity).setTitle("Looking for TVs…")
-                .setMessage("Rokus and smart TVs on this Wi-Fi.").setNegativeButton("Cancel", null).show()
+            val wait = AlertDialog.Builder(activity).setTitle("Looking for TVs…").setNegativeButton("Cancel", null).show()
             Thread {
                 val found = try { TvFinder.find(activity.applicationContext) } catch (e: Exception) { emptyList() }
                 activity.runOnUiThread {
@@ -298,16 +254,13 @@ class TvActivity : AppCompatActivity() {
                     wait.dismiss()
                     if (found.isEmpty()) {
                         AlertDialog.Builder(activity).setTitle("No TV found")
-                            .setMessage("Make sure the TV is on and on the same Wi-Fi as this phone.\n\n" +
-                                "Roku: Settings > System > Advanced system settings > Control by mobile apps > Network access, set to Default or Permissive.\n\n" +
-                                "Samsung and LG: the TV may show a message asking whether to allow this phone; choose Allow. If it said no " +
-                                "before, look in the TV's settings for connected or mobile devices and allow it there.")
+                            .setMessage("Turn the TV on, on the same Wi-Fi as this phone.")
                             .setPositiveButton("Search again") { _, _ -> findTv(activity, then) }
                             .setNegativeButton("Close", null).show()
                         return@runOnUiThread
                     }
                     AlertDialog.Builder(activity).setTitle("Play on")
-                        .setItems(found.map { it.name + if (it.kind == TvDevice.Kind.ROKU) " (Roku)" else "" }.toTypedArray()) { _, which ->
+                        .setItems(found.map { it.name }.toTypedArray()) { _, which ->
                             rememberTv(activity, found[which])
                             then(found[which])
                         }
@@ -319,6 +272,7 @@ class TvActivity : AppCompatActivity() {
         fun lastTv(ctx: Context): TvDevice? = try {
             val o = JSONObject(prefs(ctx).getString("last", null) ?: return null)
             TvDevice(TvDevice.Kind.valueOf(o.getString("kind")), o.getString("name"), o.getString("location"), o.optString("control"), o.optString("rendering"))
+                .takeIf { it.kind != TvDevice.Kind.ROKU } // Roku cannot play a video sent from the phone
         } catch (e: Exception) { null }
     }
 }

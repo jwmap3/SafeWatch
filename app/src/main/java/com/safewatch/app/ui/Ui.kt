@@ -528,80 +528,87 @@ object Ui {
      * and [whyNot] says why.
      */
     fun sendToTv(activity: Activity, source: com.safewatch.app.tv.CleanSource? = null, whyNot: String? = null, youtube: (() -> Unit)? = null) {
-        val list = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(activity, 8), 0, dp(activity, 8)) }
-        var dialog: android.app.Dialog? = null
-        fun option(title: String, detail: String, enabled: Boolean = true, onClick: () -> Unit) {
+        val sheet = Sheet(activity)
+        val list = sheet.body
+        list.addView(TextView(activity).apply {
+            text = "Send to TV"
+            textSize = 21f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(color(activity, R.color.text))
+            setPadding(dp(activity, 4), 0, 0, dp(activity, 10))
+        })
+        fun option(title: String, detail: String, iconRes: Int, enabled: Boolean = true, onClick: () -> Unit) {
             list.addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(activity, 24), dp(activity, 12), dp(activity, 24), dp(activity, 12))
-                alpha = if (enabled) 1f else 0.5f
-                addView(TextView(activity).apply {
-                    text = title
-                    textSize = 17f
-                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                    setTextColor(color(activity, R.color.text))
-                })
-                addView(TextView(activity).apply {
-                    text = detail
-                    textSize = 14f
-                    setTextColor(color(activity, R.color.text_secondary))
-                    setPadding(0, dp(activity, 2), 0, 0)
-                })
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(activity, 6), dp(activity, 10), dp(activity, 6), dp(activity, 10))
+                alpha = if (enabled) 1f else 0.45f
+                addView(FrameLayout(activity).apply {
+                    background = rounded(color(activity, R.color.fill), dp(activity, 14).toFloat())
+                    addView(icon(activity, iconRes, R.color.accent, 22), FrameLayout.LayoutParams(dp(activity, 22), dp(activity, 22), Gravity.CENTER))
+                }, LinearLayout.LayoutParams(dp(activity, 44), dp(activity, 44)).apply { marginEnd = dp(activity, 14) })
+                addView(LinearLayout(activity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(TextView(activity).apply {
+                        text = title
+                        textSize = 16f
+                        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                        setTextColor(color(activity, R.color.text))
+                    })
+                    addView(TextView(activity).apply {
+                        text = detail
+                        textSize = 13f
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        setTextColor(color(activity, R.color.text_secondary))
+                    })
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+                background = rounded(android.graphics.Color.TRANSPARENT, dp(activity, 14).toFloat())
                 foreground = ripple(activity)
-                setOnClickListener { dialog?.dismiss(); onClick() }
+                Sheet.pressable(this)
+                setOnClickListener { sheet.close { onClick() } }
             })
         }
         if (source != null && !source.address.startsWith("content:")) {
             // The usual way: the TV plays the video itself, at full quality, and the phone keeps it clean.
             fun cast(device: com.safewatch.core.tv.TvDevice) {
                 com.safewatch.app.tv.TvService.cast(activity, source, device)
-                toast(activity, "Playing on ${device.name}. Your phone keeps it clean; keep it on the Wi-Fi.")
+                toast(activity, "Playing on ${device.name}")
             }
             val last = com.safewatch.app.tv.TvActivity.lastTv(activity)
-            if (last != null) option("Play on ${last.name}", "The TV plays it in its own player at full quality, smooth, with no screen " +
-                "mirroring. Your phone mutes the cursing and jumps past scenes as it plays.") { cast(last) }
-            option(if (last == null) "Play on TV" else "Play on another TV", "Your Roku, Samsung or LG TV plays it in its own player at full " +
-                "quality, while your phone keeps it clean.") { com.safewatch.app.tv.TvActivity.findTv(activity) { cast(it) } }
+            if (last != null) option("Play on ${last.name}", "Full quality, kept clean by your phone", R.drawable.ic_play) { cast(last) }
+            option(if (last == null) "Play on TV" else "Play on another TV", "Samsung, LG and other smart TVs", R.drawable.ic_cast) {
+                com.safewatch.app.tv.TvActivity.findTv(activity) { cast(it) }
+            }
         }
-        if (youtube != null) {
-            option("YouTube on TV", "Plays in your TV's own YouTube app, with the cursing muted from your phone. Nothing to download; " +
-                "your phone can be locked.") { youtube() }
-        }
-        option("TV Mode", "edenOS fills the TV with its own home screen and your phone becomes the remote. Connects with Smart View.") {
+        if (youtube != null) option("YouTube on TV", "In your TV's YouTube app, muted from your phone", R.drawable.ic_play) { youtube() }
+        option("edenTV mode", "edenOS on the TV, your phone as the remote", R.drawable.ic_tv) {
             com.safewatch.app.tv.TvModeActivity.open(activity)
         }
-        option("Mirror to TV", "Shows this screen on the TV, filters included. Works with everything; keep the phone on.") {
+        option("Mirror to TV", "Shows this screen on the TV", R.drawable.ic_cast) {
             AlertDialog.Builder(activity)
                 .setTitle("Mirror to TV")
-                .setMessage("Your phone's screen casting reaches Chromecast, Roku, Fire TV and most smart TVs, and shows exactly what is " +
-                    "on this screen, filters included.\n\nNetflix-style services often show a black picture when mirrored wirelessly; " +
-                    "an HDMI adapter always works.")
+                .setMessage("Shows exactly this screen, filters included. Paid services may show black when mirrored; an HDMI adapter always works.")
                 .setPositiveButton("Open screen casting") { _, _ -> openCastPanel(activity) }
                 .setNegativeButton("Cancel", null)
                 .show()
         }
-        if (youtube != null) {
-            // YouTube videos cannot be saved, and YouTube on TV does the job without saving anything.
-        } else if (source != null) {
-            option("Superclean to TV", "Claude takes out what you choose, including scenes from the title's IMDb Parents Guide, " +
-                "and the copy goes to your TV. Uses your Claude key.") {
+        if (youtube == null && source != null) {
+            option("Superclean to TV", "Claude takes out what you choose", R.drawable.ic_filters) {
                 com.safewatch.app.tv.SupercleanActivity.start(activity, source)
             }
-            option("Clean copy to TV", "Makes a copy with the cursing muted and nudity blurred, for your Roku or smart TV to play by itself. " +
-                "Your phone can be locked while it plays.") {
+            option("Clean copy to TV", "Cursing muted, nudity blurred", R.drawable.ic_filters) {
                 com.safewatch.app.tv.TvService.prepare(activity, source)
                 com.safewatch.app.tv.TvActivity.open(activity)
             }
-        } else {
-            option("Clean copy to TV", whyNot ?: "Not for this video: it streams in pieces rather than as one file, so it cannot be saved.", enabled = false) {
-                AlertDialog.Builder(activity).setTitle("Clean copy to TV")
-                    .setMessage((whyNot ?: "This video streams in pieces rather than as one file, so it cannot be saved.") +
-                        "\n\nClean copies can be made of video files on the phone and of websites' videos that are whole files. Use Mirror to TV for this one.")
+        } else if (youtube == null) {
+            val why = whyNot ?: "This video streams in pieces, so it cannot be saved."
+            option("Clean copy to TV", why, R.drawable.ic_filters, enabled = false) {
+                AlertDialog.Builder(activity).setTitle("Clean copy to TV").setMessage("$why Use Mirror to TV for this one.")
                     .setPositiveButton("OK", null).show()
             }
         }
-        option("Your clean copies", "Play one on the TV, or see one being made.") { com.safewatch.app.tv.TvActivity.open(activity) }
-        dialog = AlertDialog.Builder(activity).setTitle("Send to TV").setView(list).setNegativeButton("Cancel", null).show()
+        option("Your Scrubbed Movies", "Play one, or see one being made", R.drawable.ic_home) { com.safewatch.app.tv.TvActivity.open(activity) }
+        sheet.show()
     }
 
     /** Opens the phone's screen casting (Smart View on Samsung phones). */

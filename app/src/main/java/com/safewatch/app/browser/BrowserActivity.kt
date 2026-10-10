@@ -794,6 +794,16 @@ open class BrowserActivity : AppCompatActivity() {
         override fun pointer(dx: Float, dy: Float) { tv?.movePointer(dx, dy) }
         override fun click() = tapOnTv()
         override fun scroll(dy: Float) = wheel(dy)
+        // The phone's keyboard types straight into the box picked on the page, a key at a time.
+        override val liveKeys = true
+        override fun typeText(text: String) {
+            val target = fullscreenView ?: web
+            android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD).getEvents(text.toCharArray())
+                ?.forEach { target.dispatchKeyEvent(it) }
+                ?: web.evaluateJavascript("document.activeElement && document.execCommand('insertText', false, " +
+                    org.json.JSONObject.quote(text) + ")", null)
+        }
+        override fun key(code: Int) = this@BrowserActivity.key(code)
     }
 
     private fun key(code: Int) {

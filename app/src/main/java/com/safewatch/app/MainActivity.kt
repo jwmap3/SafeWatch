@@ -147,6 +147,7 @@ class MainActivity : AppCompatActivity() {
         // Back goes to the first tab on the bar; from there it puts the app in the background instead of
         // closing it, so the browser keeps its page.
         if (tab == TAB_SEARCH && search.back()) return
+        if (tab == TAB_FILTERS && filters.back()) return
         if (tab != baseTab()) show(baseTab()) else moveTaskToBack(true)
     }
 
@@ -214,6 +215,7 @@ class MainActivity : AppCompatActivity() {
             BrowserActivity.resume(this)
             return
         }
+        if (which == TAB_FILTERS && tab != TAB_FILTERS) filters.toList() // coming from another tab: the list of sections
         tab = which
         home.view.visibility = if (which == TAB_HOME) View.VISIBLE else View.GONE
         search.view.visibility = if (which == TAB_SEARCH) View.VISIBLE else View.GONE

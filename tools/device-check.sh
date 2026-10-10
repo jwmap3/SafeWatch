@@ -78,11 +78,11 @@ tap "Show comments";      shot 09b-comments 8
 
 start;                    sleep 5
 tap "Settings";           shot 11-settings 3
-swipe_up;                 shot 11b-settings-language 2
+tap "Language";           shot 11b-settings-language 2
 tap_scrolling "Choose words"; shot 12-words 3
 start;                    sleep 5
 tap "Settings";           sleep 2
-swipe_up; swipe_up;       shot 13-settings-nudity 2
+tap "Nudity";             shot 13-settings-nudity 2
 # The emulator's browser engine has no decoder for the usual MP4 video, so the film has to be WebM.
 VIDEO=""
 for u in \
@@ -120,11 +120,14 @@ adb logcat -d -s SafeWatch:I > "$OUT/filter-log.txt"; echo "(end of filter log)"
 
 start;                    sleep 5
 tap "Settings";           sleep 2
-swipe_up;                 sleep 1
+tap "Language";           sleep 1
 tap_scrolling "Filter report"; shot 14r-filter-report 3
 back
-tap_scrolling "Skip buttons"; shot 15-settings-player 2
-swipe_up;                 shot 15b-settings-app 2
+back
+tap "Player";             shot 15-settings-player 2
+back
+tap "Superclean";         shot 15b-settings-superclean 2
+back
 
 # ---- Clean copies for the TV, from pages served by the test computer (with captions) ----
 make_copy() {  # $1: a name for the files, $2: the page
@@ -150,10 +153,12 @@ make_copy() {  # $1: a name for the files, $2: the page
 if curl -s -o /dev/null -m 5 http://127.0.0.1:8765/page.html; then
   start;                  sleep 5
   tap "Settings";         sleep 2
+  shot 16-settings-list 1
+  tap "Nudity";           shot 16b-settings-nudity 2
   for i in 1 2 3 4 5 6; do timeout 60 python3 tools/tap.py "Test the blur" > /dev/null && { echo "tap: Test the blur (for the clean copy)" | tee -a "$OUT/summary.txt"; break; }; swipe_up; sleep 1; done
   make_copy 18-file-copy page.html
   tap "Test clip";        shot 18e-copy-options 2
-  tap "Play on a TV…";    shot 18f-tv-search 8
+  tap "Send to TV";       shot 18f-tv-search 8
   back
   tap_scrolling "Link with TV code"; shot 18g-link-youtube 2
   back; back
@@ -177,6 +182,7 @@ PY
   timeout 30 adb exec-in run-as $PKG sh -c 'cat > shared_prefs/safewatch.xml' < /tmp/eden-prefs.xml
   start;                  sleep 5; no_anr
   tap "Settings";         sleep 2
+  tap "Superclean";       shot 22-settings-superclean-top 2
   tap_scrolling "Claude API key"; sleep 2
   tap "CANCEL";           sleep 1
   shot 22-settings-superclean 1
@@ -199,7 +205,12 @@ PY
   home;                   sleep 4; shot 22i-home-scrubbed 1
   timeout 60 adb exec-out run-as $PKG sh -c 'cat "$(ls -t files/clean/*.mp4 | head -1)"' > "$OUT/22-superclean-copy.mp4"
   [ -s "$OUT/22-superclean-copy.mp4" ] || rm -f "$OUT/22-superclean-copy.mp4"
+  # Each copy should have its cover picture beside it.
+  timeout 30 adb exec-out run-as $PKG ls -la files/clean/ | tee -a "$OUT/summary.txt"
+  timeout 60 adb exec-out run-as $PKG sh -c 'cat "$(ls -t files/clean/*.jpg | head -1)"' > "$OUT/22-cover.jpg"
+  [ -s "$OUT/22-cover.jpg" ] && echo "cover picture: made" | tee -a "$OUT/summary.txt" || { echo "cover picture: MISSING" | tee -a "$OUT/summary.txt"; rm -f "$OUT/22-cover.jpg"; }
   tap "Test clip";        shot 22j-copy-options 3
+  tap "Watch on Phone";   shot 22k-copy-on-phone 5
   back
   adb logcat -d -s SafeWatch:I > "$OUT/22-superclean-log.txt"
   cp /tmp/tvsite/anthropic-requests.txt "$OUT/22-anthropic-requests.txt" 2>/dev/null || echo "the stand-in for Anthropic was sent nothing" | tee -a "$OUT/summary.txt"
@@ -221,6 +232,7 @@ cp /tmp/tvsite/setup.log "$OUT/test-site-setup.txt" 2>/dev/null; ls -la /tmp/tvs
 # ---- Arranging the tabs: move Home one place along, icons only, then put everything back ----
 start;                    sleep 5
 tap "Settings";           sleep 2
+tap "Home and tabs";      sleep 2
 tap_scrolling "Arrange tabs"; shot 20-arrange-tabs 2
 tap "Move down";          shot 20b-arrange-moved 1
 tap "DONE";               shot 20c-tabs-moved 2
@@ -233,21 +245,34 @@ tap "RESET";              shot 20e-tabs-reset 2
 adb shell settings put global overlay_display_devices 720x405/160; sleep 4
 adb shell input swipe 540 1200 540 260 700; sleep 1   # moves the pretend TV out of the remote's way
 start;                    shot 21-tv-offer 6
-timeout 60 python3 tools/tap.py "TV MODE" | tee -a "$OUT/summary.txt" | grep -q " at " || adb shell am start -n $PKG/.tv.TvModeActivity > /dev/null
+timeout 60 python3 tools/tap.py "EDENTV" | tee -a "$OUT/summary.txt" | grep -q " at " || adb shell am start -n $PKG/.tv.TvModeActivity > /dev/null
 shot 21b-tv-home 8
 tap "Home";               sleep 1
 pad() { timeout 60 python3 tools/tap.py Touchpad exact "$1" | tee -a "$OUT/summary.txt"; sleep 1; }
-pad 0.5,0.9; pad 0.5,0.9; shot 21c-tv-moved 1
-pad 0.9,0.5; pad 0.9,0.5; shot 21d-tv-moved 1
+pad 0.9,0.5; pad 0.9,0.5; shot 21c-tv-moved 1
+pad 0.1,0.5;              shot 21d-tv-moved 1
 pad 0.5,0.5;              shot 21e-tv-page 12
 adb shell input swipe 400 1500 700 1300 300; shot 21f-tv-pointer 2
+adb shell input swipe 990 900 990 1500 500; shot 21f2-tv-scrolled 2   # the scroll strip down the touchpad's side
+tap "Keyboard";           shot 21f3-tv-keyboard 2
+back
 tap "Back";               shot 21g-tv-back 4
-tap "Exit TV Mode";       shot 21h-tv-exit 3
+tap "Exit";               shot 21h-tv-exit 3
+# A scrubbed movie in edenTV mode: the movie on the pretend TV, the remote on the phone.
+if adb exec-out run-as $PKG ls files/clean/ 2>/dev/null | grep -q mp4; then
+  home;                   sleep 4
+  tap "Test clip";        sleep 2
+  tap "edenTV mode";      shot 21i-copy-on-tv 6
+  pad 0.5,0.5;            shot 21j-copy-paused 2
+  tap "Exit";             sleep 2
+  back
+fi
 adb shell settings delete global overlay_display_devices; sleep 2
 adb logcat -d -s SafeWatch:I | grep -i "TV Mode" | tee -a "$OUT/summary.txt"
 
 start;                    sleep 5
 tap "Settings";           sleep 2
+tap "Look and sound";     sleep 2
 tap_scrolling "Light";    shot 17-light 5
 start;                    shot 17b-light-home 8
 echo "phone state at the end: $(timeout 20 adb get-state 2>&1)" | tee -a "$OUT/summary.txt"

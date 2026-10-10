@@ -103,19 +103,14 @@ class SupercleanActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams(Ui.dp(context, 180), -2))
             })
         })
-        body.addView(Ui.caption(this,
-            "Starts from your usual choices in Settings > Superclean; changes here are for this title only. Cut scenes are taken " +
-                "out of the copy; blurred ones stay, too blurred to see."))
+        body.addView(Ui.caption(this, "Changes here are for this title only."))
 
         body.addView(Ui.actionButton(this, if (replaces == null) "Review and Superclean" else "Review and Superclean again") { start() }.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = Ui.dp(context, 28) }
         })
         val model = Prefs.claudeModel(this)
-        body.addView(Ui.caption(this,
-            "Claude looks at small pictures from the whole video, two seconds apart, and reads its captions, then the copy is " +
-                "written with all of it taken out. A film takes an hour or more, with the phone locked if you like. It costs " +
-                "${SupercleanRun.costText(3_600_000L, model)} for each hour of video with " +
-                (if (model == ClaudeApi.HAIKU) "Haiku" else "Sonnet") + ", billed to your Anthropic account."))
+        body.addView(Ui.caption(this, "About ${SupercleanRun.costText(3_600_000L, model)} an hour of video with " +
+            (if (model == ClaudeApi.HAIKU) "Haiku" else "Sonnet") + ". Keeps going with the phone locked."))
     }
 
     /** The title's Parents Guide: being looked up, found (a list to tick), or not found. */
@@ -141,7 +136,7 @@ class SupercleanActivity : AppCompatActivity() {
                         }, LinearLayout.LayoutParams(0, -2, 1f))
                     })
                 })
-                body.addView(Ui.caption(this, "This takes about a minute. Once it is read, tick the scenes you want taken out."))
+                body.addView(Ui.caption(this, "About a minute."))
             }
             guide != null && !guide.isEmpty -> showGuideItems(guide)
             guide != null || error != null -> {
@@ -161,9 +156,7 @@ class SupercleanActivity : AppCompatActivity() {
                 body.addView(Ui.card(this).apply {
                     addView(Ui.row(this@SupercleanActivity, "Look up the Parents Guide", chevron = false) { lookUp(); show() })
                 })
-                body.addView(Ui.caption(this,
-                    "Claude finds this title's guide on IMDb and lists what it warns of, so you can choose scenes to take out. " +
-                        "It costs ${SupercleanRun.guideCostText(Prefs.claudeModel(this))}."))
+                body.addView(Ui.caption(this, "Lists the scenes IMDb warns of. Costs ${SupercleanRun.guideCostText(Prefs.claudeModel(this))}."))
             }
         }
     }
@@ -421,8 +414,7 @@ class SupercleanActivity : AppCompatActivity() {
 
         private fun askForKey(ctx: Context) {
             AlertDialog.Builder(ctx).setTitle("Superclean needs a Claude key")
-                .setMessage("Superclean sends the video's pictures and captions to Claude, with your own Anthropic API key, so " +
-                    "Claude can take out what you choose. Add a key in Settings > Superclean.")
+                .setMessage("Add a key in Settings › Superclean.")
                 .setPositiveButton("Open Settings") { _, _ -> MainActivity.open(ctx, MainActivity.TAB_FILTERS) }
                 .setNegativeButton("Cancel", null).show()
         }
@@ -435,9 +427,7 @@ class SupercleanActivity : AppCompatActivity() {
         fun start(ctx: Context, source: CleanSource?, whyNot: String? = null) {
             if (source == null) {
                 AlertDialog.Builder(ctx).setTitle("Superclean")
-                    .setMessage((whyNot ?: "There is no video here that can be saved.") +
-                        "\n\nSuperclean works with video files and websites' own videos. Netflix-style services lock theirs; " +
-                        "watch those with Mirror to TV or TV Mode.")
+                    .setMessage((whyNot ?: "There is no video here that can be saved.") + " Paid services lock their videos.")
                     .setPositiveButton("OK", null).show()
                 return
             }
