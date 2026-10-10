@@ -44,10 +44,20 @@ jobs:
           cp app/build/outputs/apk/cleanchrome/debug/app-cleanchrome-debug.apk CleanChrome.apk
           # The app was first called SafeWatch; the old file name keeps working for links saved before.
           cp EdenOS.apk SafeWatch.apk
-          notes="Test build from commit ${GITHUB_SHA::7}. Download EdenOS.apk below and open it on your Android phone. CleanChrome.apk is its browser as an app of its own. (SafeWatch.apk is EdenOS.apk under the app's old name.)"
+          # EdenOS-phone.apk: the same app with only the 64-bit phone library, half the size, signed with the same key
+          # so it installs over either one. Small enough to send as an attachment.
+          cp EdenOS.apk phone-unaligned.apk
+          zip -q -d phone-unaligned.apk 'lib/x86/*' 'lib/x86_64/*' 'lib/armeabi-v7a/*' 'META-INF/*'
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/zipalign" -f -p 4 phone-unaligned.apk phone-aligned.apk
+          "$BT/apksigner" sign --ks app/debug.keystore --ks-pass pass:android --key-pass pass:android \
+            --ks-key-alias androiddebugkey --out EdenOS-phone.apk phone-aligned.apk
+          "$BT/apksigner" verify EdenOS-phone.apk
+          ls -la EdenOS.apk EdenOS-phone.apk CleanChrome.apk
+          notes="Test build from commit ${GITHUB_SHA::7}. Download EdenOS.apk below and open it on your Android phone. EdenOS-phone.apk is the same app, smaller, for phones. CleanChrome.apk is its browser as an app of its own. (SafeWatch.apk is EdenOS.apk under the app's old name.)"
           if gh release view latest >/dev/null 2>&1; then
             gh release edit latest --title "EdenOS test build" --notes "$notes"
           else
             gh release create latest --title "EdenOS test build" --notes "$notes"
           fi
-          gh release upload latest EdenOS.apk SafeWatch.apk CleanChrome.apk --clobber
+          gh release upload latest EdenOS.apk EdenOS-phone.apk SafeWatch.apk CleanChrome.apk --clobber
