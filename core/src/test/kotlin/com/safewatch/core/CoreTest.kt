@@ -86,6 +86,34 @@ class ProfanityMatcherTest {
         }
     }
 
+    @Test fun blanksDashesAndSymbolsInPlaceOfLettersCount() {
+        for (line in listOf("what the f--k", "oh sh--t", "you b----", "f--- this", "kiss my *ss", "a\$\$hole", "sh!t happens",
+            "you b1tch", "what the #\$%", "[BLEEPED]", "*bleep* off", "<bleep>", "(censored)", "[profanity]", "[swearing]",
+            "you ___", "■■■■ you", "what the [__]", "[\u2002__\u2002]", "bullsh*t")) {
+            assertTrue(matcher().containsProfanity(line), line)
+        }
+        // Even with every word switched off by hand, a blanked word is still muted while the language filter is on.
+        val noWords = FilterSettings(wordChoices = WordList.groups.associate { it.id to false })
+        assertTrue(matcher(noWords).containsProfanity("what the [ __ ]"))
+        // A word allowed by name stays allowed when spelled with symbols.
+        assertFalse(matcher(FilterSettings(allowedWords = setOf("ass"))).containsProfanity("a\$\$"))
+    }
+
+    @Test fun blanksWrittenAsCharacterCodesInCaptionFilesCount() {
+        val ttml = "<tt><body><div><p begin=\"00:00:01.000\" end=\"00:00:03.000\">oh f&#42;&#42;k</p>" +
+            "<p begin=\"00:00:04.000\" end=\"00:00:06.000\">what the [&nbsp;__&nbsp;]</p></div></body></tt>"
+        val cues = CaptionFormats.parse(ttml)
+        assertEquals(listOf("oh f**k", "what the [ __ ]"), cues.map { it.text })
+        assertEquals(2, CueTagger.tagsFor(cues, matcher()).size)
+    }
+
+    @Test fun reverentAndEverydayDashesAreLeftAlone() {
+        for (line in listOf("G-d bless you", "He-- he left", "I was a-- a kid", "I-- I can't", "so-- anyway", "e-mail", "x-ray",
+            "R&B music", "AT&T", "4x4 truck", "mp4 file", "#blessed", "it's 100%!", "Wow!!!", "self-help", "co-op")) {
+            assertFalse(matcher().containsProfanity(line), line)
+        }
+    }
+
     @Test fun ordinaryPunctuationIsNotTakenForABlankedWord() {
         for (line in listOf("I--I don't know", "wait--what?", "No!!!!", "5 * 3 * 2", "a_b_c", "snake_case_name", "*laughs*", "[music]",
             "(sighs)", "Rated 4**", "e-mail me @home", "100% sure!!")) {

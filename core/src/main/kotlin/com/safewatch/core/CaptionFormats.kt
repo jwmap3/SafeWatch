@@ -125,6 +125,13 @@ object CaptionFormats {
 
     private fun clean(s: String): String = s.replace(TAGS, "")
         .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'")
+        .replace("&nbsp;", " ")
+        // Numbered characters, such as &#42; for the * in a blanked-out word.
+        .replace(Regex("&#(x[0-9a-fA-F]{1,6}|[0-9]{1,7});")) { m ->
+            val v = m.groupValues[1]
+            val code = if (v.startsWith("x")) v.substring(1).toIntOrNull(16) else v.toIntOrNull()
+            if (code != null && Character.isValidCodePoint(code)) String(Character.toChars(code)) else m.value
+        }
         .replace(Regex("\\s+"), " ").trim()
 
     private fun unescapeJson(s: String): String = s.replace("\\n", " ").replace("\\\"", "\"").replace("\\/", "/")
