@@ -54,7 +54,7 @@ jobs:
             --ks-key-alias androiddebugkey --out EdenOS-phone.apk phone-aligned.apk
           "$BT/apksigner" verify EdenOS-phone.apk
           ls -la EdenOS.apk EdenOS-phone.apk CleanChrome.apk
-          notes="Test build from commit ${GITHUB_SHA::7}. Download EdenOS.apk below and open it on your Android phone. EdenOS-phone.apk is the same app, smaller, for phones. CleanChrome.apk is its browser as an app of its own. (SafeWatch.apk is EdenOS.apk under the app's old name.)"
+          notes="Test build from commit ${GITHUB_SHA::7}. Download EdenOS.apk below and open it on your Android phone. EdenOS-phone.apk is the same app, smaller, for phones. CleanChrome.apk is its browser as an app of its own. For a computer: EdenOS-Setup.exe (Windows), EdenOS-mac-arm64.dmg (Macs with Apple silicon) or EdenOS-mac-x64.dmg (Intel Macs). (SafeWatch.apk is EdenOS.apk under the app's old name.)"
           if gh release view latest >/dev/null 2>&1; then
             gh release edit latest --title "EdenOS test build" --notes "$notes"
           else

@@ -1,0 +1,1 @@
+{"wireMagic":"pb3","events":[{"tStartMs":1200,"dDurationMs":3000,"segs":[{"utf8":"so"},{"utf8":" what","tOffsetMs":320},{"utf8":" the","tOffsetMs":600},{"utf8":" [ __ ]","tOffsetMs":900}]},{"tStartMs":5000,"dDurationMs":2500,"segs":[{"utf8":"damn \"right\" \u00e9t\u00e9"}]},{"tStartMs":9000,"dDurationMs":1000,"aAppend":1,"segs":[{"utf8":"\n"}]}]}

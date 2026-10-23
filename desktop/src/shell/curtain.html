@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Hidden</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    filter: blur(38px) saturate(1.25) brightness(0.72); transform: scale(1.18); transition: opacity .25s; }
+  .tag { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px;
+    background: rgba(11, 15, 13, .62); color: #e9f5ee; font: 500 13px system-ui, sans-serif; letter-spacing: .02em;
+    backdrop-filter: blur(6px); display: flex; align-items: center; gap: 8px; }
+  .tag i { width: 8px; height: 8px; border-radius: 50%; background: #22b573; }
+</style></head>
+<body>
+<img id="frame" alt="">
+<div class="tag"><i></i>Hidden by edenOS</div>
+<script>
+  const frame = document.getElementById('frame');
+  window.show = (src) => {
+    if (src) { frame.src = src; frame.style.opacity = 1; } else { frame.removeAttribute('src'); frame.style.opacity = 0; }
+  };
+</script>
+</body></html>

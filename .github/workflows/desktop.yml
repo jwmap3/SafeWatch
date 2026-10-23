@@ -1,0 +1,105 @@
+# Builds edenOS for Windows and Mac and puts the installers on the repository's Releases page, beside the phone app.
+name: Build desktop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'app/src/main/assets/safewatch.js'
+      - 'app/src/main/assets/blocklist-adult.txt'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-desktop
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The language filter must give exactly the phone app's answers.
+      - name: Check the filters
+        working-directory: desktop
+        run: npm test
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build the installer
+        working-directory: desktop
+        env:
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
+        run: |
+          npm ci --no-audit --no-fund
+          npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: desktop/dist/EdenOS-Setup.exe
+          retention-days: 3
+
+  mac:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build for Apple silicon and for Intel Macs
+        working-directory: desktop
+        env:
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
+        run: |
+          npm ci --no-audit --no-fund
+          node scripts/sync.js
+          # Electron for each kind of Mac, side by side.
+          mv node_modules/electron/dist electron-arm64
+          ELECTRON_INSTALL_ARCH=x64 node node_modules/electron/install.js
+          mv node_modules/electron/dist electron-x64
+          npx electron-builder --mac --arm64 --publish never -c.electronDist=electron-arm64
+          npx electron-builder --mac --x64 --publish never -c.electronDist=electron-x64
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: desktop/dist/EdenOS-mac-*.dmg
+          retention-days: 3
+
+  publish:
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+      - name: Put the installers on the Releases page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -laR out
+          gh release view latest >/dev/null 2>&1 || gh release create latest --title "EdenOS test build" --notes "Test builds."
+          gh release upload latest out/windows/EdenOS-Setup.exe out/mac/EdenOS-mac-arm64.dmg out/mac/EdenOS-mac-x64.dmg --clobber

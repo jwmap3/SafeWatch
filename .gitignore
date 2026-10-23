@@ -12,3 +12,6 @@ captures/
 *.jks
 # Detection models are downloaded separately, not stored in the repository.
 *.onnx
+
+# The desktop app keeps its icon and packaging hook here.
+!desktop/build/

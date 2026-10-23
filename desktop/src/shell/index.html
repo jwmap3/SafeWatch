@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>edenOS</title>
+<link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <header id="bar">
+    <div class="lights"></div>
+    <button class="mark" id="toHome" title="Home"><img src="logo.svg" alt="edenOS"></button>
+    <div class="nav">
+      <button class="icon" id="back" title="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button class="icon" id="forward" title="Forward"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+      <button class="icon" id="reload" title="Reload"><svg viewBox="0 0 24 24" id="reloadIcon"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4h-4"/></svg></button>
+    </div>
+    <form id="addressForm" class="address">
+      <svg viewBox="0 0 24 24" class="globe"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c-3 3.2-3 12.8 0 16M12 4c3 3.2 3 12.8 0 16"/></svg>
+      <input id="address" spellcheck="false" autocomplete="off" placeholder="Search or type a web address">
+      <div class="progress" id="progress"></div>
+    </form>
+    <div class="chip" id="chip"><i></i><span></span></div>
+    <button class="icon" id="toSettings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  </header>
+
+  <main id="home" class="screen">
+    <div class="glow"></div>
+    <section class="hero">
+      <img class="hero-mark" src="logo.svg" alt="">
+      <h1 class="wordmark"><span class="eden">eden</span><span class="os">OS</span></h1>
+      <form id="searchForm" class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+        <input id="search" spellcheck="false" autocomplete="off" placeholder="Search the web or type an address">
+      </form>
+    </section>
+    <section class="row">
+      <h2>Watch</h2>
+      <div class="apps" id="apps"></div>
+    </section>
+    <section class="row">
+      <h2>Quick links</h2>
+      <div class="links" id="links"></div>
+    </section>
+    <p class="foot" id="foot"></p>
+  </main>
+
+  <main id="settings" class="screen">
+    <nav class="side" id="side"></nav>
+    <div class="panel" id="panel"></div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script src="shell.js"></script>
+</body>
+</html>
