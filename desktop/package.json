@@ -8,6 +8,7 @@
   "private": true,
   "main": "src/main/main.js",
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
     "sync": "node scripts/sync.js",
     "start": "node scripts/sync.js && electron .",
     "test": "node test/filters.test.js && node test/blocking.test.js",
