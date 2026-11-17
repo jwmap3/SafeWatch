@@ -76,6 +76,7 @@ class PlayerActivity : AppCompatActivity() {
     private var isCopy = false
     private var wantsTv = false
     private var tv: com.safewatch.app.tv.TvStage? = null
+    private var tvTries = 0
     private var remote: View? = null
     private var stopWatchingTv: (() -> Unit)? = null
 
@@ -220,9 +221,16 @@ class PlayerActivity : AppCompatActivity() {
         val parent = screen.parent as? android.view.ViewGroup ?: return
         val stage = com.safewatch.app.tv.TvStage(this, display)
         if (!stage.tryShow()) {
+            val delays = com.safewatch.app.tv.TvMode.retryDelaysMs
+            if (tvTries < delays.size) {
+                ui.postDelayed({ if (tv == null && wantsTv && !isFinishing) com.safewatch.app.tv.TvMode.display(this)?.let { goOnTv(it) } }, delays[tvTries++])
+                return
+            }
+            tvTries = 0
             showStatus("${display.name} would not take the picture. Playing on the phone.", 5000)
             return
         }
+        tvTries = 0
         val index = parent.indexOfChild(screen)
         val params = screen.layoutParams
         parent.removeView(screen)

@@ -28,6 +28,15 @@ object TvMode {
     /** True while the viewer has TV Mode on. Screens that show video put their picture on the TV while it is. */
     @Volatile var active = false
 
+    /** The stage on the TV right now, whichever screen put it there. */
+    internal var showing: TvStage? = null
+
+    /**
+     * How long to wait before each new try at showing on the TV. A phone may refuse while the screen asking is still
+     * opening, or while the one it replaces is still closing, and then accept a moment later.
+     */
+    val retryDelaysMs = longArrayOf(250, 600, 1200, 2500)
+
     private val main = Handler(Looper.getMainLooper())
     private var askedFor = -1
 
@@ -79,7 +88,11 @@ class TvStage(context: Context, display: Display) : Presentation(context, displa
      * or the phone does not let apps show anything on that screen.
      */
     fun tryShow(): Boolean = try {
+        // Only one stage at a time: the screen being left still has its own up for a moment, and some phones
+        // refuse a second one on the same TV.
+        TvMode.showing?.let { old -> if (old !== this && old.isShowing) try { old.dismiss() } catch (e: Exception) { /* already gone */ } }
         show()
+        TvMode.showing = this
         true
     } catch (e: WindowManager.InvalidDisplayException) {
         false

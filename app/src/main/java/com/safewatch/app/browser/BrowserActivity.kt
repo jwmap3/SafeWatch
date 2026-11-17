@@ -127,6 +127,7 @@ open class BrowserActivity : AppCompatActivity() {
     @Volatile private var pendingCommand = ""
     /** The TV, while this screen shows its page there in TV Mode; the phone then shows a remote instead. */
     private var tv: com.safewatch.app.tv.TvStage? = null
+    private var tvTries = 0
     private var remote: View? = null
     private var stopWatchingTv: (() -> Unit)? = null
     @Volatile private var videoPositionMs = 0L
@@ -741,9 +742,19 @@ open class BrowserActivity : AppCompatActivity() {
         // The TV first: if it cannot be shown on, the page simply stays on the phone.
         val screen = com.safewatch.app.tv.TvStage(this, display)
         if (!screen.tryShow()) {
+            val delays = com.safewatch.app.tv.TvMode.retryDelaysMs
+            if (tvTries < delays.size) {
+                ui.postDelayed({
+                    if (tv == null && !isFinishing && com.safewatch.app.tv.TvMode.active) com.safewatch.app.tv.TvMode.display(this)?.let { goOnTv(it) }
+                }, delays[tvTries++])
+                return
+            }
+            tvTries = 0
             note("TV Mode: ${display.name} would not take the picture, so it stays on the phone")
+            Ui.toast(this, "The TV would not show this page. It is on your phone.")
             return
         }
+        tvTries = 0
         val index = parent.indexOfChild(stage)
         val params = stage.layoutParams
         curtain.drop()

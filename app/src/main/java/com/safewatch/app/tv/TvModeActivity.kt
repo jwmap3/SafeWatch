@@ -41,6 +41,8 @@ class TvModeActivity : AppCompatActivity() {
         Ui.fitSystemBars(this, holder)
     }
 
+    private var tvTries = 0
+
     override fun onStart() {
         super.onStart()
         stopWatching = TvMode.watch(this) { show(it) }
@@ -74,12 +76,18 @@ class TvModeActivity : AppCompatActivity() {
         closeStage()
         val tv = TvStage(this, display)
         if (!tv.tryShow()) {
+            if (tvTries < TvMode.retryDelaysMs.size) {
+                holder.postDelayed({ if (stage == null && !isFinishing) show(TvMode.display(this)) }, TvMode.retryDelaysMs[tvTries++])
+                return
+            }
+            tvTries = 0
             // The phone listed a screen it will not let apps use: say how to connect a TV instead of stopping.
             holder.removeAllViews()
             holder.addView(connectHelp(), FrameLayout.LayoutParams(-1, -1))
             Ui.toast(this, "${display.name} would not take the picture. Try Smart View again.")
             return
         }
+        tvTries = 0
         val view = TvHome(tv.context) { open(it) }
         tv.root.addView(view, FrameLayout.LayoutParams(-1, -1))
         tv.setOnDismissListener { if (stage === tv) { stage = null; home = null } }
