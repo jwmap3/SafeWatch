@@ -73,8 +73,14 @@ class TvModeActivity : AppCompatActivity() {
         if (stage?.display?.displayId == display.displayId && stage?.isShowing == true) return
         closeStage()
         val tv = TvStage(this, display)
+        if (!tv.tryShow()) {
+            // The phone listed a screen it will not let apps use: say how to connect a TV instead of stopping.
+            holder.removeAllViews()
+            holder.addView(connectHelp(), FrameLayout.LayoutParams(-1, -1))
+            Ui.toast(this, "${display.name} would not take the picture. Try Smart View again.")
+            return
+        }
         val view = TvHome(tv.context) { open(it) }
-        tv.show()
         tv.root.addView(view, FrameLayout.LayoutParams(-1, -1))
         tv.setOnDismissListener { if (stage === tv) { stage = null; home = null } }
         stage = tv

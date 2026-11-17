@@ -34,8 +34,10 @@ object TvMode {
     /** The TV as a second screen, if the phone is connected to one. */
     fun display(ctx: Context): Display? {
         val manager = ctx.getSystemService(DisplayManager::class.java) ?: return null
+        // A private screen belongs to another app (some phones list their own casting or desktop screens this way),
+        // and nothing else may put a window on it.
         return manager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-            .firstOrNull { it.displayId != Display.DEFAULT_DISPLAY && it.isValid }
+            .firstOrNull { it.displayId != Display.DEFAULT_DISPLAY && it.isValid && it.flags and Display.FLAG_PRIVATE == 0 }
     }
 
     /** Calls [onChange] whenever a second screen comes or goes, until the returned function is called. */
@@ -72,6 +74,23 @@ object TvMode {
  * it, worked from the phone's touchpad.
  */
 class TvStage(context: Context, display: Display) : Presentation(context, display) {
+    /**
+     * Puts the stage on the TV. Returns false, instead of stopping the app, when the TV went away a moment ago
+     * or the phone does not let apps show anything on that screen.
+     */
+    fun tryShow(): Boolean = try {
+        show()
+        true
+    } catch (e: WindowManager.InvalidDisplayException) {
+        false
+    } catch (e: WindowManager.BadTokenException) {
+        false
+    } catch (e: IllegalStateException) {
+        false
+    } catch (e: SecurityException) {
+        false
+    }
+
     val root = FrameLayout(context).apply { setBackgroundColor(Color.BLACK) }
     private val pointer = View(context).apply {
         background = GradientDrawable().apply {

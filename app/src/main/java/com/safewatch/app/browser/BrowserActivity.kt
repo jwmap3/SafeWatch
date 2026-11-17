@@ -738,13 +738,17 @@ open class BrowserActivity : AppCompatActivity() {
     private fun goOnTv(display: android.view.Display) {
         if (tv != null || isFinishing || !::stage.isInitialized) return
         val parent = stage.parent as? ViewGroup ?: return
+        // The TV first: if it cannot be shown on, the page simply stays on the phone.
+        val screen = com.safewatch.app.tv.TvStage(this, display)
+        if (!screen.tryShow()) {
+            note("TV Mode: ${display.name} would not take the picture, so it stays on the phone")
+            return
+        }
         val index = parent.indexOfChild(stage)
         val params = stage.layoutParams
         curtain.drop()
         if (playerView) showPlayerOnPhone(false)
         parent.removeView(stage)
-        val screen = com.safewatch.app.tv.TvStage(this, display)
-        screen.show()
         screen.root.addView(stage, FrameLayout.LayoutParams(-1, -1))
         screen.setOnDismissListener { if (tv === screen) leaveTv() }
         tv = screen

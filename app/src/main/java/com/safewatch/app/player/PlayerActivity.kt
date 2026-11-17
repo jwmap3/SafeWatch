@@ -218,11 +218,14 @@ class PlayerActivity : AppCompatActivity() {
         if (tv != null || isFinishing) return
         val screen = findViewById<View>(R.id.screen)
         val parent = screen.parent as? android.view.ViewGroup ?: return
+        val stage = com.safewatch.app.tv.TvStage(this, display)
+        if (!stage.tryShow()) {
+            showStatus("${display.name} would not take the picture. Playing on the phone.", 5000)
+            return
+        }
         val index = parent.indexOfChild(screen)
         val params = screen.layoutParams
         parent.removeView(screen)
-        val stage = com.safewatch.app.tv.TvStage(this, display)
-        stage.show()
         stage.root.addView(screen, android.widget.FrameLayout.LayoutParams(-1, -1))
         stage.setOnDismissListener { if (tv === stage) leaveTv() }
         tv = stage
